@@ -1,0 +1,13 @@
+{
+  "tls_cert": "certs/server.pem",
+  "tls_key": "certs/server-key.pem",
+  "client_ca": "certs/ca.pem",
+  "image_folder": "images",
+  "users": [
+    {
+      "username": "hen",
+      "cert_common_name": "hen",
+      "image_folder": "images/hen"
+    }
+  ]
+}

@@ -1,31 +1,11 @@
-type Query {
-  hello(name: String!): String!
-  todos: [Todo!]!
-  todo(id: ID!): Todo
-}
-
-type Mutation {
-  createTodo(input: NewTodo!): Todo!
-  updateTodo(id: ID!, input: UpdateTodo!): Todo
-  deleteTodo(id: ID!): Boolean!
-}
-
-type Todo {
+type Image {
   id: ID!
   title: String!
-  description: String
-  completed: Boolean!
-  createdAt: String!
-  updatedAt: String!
-}
-
-input NewTodo {
-  title: String!
+  url: String!
   description: String
 }
 
-input UpdateTodo {
-  title: String
-  description: String
-  completed: Boolean
+type Query {
+  images: [Image!]!
+  image(id: ID!): Image
 }
