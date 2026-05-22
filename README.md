@@ -66,7 +66,14 @@ A small helper script is provided under `scripts/`.
      -OpenSSLConfig 'C:\Program Files\Common Files\SSL\openssl.cnf'
    ```
 
-3. Add the user to `config.json`, matching `cert_common_name` to the client cert Common Name:
+3. Generate the server TLS key/cert for localhost:
+   ```powershell
+   .\scripts\generate-server-cert.ps1 \
+     -OpenSSLPath 'C:\Program Files\OpenSSL-Win64\bin\openssl.exe' \
+     -OpenSSLConfig 'C:\Program Files\Common Files\SSL\openssl.cnf'
+   ```
+
+4. Add the user to `config.json`, matching `cert_common_name` to the client cert Common Name:
    ```json
    {
      "username": "alice",
