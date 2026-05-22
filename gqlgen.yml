@@ -1,0 +1,22 @@
+schema:
+  - graph/schema/*.graphql
+
+exec:
+  filename: graph/generated/generated.go
+
+model:
+  filename: graph/model/models_gen.go
+
+resolver:
+  layout: follow-schema
+  dir: graph/resolver
+
+models:
+  Todo:
+    fields:
+      id:
+        resolver: true
+      createdAt:
+        resolver: true
+      updatedAt:
+        resolver: true
