@@ -1,9 +1,9 @@
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$CAKeyPath,
+    [Parameter(Mandatory=$false)]
+    [string]$CAKeyPath = "certs/ca-key.pem",
 
-    [Parameter(Mandatory=$true)]
-    [string]$CACertPath,
+    [Parameter(Mandatory=$false)]
+    [string]$CACertPath = "certs/ca.pem",
 
     [Parameter(Mandatory=$true)]
     [string]$CommonName,
@@ -13,6 +13,9 @@ param(
 
     [Parameter(Mandatory=$false)]
     [string]$KeyOutPath = "certs/$CommonName-key.pem",
+
+    [Parameter(Mandatory=$false)]
+    [string]$P12OutPath = "certs/$CommonName.p12",
 
     [Parameter(Mandatory=$false)]
     [int]$Days = 365,
@@ -106,8 +109,15 @@ try {
         throw "Certificate signing failed with exit code $LASTEXITCODE"
     }
 
+    Write-Host "Creating PKCS#12 bundle..."
+    & "$OpenSSLBinPath" pkcs12 -export -out "$P12OutPath" -inkey "$KeyOutPath" -in "$CertOutPath"
+    if ($LASTEXITCODE -ne 0) {
+        throw "PKCS#12 bundle generation failed with exit code $LASTEXITCODE"
+    }
+
     Write-Host "User certificate created: $CertOutPath"
     Write-Host "User private key created: $KeyOutPath"
+    Write-Host "User PKCS#12 bundle created: $P12OutPath (no password)"
 } finally {
     Remove-Item -Force "$csrPath" -ErrorAction SilentlyContinue
 }

@@ -35,6 +35,8 @@ func authMiddleware(config auth.AppConfig, next http.Handler) http.Handler {
 		clientCert := r.TLS.PeerCertificates[0]
 		commonName := clientCert.Subject.CommonName
 
+		log.Printf("Login attempt with Common Name: '%s'", commonName)
+
 		var currentUser *auth.UserConfig
 		for _, u := range config.Users {
 			if u.CertCommonName == commonName {
@@ -44,9 +46,12 @@ func authMiddleware(config auth.AppConfig, next http.Handler) http.Handler {
 		}
 
 		if currentUser == nil {
+			log.Printf("Failed login: unauthorized Common Name '%s'", commonName)
 			http.Error(w, "unauthorized client certificate", http.StatusUnauthorized)
 			return
 		}
+
+		log.Printf("User connected successfully: %s", commonName)
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, currentUser)))
 	})

@@ -91,6 +91,8 @@ New-Item -ItemType Directory -Path (Split-Path $CertOutPath) -Force | Out-Null
 New-Item -ItemType Directory -Path (Split-Path $KeyOutPath) -Force | Out-Null
 
 $csrPath = [System.IO.Path]::GetTempFileName()
+$extPath = [System.IO.Path]::GetTempFileName()
+
 try {
     Write-Host "Generating server key..."
     & "$OpenSSLBinPath" genrsa -out "$KeyOutPath" 2048
@@ -104,8 +106,22 @@ try {
         throw "OpenSSL CSR generation failed with exit code $LASTEXITCODE"
     }
 
+    Write-Host "Creating extension file with SAN..."
+    $extContent = @"
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = journal.example.com
+IP.1 = 192.168.50.2
+"@
+    Set-Content -Path $extPath -Value $extContent
+
     Write-Host "Signing server certificate with CA..."
-    & "$OpenSSLBinPath" x509 -req -in "$csrPath" -CA "$CACertPath" -CAkey "$CAKeyPath" -CAcreateserial -out "$CertOutPath" -days $Days -sha256 -extensions v3_req -extfile "$OpenSSLConfigPath"
+    & "$OpenSSLBinPath" x509 -req -in "$csrPath" -CA "$CACertPath" -CAkey "$CAKeyPath" -CAcreateserial -out "$CertOutPath" -days $Days -sha256 -extfile "$extPath"
     if ($LASTEXITCODE -ne 0) {
         throw "Certificate signing failed with exit code $LASTEXITCODE"
     }
@@ -114,4 +130,5 @@ try {
     Write-Host "Server private key created: $KeyOutPath"
 } finally {
     Remove-Item -Force "$csrPath" -ErrorAction SilentlyContinue
+    Remove-Item -Force $extPath -ErrorAction SilentlyContinue
 }
