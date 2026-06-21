@@ -1,11 +1,33 @@
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+interface File {
+  id: ID!
+  url: String!
+}
+
 type Image {
   id: ID!
-  title: String!
   url: String!
+  title: String!
   description: String
+}
+
+type Media implements File {
+  id: ID!
+  url: String!
+  mediaType: MediaType!
+  title: String!
+  description: String
+  mediaEntities: [Media!]
 }
 
 type Query {
   images: [Image!]!
   image(id: ID!): Image
+  mediaEntities: [Media!]!
+  mediaEntity(id: ID!): Media
 }

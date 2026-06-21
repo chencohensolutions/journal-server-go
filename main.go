@@ -7,11 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-
+	
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
 	"github.com/99designs/gqlgen/graphql/handler/lru"
@@ -25,17 +26,29 @@ import (
 
 const defaultPort = "8080"
 
+type loggingListener struct {
+	net.Listener
+}
+
+func (l *loggingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Client attempting to connect from %s", conn.RemoteAddr())
+	return conn, nil
+}
+
 func authMiddleware(config auth.AppConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+			log.Printf("Client connection rejected: no client certificate from %s", r.RemoteAddr)
 			http.Error(w, "client certificate required", http.StatusUnauthorized)
 			return
 		}
 
 		clientCert := r.TLS.PeerCertificates[0]
 		commonName := clientCert.Subject.CommonName
-
-		log.Printf("Login attempt with Common Name: '%s'", commonName)
 
 		var currentUser *auth.UserConfig
 		for _, u := range config.Users {
@@ -46,12 +59,12 @@ func authMiddleware(config auth.AppConfig, next http.Handler) http.Handler {
 		}
 
 		if currentUser == nil {
-			log.Printf("Failed login: unauthorized Common Name '%s'", commonName)
+			log.Printf("Failed login: unknown client (cert CN '%s') from %s", commonName, r.RemoteAddr)
 			http.Error(w, "unauthorized client certificate", http.StatusUnauthorized)
 			return
 		}
 
-		log.Printf("User connected successfully: %s", commonName)
+		log.Printf("Client connected: username=%s from %s (%s %s)", currentUser.Username, r.RemoteAddr, r.Method, r.URL.Path)
 
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), auth.UserContextKey, currentUser)))
 	})
@@ -93,6 +106,12 @@ func main() {
 		log.Fatalf("failed to create TLS config: %v", err)
 	}
 
+	serverCert, err := tls.LoadX509KeyPair(config.TLSCert, config.TLSKey)
+	if err != nil {
+		log.Fatalf("failed to load server TLS certificate: %v", err)
+	}
+	tlsConfig.Certificates = []tls.Certificate{serverCert}
+
 	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{},
 	}))
@@ -105,7 +124,12 @@ func main() {
 	srv.Use(extension.AutomaticPersistedQuery{Cache: lru.New[string](100)})
 
 	mux := http.NewServeMux()
-	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
+	playgroundHandler := playground.Handler("GraphQL playground", "/query")
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		
+		log.Printf("Request to / from %s: %s %s", r.RemoteAddr, r.Method, r.URL.Path)
+		playgroundHandler.ServeHTTP(w, r)
+	}))
 	mux.Handle("/query", authMiddleware(config, srv))
 	mux.Handle("/images/", authMiddleware(config, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := auth.FromContext(r.Context())
@@ -131,6 +155,12 @@ func main() {
 		TLSConfig: tlsConfig,
 	}
 
+	ln, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	ln = &loggingListener{Listener: ln}
+
 	log.Printf("Listening on https://localhost:%s", defaultPort)
-	log.Fatal(server.ListenAndServeTLS(config.TLSCert, config.TLSKey))
+	log.Fatal(server.Serve(tls.NewListener(ln, tlsConfig)))
 }
