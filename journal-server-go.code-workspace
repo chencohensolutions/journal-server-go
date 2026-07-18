@@ -27,9 +27,6 @@
 			"--enable=gosimple"
 		],
 		"go.useLanguageServer": true,
-		"go.languageServerExperimentalFeatures": {
-			"semanticTokens": true
-		},
 		"gopls": {
 			"ui.diagnostic.annotations": {
 				"bounds": true,
@@ -42,11 +39,13 @@
 			"**/bin": true,
 			"**/.git": true
 		},
+		"powershell.cwd": "journal-server-go",
 	},
 	"extensions": {
 		"recommendations": [
 			"golang.go",
-			"mhutchie.git-graph"
+			"mhutchie.git-graph",
+			"batyan-soft.fast-tasks"
 		]
 	}
 }
