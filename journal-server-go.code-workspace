@@ -43,7 +43,6 @@
 	},
 	"extensions": {
 		"recommendations": [
-			"golang.go",
 			"mhutchie.git-graph",
 			"batyan-soft.fast-tasks"
 		]
