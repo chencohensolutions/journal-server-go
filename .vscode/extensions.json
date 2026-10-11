@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "apollographql.vscode-apollo",
+        "mquandalle.graphql",
+        "golang.go",
+        "graphql.vscode-graphql",
+        "graphql.vscode-graphql-syntax"
+    ]
+}

@@ -19,7 +19,6 @@ vendor/
 go.work
 
 # IDEs
-.vscode/
 .idea/
 *.swp
 *.swo

@@ -8,6 +8,8 @@
 		}
 	],
 	"settings": {
+		"editor.formatOnSave": true,
+		"go.useLanguageServer": true,
 		"files.exclude": {
 			"**/bin": true,
 			"**/.git": true
