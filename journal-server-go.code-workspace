@@ -8,38 +8,10 @@
 		}
 	],
 	"settings": {
-		"[go]": {
-			"editor.defaultFormatter": "golang.go",
-			"editor.formatOnSave": true,
-			"editor.codeActionsOnSave": {
-				"source.organizeImports": "explicit",
-				"source.fixAll": "explicit"
-			}
-		},
-		"go.lintOnSave": "package",
-		"go.lintTool": "golangci-lint",
-		"go.lintFlags": [
-			"--timeout=5m",
-			"--enable=gofmt",
-			"--enable=govet",
-			"--enable=staticcheck",
-			"--enable=errcheck",
-			"--enable=gosimple"
-		],
-		"go.useLanguageServer": true,
-		"gopls": {
-			"ui.diagnostic.annotations": {
-				"bounds": true,
-				"escape": true,
-				"inline": true,
-				"nil": true
-			}
-		},
 		"files.exclude": {
 			"**/bin": true,
 			"**/.git": true
-		},
-		"powershell.cwd": "journal-server-go"
+		}
 	},
 	"extensions": {
 		"recommendations": [
