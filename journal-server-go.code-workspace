@@ -39,7 +39,7 @@
 			"**/bin": true,
 			"**/.git": true
 		},
-		"powershell.cwd": "journal-server-go",
+		"powershell.cwd": "journal-server-go"
 	},
 	"extensions": {
 		"recommendations": [
