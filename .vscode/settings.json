@@ -1,11 +1,19 @@
 {
   "[go]": {
     "editor.defaultFormatter": "golang.go",
-    "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
       "source.organizeImports": "explicit",
       "source.fixAll": "explicit"
     }
+  },
+  "[graphql]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "go.lintOnSave": "package",
   "go.lintTool": "golangci-lint",
@@ -28,6 +36,5 @@
   "files.exclude": {
     "**/bin": true,
     "**/.git": true
-  },
-  "powershell.cwd": "journal-server-go"
+  }
 }
