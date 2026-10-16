@@ -4,10 +4,7 @@
       "path": ".",
     },
     {
-      "path": "../journal-client-android",
-    },
-    {
-      "path": "../journal-client-ios",
+      "path": "../journal-client-kmp",
     },
   ],
   "settings": {
