@@ -14,6 +14,7 @@
       "**/bin": true,
       "**/.git": true,
     },
+    "sweetpad.build.xcodeWorkspacePath": "../journal-client-kmp/iosApp/iosApp.xcodeproj/project.xcworkspace",
   },
   "extensions": {
     "recommendations": ["mhutchie.git-graph", "batyan-soft.fast-tasks"],
