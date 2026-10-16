@@ -1,24 +1,24 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "../journal-client-android"
-		}
-	],
-	"settings": {
-		"editor.formatOnSave": true,
-		"go.useLanguageServer": true,
-		"files.exclude": {
-			"**/bin": true,
-			"**/.git": true
-		}
-	},
-	"extensions": {
-		"recommendations": [
-			"mhutchie.git-graph",
-			"batyan-soft.fast-tasks"
-		]
-	}
+  "folders": [
+    {
+      "path": ".",
+    },
+    {
+      "path": "../journal-client-android",
+    },
+    {
+      "path": "../journal-client-ios",
+    },
+  ],
+  "settings": {
+    "editor.formatOnSave": true,
+    "go.useLanguageServer": true,
+    "files.exclude": {
+      "**/bin": true,
+      "**/.git": true,
+    },
+  },
+  "extensions": {
+    "recommendations": ["mhutchie.git-graph", "batyan-soft.fast-tasks"],
+  },
 }
