@@ -86,6 +86,7 @@ subjectAltName = @alt_names
 DNS.1 = localhost
 DNS.2 = journal.example.com
 IP.1 = 192.168.50.2
+IP.2 = 192.168.50.150
 EOF
 
 echo "Signing server certificate with CA..."
