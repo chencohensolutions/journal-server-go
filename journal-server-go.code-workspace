@@ -15,6 +15,7 @@
       "**/.git": true,
     },
     "sweetpad.build.xcodeWorkspacePath": "../journal-client-kmp/iosApp/iosApp.xcodeproj/project.xcworkspace",
+    "sweetpad.build.scheme": "iosApp",
   },
   "extensions": {
     "recommendations": ["mhutchie.git-graph", "batyan-soft.fast-tasks"],
