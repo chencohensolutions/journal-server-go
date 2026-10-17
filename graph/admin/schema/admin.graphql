@@ -1,0 +1,34 @@
+# Admin API, served only on the loopback admin listener (admin_addr) and used by the
+# `journal-server enroll-code | devices | revoke` commands. See docs/authentication.md.
+
+scalar Time
+
+type Query {
+  "Enrolled devices, oldest first; all users when user is omitted."
+  devices(user: String): [Device!]!
+}
+
+type Mutation {
+  "Creates a one-time enrollment code for a user listed in config.json."
+  createEnrollmentCode(user: String!): EnrollmentCode!
+  "Revokes an enrolled device's certificate; the server rejects it from then on."
+  revokeDevice(serial: String!): Device!
+}
+
+type EnrollmentCode {
+  code: String!
+  user: String!
+  expiresAt: Time!
+  "public_url from config.json, if set."
+  serverUrl: String
+}
+
+type Device {
+  serial: String!
+  user: String!
+  name: String!
+  keyProtection: String!
+  registeredAt: Time!
+  expiresAt: Time!
+  revokedAt: Time
+}

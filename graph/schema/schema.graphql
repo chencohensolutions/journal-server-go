@@ -31,3 +31,75 @@ type Query {
   mediaEntities: [Media!]!
   mediaEntity(id: ID!): Media
 }
+
+# --- Authentication -----------------------------------------------------------
+# Every root field requires a client certificate unless it is marked @public.
+# See docs/authentication.md.
+
+scalar Time
+
+"Root field that clients may call without a client certificate."
+directive @public on FIELD_DEFINITION
+
+extend type Query {
+  "Which account an enrollment code belongs to. Does not use up the code."
+  enrollmentPreview(code: String!): EnrollmentPreviewResult! @public
+}
+
+type Mutation {
+  "Trades a one-time enrollment code and a certificate request for a client certificate."
+  enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
+}
+
+input EnrollDeviceInput {
+  "As shown by `journal-server enroll-code`; case, dashes and spaces are ignored."
+  code: String!
+  "Shown in `journal-server devices` so the device can be told apart and revoked."
+  deviceName: String!
+  "PKCS#10 certificate request for an EC P-256 key, base64-encoded DER."
+  csr: String!
+  keyProtection: KeyProtection!
+}
+
+"Where the device keeps its private key."
+enum KeyProtection {
+  "Android StrongBox security chip"
+  STRONGBOX
+  "Android Keystore in the trusted execution environment"
+  TEE
+  "Apple Secure Enclave"
+  SECURE_ENCLAVE
+  "Ordinary software key (emulators and simulators)"
+  SOFTWARE
+}
+
+union EnrollmentPreviewResult = EnrollmentPreview | EnrollmentRejected
+
+type EnrollmentPreview {
+  user: String!
+  expiresAt: Time!
+}
+
+union EnrollDeviceResult = EnrolledDevice | EnrollmentRejected
+
+type EnrolledDevice {
+  user: String!
+  deviceName: String!
+  "Issued client certificate, base64-encoded DER."
+  certificate: String!
+  serial: String!
+  expiresAt: Time!
+}
+
+type EnrollmentRejected {
+  reason: EnrollmentRejectedReason!
+}
+
+enum EnrollmentRejectedReason {
+  "Wrong, expired or already used code."
+  INVALID_CODE
+  "The certificate request is malformed, badly signed or not for an EC P-256 key."
+  INVALID_CSR
+  "Too many wrong codes from this address; wait a minute."
+  RATE_LIMITED
+}

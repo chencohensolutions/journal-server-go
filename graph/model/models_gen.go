@@ -2,12 +2,267 @@
 
 package model
 
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"strconv"
+	"time"
+)
+
+type EnrollDeviceResult interface {
+	IsEnrollDeviceResult()
+}
+
+type EnrollmentPreviewResult interface {
+	IsEnrollmentPreviewResult()
+}
+
+type File interface {
+	IsFile()
+	GetID() string
+	GetURL() string
+}
+
+type EnrollDeviceInput struct {
+	// As shown by `journal-server enroll-code`; case, dashes and spaces are ignored.
+	Code string `json:"code"`
+	// Shown in `journal-server devices` so the device can be told apart and revoked.
+	DeviceName string `json:"deviceName"`
+	// PKCS#10 certificate request for an EC P-256 key, base64-encoded DER.
+	Csr           string        `json:"csr"`
+	KeyProtection KeyProtection `json:"keyProtection"`
+}
+
+type EnrolledDevice struct {
+	User       string `json:"user"`
+	DeviceName string `json:"deviceName"`
+	// Issued client certificate, base64-encoded DER.
+	Certificate string    `json:"certificate"`
+	Serial      string    `json:"serial"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+func (EnrolledDevice) IsEnrollDeviceResult() {}
+
+type EnrollmentPreview struct {
+	User      string    `json:"user"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (EnrollmentPreview) IsEnrollmentPreviewResult() {}
+
+type EnrollmentRejected struct {
+	Reason EnrollmentRejectedReason `json:"reason"`
+}
+
+func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
+
+func (EnrollmentRejected) IsEnrollDeviceResult() {}
+
 type Image struct {
 	ID          string  `json:"id"`
-	Title       string  `json:"title"`
 	URL         string  `json:"url"`
+	Title       string  `json:"title"`
 	Description *string `json:"description,omitempty"`
 }
 
+type Media struct {
+	ID            string    `json:"id"`
+	URL           string    `json:"url"`
+	MediaType     MediaType `json:"mediaType"`
+	Title         string    `json:"title"`
+	Description   *string   `json:"description,omitempty"`
+	MediaEntities []*Media  `json:"mediaEntities,omitempty"`
+}
+
+func (Media) IsFile()             {}
+func (this Media) GetID() string  { return this.ID }
+func (this Media) GetURL() string { return this.URL }
+
+type Mutation struct {
+}
+
 type Query struct {
+}
+
+type EnrollmentRejectedReason string
+
+const (
+	// Wrong, expired or already used code.
+	EnrollmentRejectedReasonInvalidCode EnrollmentRejectedReason = "INVALID_CODE"
+	// The certificate request is malformed, badly signed or not for an EC P-256 key.
+	EnrollmentRejectedReasonInvalidCsr EnrollmentRejectedReason = "INVALID_CSR"
+	// Too many wrong codes from this address; wait a minute.
+	EnrollmentRejectedReasonRateLimited EnrollmentRejectedReason = "RATE_LIMITED"
+)
+
+var AllEnrollmentRejectedReason = []EnrollmentRejectedReason{
+	EnrollmentRejectedReasonInvalidCode,
+	EnrollmentRejectedReasonInvalidCsr,
+	EnrollmentRejectedReasonRateLimited,
+}
+
+func (e EnrollmentRejectedReason) IsValid() bool {
+	switch e {
+	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited:
+		return true
+	}
+	return false
+}
+
+func (e EnrollmentRejectedReason) String() string {
+	return string(e)
+}
+
+func (e *EnrollmentRejectedReason) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = EnrollmentRejectedReason(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid EnrollmentRejectedReason", str)
+	}
+	return nil
+}
+
+func (e EnrollmentRejectedReason) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *EnrollmentRejectedReason) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e EnrollmentRejectedReason) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// Where the device keeps its private key.
+type KeyProtection string
+
+const (
+	// Android StrongBox security chip
+	KeyProtectionStrongbox KeyProtection = "STRONGBOX"
+	// Android Keystore in the trusted execution environment
+	KeyProtectionTee KeyProtection = "TEE"
+	// Apple Secure Enclave
+	KeyProtectionSecureEnclave KeyProtection = "SECURE_ENCLAVE"
+	// Ordinary software key (emulators and simulators)
+	KeyProtectionSoftware KeyProtection = "SOFTWARE"
+)
+
+var AllKeyProtection = []KeyProtection{
+	KeyProtectionStrongbox,
+	KeyProtectionTee,
+	KeyProtectionSecureEnclave,
+	KeyProtectionSoftware,
+}
+
+func (e KeyProtection) IsValid() bool {
+	switch e {
+	case KeyProtectionStrongbox, KeyProtectionTee, KeyProtectionSecureEnclave, KeyProtectionSoftware:
+		return true
+	}
+	return false
+}
+
+func (e KeyProtection) String() string {
+	return string(e)
+}
+
+func (e *KeyProtection) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = KeyProtection(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid KeyProtection", str)
+	}
+	return nil
+}
+
+func (e KeyProtection) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *KeyProtection) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e KeyProtection) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type MediaType string
+
+const (
+	MediaTypeImage MediaType = "IMAGE"
+	MediaTypeVideo MediaType = "VIDEO"
+	MediaTypeAudio MediaType = "AUDIO"
+)
+
+var AllMediaType = []MediaType{
+	MediaTypeImage,
+	MediaTypeVideo,
+	MediaTypeAudio,
+}
+
+func (e MediaType) IsValid() bool {
+	switch e {
+	case MediaTypeImage, MediaTypeVideo, MediaTypeAudio:
+		return true
+	}
+	return false
+}
+
+func (e MediaType) String() string {
+	return string(e)
+}
+
+func (e *MediaType) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = MediaType(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid MediaType", str)
+	}
+	return nil
+}
+
+func (e MediaType) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *MediaType) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e MediaType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
 }

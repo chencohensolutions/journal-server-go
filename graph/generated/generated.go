@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
@@ -28,13 +29,32 @@ func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 type Config = graphql.Config[ResolverRoot, DirectiveRoot, ComplexityRoot]
 
 type ResolverRoot interface {
+	Mutation() MutationResolver
 	Query() QueryResolver
 }
 
 type DirectiveRoot struct {
+	Public func(ctx context.Context, obj any, next graphql.Resolver) (res any, err error)
 }
 
 type ComplexityRoot struct {
+	EnrolledDevice struct {
+		Certificate func(childComplexity int) int
+		DeviceName  func(childComplexity int) int
+		ExpiresAt   func(childComplexity int) int
+		Serial      func(childComplexity int) int
+		User        func(childComplexity int) int
+	}
+
+	EnrollmentPreview struct {
+		ExpiresAt func(childComplexity int) int
+		User      func(childComplexity int) int
+	}
+
+	EnrollmentRejected struct {
+		Reason func(childComplexity int) int
+	}
+
 	Image struct {
 		Description func(childComplexity int) int
 		ID          func(childComplexity int) int
@@ -42,15 +62,37 @@ type ComplexityRoot struct {
 		URL         func(childComplexity int) int
 	}
 
+	Media struct {
+		Description   func(childComplexity int) int
+		ID            func(childComplexity int) int
+		MediaEntities func(childComplexity int) int
+		MediaType     func(childComplexity int) int
+		Title         func(childComplexity int) int
+		URL           func(childComplexity int) int
+	}
+
+	Mutation struct {
+		EnrollDevice func(childComplexity int, input model.EnrollDeviceInput) int
+	}
+
 	Query struct {
-		Image  func(childComplexity int, id string) int
-		Images func(childComplexity int) int
+		EnrollmentPreview func(childComplexity int, code string) int
+		Image             func(childComplexity int, id string) int
+		Images            func(childComplexity int) int
+		MediaEntities     func(childComplexity int) int
+		MediaEntity       func(childComplexity int, id string) int
 	}
 }
 
+type MutationResolver interface {
+	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
+}
 type QueryResolver interface {
 	Images(ctx context.Context) ([]*model.Image, error)
 	Image(ctx context.Context, id string) (*model.Image, error)
+	MediaEntities(ctx context.Context) ([]*model.Media, error)
+	MediaEntity(ctx context.Context, id string) (*model.Media, error)
+	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -66,6 +108,57 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "EnrolledDevice.certificate":
+		if e.ComplexityRoot.EnrolledDevice.Certificate == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrolledDevice.Certificate(childComplexity), true
+	case "EnrolledDevice.deviceName":
+		if e.ComplexityRoot.EnrolledDevice.DeviceName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrolledDevice.DeviceName(childComplexity), true
+	case "EnrolledDevice.expiresAt":
+		if e.ComplexityRoot.EnrolledDevice.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrolledDevice.ExpiresAt(childComplexity), true
+	case "EnrolledDevice.serial":
+		if e.ComplexityRoot.EnrolledDevice.Serial == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrolledDevice.Serial(childComplexity), true
+	case "EnrolledDevice.user":
+		if e.ComplexityRoot.EnrolledDevice.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrolledDevice.User(childComplexity), true
+
+	case "EnrollmentPreview.expiresAt":
+		if e.ComplexityRoot.EnrollmentPreview.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrollmentPreview.ExpiresAt(childComplexity), true
+	case "EnrollmentPreview.user":
+		if e.ComplexityRoot.EnrollmentPreview.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrollmentPreview.User(childComplexity), true
+
+	case "EnrollmentRejected.reason":
+		if e.ComplexityRoot.EnrollmentRejected.Reason == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrollmentRejected.Reason(childComplexity), true
 
 	case "Image.description":
 		if e.ComplexityRoot.Image.Description == nil {
@@ -92,6 +185,66 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Image.URL(childComplexity), true
 
+	case "Media.description":
+		if e.ComplexityRoot.Media.Description == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Description(childComplexity), true
+	case "Media.id":
+		if e.ComplexityRoot.Media.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.ID(childComplexity), true
+	case "Media.mediaEntities":
+		if e.ComplexityRoot.Media.MediaEntities == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.MediaEntities(childComplexity), true
+	case "Media.mediaType":
+		if e.ComplexityRoot.Media.MediaType == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.MediaType(childComplexity), true
+	case "Media.title":
+		if e.ComplexityRoot.Media.Title == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Title(childComplexity), true
+	case "Media.url":
+		if e.ComplexityRoot.Media.URL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.URL(childComplexity), true
+
+	case "Mutation.enrollDevice":
+		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_enrollDevice_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.EnrollDevice(childComplexity, args["input"].(model.EnrollDeviceInput)), true
+
+	case "Query.enrollmentPreview":
+		if e.ComplexityRoot.Query.EnrollmentPreview == nil {
+			break
+		}
+
+		args, err := ec.field_Query_enrollmentPreview_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.EnrollmentPreview(childComplexity, args["code"].(string)), true
 	case "Query.image":
 		if e.ComplexityRoot.Query.Image == nil {
 			break
@@ -110,6 +263,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Query.Images(childComplexity), true
 
+	case "Query.mediaEntities":
+		if e.ComplexityRoot.Query.MediaEntities == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.MediaEntities(childComplexity), true
+	case "Query.mediaEntity":
+		if e.ComplexityRoot.Query.MediaEntity == nil {
+			break
+		}
+
+		args, err := ec.field_Query_mediaEntity_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.MediaEntity(childComplexity, args["id"].(string)), true
+
 	}
 	return 0, false
 }
@@ -117,7 +288,9 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
-	inputUnmarshalMap := graphql.BuildUnmarshalerMap()
+	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputEnrollDeviceInput,
+	)
 	first := true
 
 	switch opCtx.Operation.Operation {
@@ -151,6 +324,21 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 
 			return &response
 		}
+	case ast.Mutation:
+		return func(ctx context.Context) *graphql.Response {
+			if !first {
+				return nil
+			}
+			first = false
+			ctx = graphql.WithUnmarshalerMap(ctx, inputUnmarshalMap)
+			data := ec._Mutation(ctx, opCtx.Operation.SelectionSet)
+			var buf bytes.Buffer
+			data.MarshalGQL(&buf)
+
+			return &graphql.Response{
+				Data: buf.Bytes(),
+			}
+		}
 
 	default:
 		return graphql.OneShot(graphql.ErrorResponse(ctx, "unsupported GraphQL operation"))
@@ -177,17 +365,112 @@ func newExecutionContext(
 }
 
 var sources = []*ast.Source{
-	{Name: "../schema/schema.graphql", Input: `type Image {
+	{Name: "../schema/schema.graphql", Input: `enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+}
+
+interface File {
   id: ID!
-  title: String!
   url: String!
+}
+
+type Image {
+  id: ID!
+  url: String!
+  title: String!
   description: String
+}
+
+type Media implements File {
+  id: ID!
+  url: String!
+  mediaType: MediaType!
+  title: String!
+  description: String
+  mediaEntities: [Media!]
 }
 
 type Query {
   images: [Image!]!
   image(id: ID!): Image
-}`, BuiltIn: false},
+  mediaEntities: [Media!]!
+  mediaEntity(id: ID!): Media
+}
+
+# --- Authentication -----------------------------------------------------------
+# Every root field requires a client certificate unless it is marked @public.
+# See docs/authentication.md.
+
+scalar Time
+
+"Root field that clients may call without a client certificate."
+directive @public on FIELD_DEFINITION
+
+extend type Query {
+  "Which account an enrollment code belongs to. Does not use up the code."
+  enrollmentPreview(code: String!): EnrollmentPreviewResult! @public
+}
+
+type Mutation {
+  "Trades a one-time enrollment code and a certificate request for a client certificate."
+  enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
+}
+
+input EnrollDeviceInput {
+  "As shown by ` + "`" + `journal-server enroll-code` + "`" + `; case, dashes and spaces are ignored."
+  code: String!
+  "Shown in ` + "`" + `journal-server devices` + "`" + ` so the device can be told apart and revoked."
+  deviceName: String!
+  "PKCS#10 certificate request for an EC P-256 key, base64-encoded DER."
+  csr: String!
+  keyProtection: KeyProtection!
+}
+
+"Where the device keeps its private key."
+enum KeyProtection {
+  "Android StrongBox security chip"
+  STRONGBOX
+  "Android Keystore in the trusted execution environment"
+  TEE
+  "Apple Secure Enclave"
+  SECURE_ENCLAVE
+  "Ordinary software key (emulators and simulators)"
+  SOFTWARE
+}
+
+union EnrollmentPreviewResult = EnrollmentPreview | EnrollmentRejected
+
+type EnrollmentPreview {
+  user: String!
+  expiresAt: Time!
+}
+
+union EnrollDeviceResult = EnrolledDevice | EnrollmentRejected
+
+type EnrolledDevice {
+  user: String!
+  deviceName: String!
+  "Issued client certificate, base64-encoded DER."
+  certificate: String!
+  serial: String!
+  expiresAt: Time!
+}
+
+type EnrollmentRejected {
+  reason: EnrollmentRejectedReason!
+}
+
+enum EnrollmentRejectedReason {
+  "Wrong, expired or already used code."
+  INVALID_CODE
+  "The certificate request is malformed, badly signed or not for an EC P-256 key."
+  INVALID_CSR
+  "Too many wrong codes from this address; wait a minute."
+  RATE_LIMITED
+}
+`, BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
@@ -199,14 +482,32 @@ func (ec *executionContext) childFields_Image(ctx context.Context, field graphql
 	switch field.Name {
 	case "id":
 		return ec.fieldContext_Image_id(ctx, field)
-	case "title":
-		return ec.fieldContext_Image_title(ctx, field)
 	case "url":
 		return ec.fieldContext_Image_url(ctx, field)
+	case "title":
+		return ec.fieldContext_Image_title(ctx, field)
 	case "description":
 		return ec.fieldContext_Image_description(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Image", field.Name)
+}
+
+func (ec *executionContext) childFields_Media(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_Media_id(ctx, field)
+	case "url":
+		return ec.fieldContext_Media_url(ctx, field)
+	case "mediaType":
+		return ec.fieldContext_Media_mediaType(ctx, field)
+	case "title":
+		return ec.fieldContext_Media_title(ctx, field)
+	case "description":
+		return ec.fieldContext_Media_description(ctx, field)
+	case "mediaEntities":
+		return ec.fieldContext_Media_mediaEntities(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
 }
 
 func (ec *executionContext) childFields___Directive(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -325,6 +626,20 @@ func (ec *executionContext) childFields___Type(ctx context.Context, field graphq
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Mutation_enrollDevice_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (model.EnrollDeviceInput, error) {
+			return ec.unmarshalNEnrollDeviceInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -339,7 +654,35 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_enrollmentPreview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "code",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["code"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_image_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_mediaEntity_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id",
@@ -417,6 +760,190 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 
 // region    **************************** field.gotpl *****************************
 
+func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrolledDevice_user(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrolledDevice_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrolledDevice", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EnrolledDevice_deviceName(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrolledDevice_deviceName(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DeviceName, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrolledDevice_deviceName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrolledDevice", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EnrolledDevice_certificate(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrolledDevice_certificate(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Certificate, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrolledDevice_certificate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrolledDevice", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EnrolledDevice_serial(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrolledDevice_serial(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Serial, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrolledDevice_serial(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrolledDevice", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EnrolledDevice_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrolledDevice_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrolledDevice_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrolledDevice", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _EnrollmentPreview_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrollmentPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrollmentPreview_user(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrollmentPreview_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrollmentPreview", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EnrollmentPreview_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.EnrollmentPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrollmentPreview_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrollmentPreview_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrollmentPreview", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _EnrollmentRejected_reason(ctx context.Context, field graphql.CollectedField, obj *model.EnrollmentRejected) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrollmentRejected_reason(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Reason, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.EnrollmentRejectedReason) graphql.Marshaler {
+			return ec.marshalNEnrollmentRejectedReason2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollmentRejectedReason(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EnrollmentRejected_reason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrollmentRejected", field, false, false, errors.New("field of type EnrollmentRejectedReason does not have child fields"))
+}
+
 func (ec *executionContext) _Image_id(ctx context.Context, field graphql.CollectedField, obj *model.Image) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -438,29 +965,6 @@ func (ec *executionContext) _Image_id(ctx context.Context, field graphql.Collect
 }
 func (ec *executionContext) fieldContext_Image_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Image", field, false, false, errors.New("field of type ID does not have child fields"))
-}
-
-func (ec *executionContext) _Image_title(ctx context.Context, field graphql.CollectedField, obj *model.Image) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_Image_title(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			return obj.Title, nil
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
-			return ec.marshalNString2string(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_Image_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Image", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Image_url(ctx context.Context, field graphql.CollectedField, obj *model.Image) (ret graphql.Marshaler) {
@@ -486,6 +990,29 @@ func (ec *executionContext) fieldContext_Image_url(_ context.Context, field grap
 	return graphql.NewScalarFieldContext("Image", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _Image_title(ctx context.Context, field graphql.CollectedField, obj *model.Image) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Image_title(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Title, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Image_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Image", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _Image_description(ctx context.Context, field graphql.CollectedField, obj *model.Image) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -507,6 +1034,210 @@ func (ec *executionContext) _Image_description(ctx context.Context, field graphq
 }
 func (ec *executionContext) fieldContext_Image_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Image", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_id(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNID2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _Media_url(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_url(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_mediaType(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_mediaType(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MediaType, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.MediaType) graphql.Marshaler {
+			return ec.marshalNMediaType2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaType(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_mediaType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type MediaType does not have child fields"))
+}
+
+func (ec *executionContext) _Media_title(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_title(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Title, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_description(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_description(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Description, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_mediaEntities(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_mediaEntities(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MediaEntities, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+			return ec.marshalOMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_mediaEntities(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_enrollDevice(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_enrollDevice(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().EnrollDevice(ctx, fc.Args["input"].(model.EnrollDeviceInput))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Public == nil {
+					var zeroVal model.EnrollDeviceResult
+					return zeroVal, errors.New("directive public is not implemented")
+				}
+				return ec.Directives.Public(ctx, nil, directive0)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v model.EnrollDeviceResult) graphql.Marshaler {
+			return ec.marshalNEnrollDeviceResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_enrollDevice(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EnrollDeviceResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_enrollDevice_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Query_images(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -579,6 +1310,139 @@ func (ec *executionContext) fieldContext_Query_image(ctx context.Context, field 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_image_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_mediaEntities(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_mediaEntities(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().MediaEntities(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_mediaEntities(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_mediaEntity(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_mediaEntity(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().MediaEntity(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalOMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Query_mediaEntity(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_mediaEntity_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_enrollmentPreview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_enrollmentPreview(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().EnrollmentPreview(ctx, fc.Args["code"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Public == nil {
+					var zeroVal model.EnrollmentPreviewResult
+					return zeroVal, errors.New("directive public is not implemented")
+				}
+				return ec.Directives.Public(ctx, nil, directive0)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v model.EnrollmentPreviewResult) graphql.Marshaler {
+			return ec.marshalNEnrollmentPreviewResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollmentPreviewResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_enrollmentPreview(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EnrollmentPreviewResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_enrollmentPreview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -1720,13 +2584,280 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context, obj any) (model.EnrollDeviceInput, error) {
+	var it model.EnrollDeviceInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"code", "deviceName", "csr", "keyProtection"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "code":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("code"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Code = data
+		case "deviceName":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("deviceName"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.DeviceName = data
+		case "csr":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("csr"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Csr = data
+		case "keyProtection":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("keyProtection"))
+			data, err := ec.unmarshalNKeyProtection2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.KeyProtection = data
+		}
+	}
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
 
+func (ec *executionContext) _EnrollDeviceResult(ctx context.Context, sel ast.SelectionSet, obj model.EnrollDeviceResult) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.EnrollmentRejected:
+		return ec._EnrollmentRejected(ctx, sel, &obj)
+	case *model.EnrollmentRejected:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._EnrollmentRejected(ctx, sel, obj)
+	case model.EnrolledDevice:
+		return ec._EnrolledDevice(ctx, sel, &obj)
+	case *model.EnrolledDevice:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._EnrolledDevice(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of EnrollDeviceResult must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
+func (ec *executionContext) _EnrollmentPreviewResult(ctx context.Context, sel ast.SelectionSet, obj model.EnrollmentPreviewResult) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.EnrollmentRejected:
+		return ec._EnrollmentRejected(ctx, sel, &obj)
+	case *model.EnrollmentRejected:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._EnrollmentRejected(ctx, sel, obj)
+	case model.EnrollmentPreview:
+		return ec._EnrollmentPreview(ctx, sel, &obj)
+	case *model.EnrollmentPreview:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._EnrollmentPreview(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of EnrollmentPreviewResult must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
+func (ec *executionContext) _File(ctx context.Context, sel ast.SelectionSet, obj model.File) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.Media:
+		return ec._Media(ctx, sel, &obj)
+	case *model.Media:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Media(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of File must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
 // endregion ************************** interface.gotpl ***************************
 
 // region    **************************** object.gotpl ****************************
+
+var enrolledDeviceImplementors = []string{"EnrolledDevice", "EnrollDeviceResult"}
+
+func (ec *executionContext) _EnrolledDevice(ctx context.Context, sel ast.SelectionSet, obj *model.EnrolledDevice) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, enrolledDeviceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EnrolledDevice")
+		case "user":
+			out.Values[i] = ec._EnrolledDevice_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deviceName":
+			out.Values[i] = ec._EnrolledDevice_deviceName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "certificate":
+			out.Values[i] = ec._EnrolledDevice_certificate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "serial":
+			out.Values[i] = ec._EnrolledDevice_serial(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._EnrolledDevice_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var enrollmentPreviewImplementors = []string{"EnrollmentPreview", "EnrollmentPreviewResult"}
+
+func (ec *executionContext) _EnrollmentPreview(ctx context.Context, sel ast.SelectionSet, obj *model.EnrollmentPreview) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, enrollmentPreviewImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EnrollmentPreview")
+		case "user":
+			out.Values[i] = ec._EnrollmentPreview_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._EnrollmentPreview_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var enrollmentRejectedImplementors = []string{"EnrollmentRejected", "EnrollmentPreviewResult", "EnrollDeviceResult"}
+
+func (ec *executionContext) _EnrollmentRejected(ctx context.Context, sel ast.SelectionSet, obj *model.EnrollmentRejected) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, enrollmentRejectedImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EnrollmentRejected")
+		case "reason":
+			out.Values[i] = ec._EnrollmentRejected_reason(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
 
 var imageImplementors = []string{"Image"}
 
@@ -1744,18 +2875,125 @@ func (ec *executionContext) _Image(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "title":
-			out.Values[i] = ec._Image_title(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
 		case "url":
 			out.Values[i] = ec._Image_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "title":
+			out.Values[i] = ec._Image_title(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "description":
 			out.Values[i] = ec._Image_description(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mediaImplementors = []string{"Media", "File"}
+
+func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, obj *model.Media) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mediaImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Media")
+		case "id":
+			out.Values[i] = ec._Media_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._Media_url(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "mediaType":
+			out.Values[i] = ec._Media_mediaType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "title":
+			out.Values[i] = ec._Media_title(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "description":
+			out.Values[i] = ec._Media_description(ctx, field, obj)
+		case "mediaEntities":
+			out.Values[i] = ec._Media_mediaEntities(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mutationImplementors = []string{"Mutation"}
+
+func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mutationImplementors)
+	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
+		Object: "Mutation",
+	})
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		innerCtx := graphql.WithRootFieldContext(ctx, &graphql.RootFieldContext{
+			Object: field.Name,
+			Field:  field,
+		})
+
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Mutation")
+		case "enrollDevice":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_enrollDevice(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -1830,6 +3068,69 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_image(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "mediaEntities":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_mediaEntities(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "mediaEntity":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_mediaEntity(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "enrollmentPreview":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_enrollmentPreview(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -2221,6 +3522,41 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
+func (ec *executionContext) unmarshalNEnrollDeviceInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx context.Context, v any) (model.EnrollDeviceInput, error) {
+	res, err := ec.unmarshalInputEnrollDeviceInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEnrollDeviceResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceResult(ctx context.Context, sel ast.SelectionSet, v model.EnrollDeviceResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EnrollDeviceResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNEnrollmentPreviewResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollmentPreviewResult(ctx context.Context, sel ast.SelectionSet, v model.EnrollmentPreviewResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._EnrollmentPreviewResult(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNEnrollmentRejectedReason2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollmentRejectedReason(ctx context.Context, v any) (model.EnrollmentRejectedReason, error) {
+	var res model.EnrollmentRejectedReason
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNEnrollmentRejectedReason2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollmentRejectedReason(ctx context.Context, sel ast.SelectionSet, v model.EnrollmentRejectedReason) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) unmarshalNID2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalID(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -2263,6 +3599,52 @@ func (ec *executionContext) marshalNImage2ᚖgithubᚗcomᚋjournalᚋserverᚑg
 	return ec._Image(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNKeyProtection2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx context.Context, v any) (model.KeyProtection, error) {
+	var res model.KeyProtection
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNKeyProtection2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx context.Context, sel ast.SelectionSet, v model.KeyProtection) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx context.Context, sel ast.SelectionSet, v *model.Media) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Media(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNMediaType2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaType(ctx context.Context, v any) (model.MediaType, error) {
+	var res model.MediaType
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMediaType2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaType(ctx context.Context, sel ast.SelectionSet, v model.MediaType) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalString(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -2271,6 +3653,22 @@ func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) 
 func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.SelectionSet, v string) graphql.Marshaler {
 	_ = sel
 	res := graphql.MarshalString(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
+func (ec *executionContext) unmarshalNTime2timeᚐTime(ctx context.Context, v any) (time.Time, error) {
+	res, err := graphql.UnmarshalTime(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNTime2timeᚐTime(ctx context.Context, sel ast.SelectionSet, v time.Time) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalTime(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -2455,6 +3853,32 @@ func (ec *executionContext) marshalOImage2ᚖgithubᚗcomᚋjournalᚋserverᚑg
 		return graphql.Null
 	}
 	return ec._Image(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalOMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx context.Context, sel ast.SelectionSet, v *model.Media) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Media(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOString2ᚖstring(ctx context.Context, v any) (*string, error) {
