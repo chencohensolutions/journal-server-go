@@ -56,8 +56,11 @@ Created by `journal-server enroll-code <user>` (`enroll/codes.go`):
   with it, and the user must exist in `config.json`.
 - Input is normalized before lookup: case, dashes and spaces are ignored, `O` reads as `0`, and
   `I`/`L` read as `1`.
-- Stored **in memory only**, as the SHA-256 of the normalized code. Restarting the server drops all
-  pending codes.
+- Stored **in memory only**, as the SHA-256 of the normalized code. Restarting the server (including
+  restarting the debugger) drops all pending codes, so create the code while the server is running
+  and use it before the next restart.
+- The command talks to the running server, so run it from the server directory (it reads
+  `config.json` and `admin.token` there), e.g. `go run . enroll-code hen` next to a debug session.
 - `enrollmentPreview` looks a code up without using it. `enrollDevice` uses it up atomically (lookup
   and delete under one lock), so two racing requests cannot both use it. A malformed certificate
   request is rejected *before* the code is used, so a client bug does not burn the code.
@@ -90,6 +93,10 @@ hen    iPhone        SECURE_ENCLAVE   2026-09-02   2027-09-02   active   9c3e52â
 
 $ journal-server revoke 9c3e52â€¦
 ```
+
+A user can have any number of devices. Each one enrolls with its own code (codes are single use)
+and gets its own key and certificate, all with `CN = <user>`, so they share the same data. Revoking
+one device does not affect the others.
 
 A revoked serial is rejected with `401` on the next connection. Certificates that never went
 through enrollment (made with `scripts/generate-user-cert.ps1`) are not in the registry and cannot
@@ -125,9 +132,17 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
 - Enrolled identities use the alias `journal-device-<timestamp>`. A successful enrollment deletes the
   previously enrolled key. A failed or cancelled one deletes the key it created.
 - Before switching to the new identity, the wizard checks it by loading the images list.
+- The app opens the wizard while it has no identity, and the home screen afterwards. The home screen
+  connects with the identity on every visit and shows the result (connected, rejected with `401`,
+  or another failure).
+- The code field accepts pasted text: it keeps the first code-shaped word (e.g. from a whole
+  `Code  K7QM-4XPD` line) and drops anything that isn't a letter, digit or dash.
 - Enrollment requests go out without a client certificate, but still verify the server against the
-  bundled `SERVER_CA_PEM` (`tls/ServerCa.kt`). **Keep that file in sync with `certs/ca.pem`.**
-- Importing a certificate file (Android system KeyChain picker, iOS `.p12` import) still works.
+  CA bundled in the app (`sharedLogic/src/commonMain/certs/server-ca.pem`, compiled into
+  `SERVER_CA_PEM`). **Keep it in sync with `certs/ca.pem`:** run
+  `./gradlew :sharedLogic:syncServerCa` in the client repo and ship a new build whenever the CA changes.
+- The app has no screen for certificate files any more; enrollment is the only way to get an identity.
+  The `.p12` import and Android KeyChain code paths still exist in `sharedLogic` but are unused.
 
 ## Configuration
 
@@ -148,6 +163,41 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
 `client_ca_key` is the most sensitive file on the server: anyone holding it can mint certificates
 for any user. It now has to sit next to the running server, so keep it readable only by the account
 that runs the server.
+
+## CA and server certificate
+
+One CA (`certs/ca.pem` + `certs/ca-key.pem`) signs both the server's HTTPS certificate and the
+enrolled devices' certificates. Generate them with the scripts in `scripts/` (PowerShell on Windows,
+Bash on macOS/Linux):
+
+```bash
+scripts/generate-ca.sh            # .ps1 on Windows; the Bash version needs --force to replace a CA
+scripts/generate-server-cert.sh   # .ps1 on Windows
+```
+
+What iOS insists on (Android is more lenient, but follow the same rules):
+
+- **The CA must be an X.509 v3 certificate with `basicConstraints = CA:TRUE`.** A v1 certificate
+  without extensions (what `openssl req -x509` produces with some `openssl.cnf` files) is not
+  accepted as a trust anchor: the app's TLS handshake fails with `remote error: tls: unknown
+  certificate` in the server log. The scripts now add the extensions explicitly and check the result.
+- **The server certificate needs `extendedKeyUsage = serverAuth` and a `subjectAltName` listing every
+  address devices use.** The scripts issue it for `localhost`, `journal.example.com` and
+  `192.168.50.2`; edit `alt_names` in the script to add more. A device connecting by an address that
+  is not listed rejects the server, e.g. `127.0.0.1` (only the name `localhost` is listed). From the
+  Android emulator, run `adb reverse tcp:8080 tcp:8080` and use `localhost:8080`.
+
+The Bash scripts write private keys with mode `0600`.
+
+**Replacing the CA** invalidates everything it signed: the server certificate, every enrolled
+device and every `.p12`. Afterwards:
+
+1. Issue a new server certificate with the new CA and restart the server.
+2. In the client repo, run `./gradlew :sharedLogic:syncServerCa` and reinstall the apps. An app built
+   with the old CA rejects the server (`unknown certificate` in the server log).
+3. Enroll every device again.
+
+Renewing only the server certificate (same CA) needs none of this; just restart the server.
 
 ## Threat notes
 
