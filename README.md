@@ -64,6 +64,10 @@ cannot enroll.
    ```powershell
    .\scripts\generate-ca.ps1
    ```
+   or on macOS/Linux:
+   ```bash
+   scripts/generate-ca.sh        # --force to replace an existing CA
+   ```
 
 2. Generate a new user certificate:
    ```powershell

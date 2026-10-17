@@ -2,6 +2,7 @@
   "tls_cert": "certs/server.pem",
   "tls_key": "certs/server-key.pem",
   "client_ca": "certs/ca.pem",
+  "client_ca_key": "certs/ca-key.pem",
   "image_folder": "D:\\Archive\\Hen\\phone DCIM",
   "users": [
     {

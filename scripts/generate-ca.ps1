@@ -84,9 +84,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Generating CA certificate..."
-& "$OpenSSLBinPath" req -x509 -new -nodes -key "$KeyOutPath" -sha256 -days $Days -out "$CertOutPath" -subj "/CN=journal-server-ca" -config "$OpenSSLConfigPath"
+# Mark the certificate as a CA explicitly instead of relying on openssl.cnf defaults: without these
+# extensions OpenSSL may write a version 1 certificate, which iOS refuses as a trust anchor.
+& "$OpenSSLBinPath" req -x509 -new -nodes -key "$KeyOutPath" -sha256 -days $Days -out "$CertOutPath" -subj "/CN=journal-server-ca" -config "$OpenSSLConfigPath" `
+    -addext "basicConstraints=critical,CA:TRUE" `
+    -addext "keyUsage=critical,keyCertSign,cRLSign" `
+    -addext "subjectKeyIdentifier=hash"
 if ($LASTEXITCODE -ne 0) {
-    throw "OpenSSL CA certificate generation failed with exit code $LASTEXITCODE"
+    throw "OpenSSL CA certificate generation failed with exit code $LASTEXITCODE (-addext needs OpenSSL 1.1.1 or newer)"
+}
+
+$certText = & "$OpenSSLBinPath" x509 -in "$CertOutPath" -noout -text
+if (-not ($certText -match "CA:TRUE")) {
+    throw "The generated certificate $CertOutPath is not marked as a CA (CA:TRUE missing). Use OpenSSL 1.1.1 or newer."
 }
 
 Write-Host "CA certificate created: $CertOutPath"
