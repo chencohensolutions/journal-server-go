@@ -1,0 +1,54 @@
+{
+	"version": "2.0.0",
+	"inputs": [
+		{
+			"id": "phoneIp",
+			"type": "promptString",
+			"description": "Phone IP on the hotspot (from the 'adb: hotspot IP' task)"
+		}
+	],
+	"tasks": [
+		{
+			"label": "adb: devices",
+			"type": "shell",
+			"command": "adb devices -l",
+			"osx": {
+				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb devices -l"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "adb: enable TCP/IP on port 5555 (USB)",
+			"type": "shell",
+			"command": "adb -s YOUR_PHONE_SERIAL tcpip 5555",
+			"osx": {
+				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb -s YOUR_PHONE_SERIAL tcpip 5555"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "adb: hotspot IP (USB)",
+			"type": "shell",
+			"command": "adb -s YOUR_PHONE_SERIAL shell ip -4 addr show swlan0",
+			"osx": {
+				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb -s YOUR_PHONE_SERIAL shell ip -4 addr show swlan0"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "adb: connect over hotspot",
+			"type": "shell",
+			"command": "adb disconnect; adb connect ${input:phoneIp}:5555 && adb devices -l",
+			"osx": {
+				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb disconnect; ${env:HOME}/Library/Android/sdk/platform-tools/adb connect ${input:phoneIp}:5555 && ${env:HOME}/Library/Android/sdk/platform-tools/adb devices -l"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "adb: connect over hotspot (auto)",
+			"type": "shell",
+			"command": "${workspaceFolder}/scripts/adb-hotspot.sh",
+			"problemMatcher": []
+		}
+	]
+}
