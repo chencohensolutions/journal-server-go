@@ -92,3 +92,36 @@ func (r *queryResolver) Media(ctx context.Context, sha256 string) (*model.Media,
 	}
 	return toMedia(store, item), nil
 }
+
+// Changes is the resolver for the changes field.
+func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error) {
+	store, err := r.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	n := 2000
+	if limit != nil {
+		n = *limit
+	}
+	if n < 1 || n > maxChangesPerPage {
+		return nil, fmt.Errorf("limit must be 1–%d", maxChangesPerPage)
+	}
+	cursor := ""
+	if since != nil {
+		cursor = *since
+	}
+	items, next, hasMore, err := store.Changes(cursor, n)
+	if err != nil {
+		return nil, err
+	}
+	versions, paired := store.RelatedIndex()
+	changes := make([]*model.Change, len(items))
+	for i, item := range items {
+		changes[i] = &model.Change{
+			Kind:  model.ChangeKindMedia,
+			Path:  "media/" + item.Sha256(),
+			Media: toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()]),
+		}
+	}
+	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: hasMore}, nil
+}

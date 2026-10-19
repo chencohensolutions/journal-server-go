@@ -144,3 +144,45 @@ func OriginalHandler(lookup StoreLookup) http.Handler {
 		http.ServeContent(w, r, path.Base(item.Path), item.Sidecar.Facts.UploadedAt, file)
 	})
 }
+
+// PreviewHandler serves GET /media/{sha256}/preview?w=&h=&fit=&crop=&fmt=: a photo scaled down once
+// from the original to exactly the pixels the client will draw (see PreviewSpec). Videos get their
+// poster frame later; for now they answer 501.
+func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		store := lookup(r)
+		if store == nil {
+			http.Error(w, "no data folder is configured for this user", http.StatusNotFound)
+			return
+		}
+		sha := r.PathValue("sha256")
+		item, ok := store.Get(sha)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		spec, err := ParsePreviewSpec(r.URL.Query())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		if item.Sidecar.Facts.Kind == KindVideo {
+			http.Error(w, "video posters are not made yet", http.StatusNotImplemented)
+			return
+		}
+		path, err := previews.Get(r.Context(), store, item, spec)
+		switch {
+		case errors.Is(err, ErrPreviewsUnavailable):
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		case err != nil:
+			log.Printf("media: preview of %s: %v", item.Path, err)
+			http.Error(w, "could not make the preview", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", spec.ContentType())
+		w.Header().Set("ETag", `"`+sha+"-"+spec.fileName()+`"`)
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+		http.ServeFile(w, r, path)
+	})
+}

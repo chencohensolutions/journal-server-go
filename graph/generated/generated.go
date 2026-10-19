@@ -38,6 +38,19 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	Change struct {
+		Deleted func(childComplexity int) int
+		Kind    func(childComplexity int) int
+		Media   func(childComplexity int) int
+		Path    func(childComplexity int) int
+	}
+
+	ChangePage struct {
+		Changes func(childComplexity int) int
+		Cursor  func(childComplexity int) int
+		HasMore func(childComplexity int) int
+	}
+
 	EnrolledDevice struct {
 		Certificate func(childComplexity int) int
 		DeviceName  func(childComplexity int) int
@@ -98,6 +111,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		Changes           func(childComplexity int, since *string, limit *int) int
 		EnrollmentPreview func(childComplexity int, code string) int
 		Image             func(childComplexity int, id string) int
 		Images            func(childComplexity int) int
@@ -126,6 +140,7 @@ type QueryResolver interface {
 	Image(ctx context.Context, id string) (*model.Image, error)
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
+	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 }
 
@@ -142,6 +157,50 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "Change.deleted":
+		if e.ComplexityRoot.Change.Deleted == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Change.Deleted(childComplexity), true
+	case "Change.kind":
+		if e.ComplexityRoot.Change.Kind == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Change.Kind(childComplexity), true
+	case "Change.media":
+		if e.ComplexityRoot.Change.Media == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Change.Media(childComplexity), true
+	case "Change.path":
+		if e.ComplexityRoot.Change.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Change.Path(childComplexity), true
+
+	case "ChangePage.changes":
+		if e.ComplexityRoot.ChangePage.Changes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ChangePage.Changes(childComplexity), true
+	case "ChangePage.cursor":
+		if e.ComplexityRoot.ChangePage.Cursor == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ChangePage.Cursor(childComplexity), true
+	case "ChangePage.hasMore":
+		if e.ComplexityRoot.ChangePage.HasMore == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ChangePage.HasMore(childComplexity), true
 
 	case "EnrolledDevice.certificate":
 		if e.ComplexityRoot.EnrolledDevice.Certificate == nil {
@@ -371,6 +430,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Mutation.StartUpload(childComplexity, args["input"].(model.StartUploadInput)), true
 
+	case "Query.changes":
+		if e.ComplexityRoot.Query.Changes == nil {
+			break
+		}
+
+		args, err := ec.field_Query_changes_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.Changes(childComplexity, args["since"].(*string), args["limit"].(*int)), true
 	case "Query.enrollmentPreview":
 		if e.ComplexityRoot.Query.EnrollmentPreview == nil {
 			break
@@ -654,6 +724,35 @@ extend type Mutation {
   "Declares a file before its bytes are sent, or continues an upload that stopped."
   startUpload(input: StartUploadInput!): StartUploadResult!
 }
+
+# --- Change feed --------------------------------------------------------------
+# A device keeps the cursor of the last page it applied and asks for what changed since. Only media so far;
+# stories and notes will come as FILE changes.
+
+enum ChangeKind {
+  MEDIA
+}
+
+type Change {
+  kind: ChangeKind!
+  "media/<sha256> for media."
+  path: String!
+  deleted: Boolean!
+  "The new state; null when deleted."
+  media: Media
+}
+
+type ChangePage {
+  changes: [Change!]!
+  "Pass to the next call. Store it only after applying this page."
+  cursor: String!
+  hasMore: Boolean!
+}
+
+extend type Query {
+  "What changed since the cursor; without one, everything (a new device). At most 5000 per page."
+  changes(since: String, limit: Int = 2000): ChangePage!
+}
 `, BuiltIn: false},
 	{Name: "../schema/schema.graphql", Input: `"""
 A file in the user's image_folder. Kept while the app still uses ` + "`" + `images` + "`" + ` to check its connection;
@@ -749,6 +848,32 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // childFields_* functions provide shared child field context lookups.
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
+
+func (ec *executionContext) childFields_Change(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "kind":
+		return ec.fieldContext_Change_kind(ctx, field)
+	case "path":
+		return ec.fieldContext_Change_path(ctx, field)
+	case "deleted":
+		return ec.fieldContext_Change_deleted(ctx, field)
+	case "media":
+		return ec.fieldContext_Change_media(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Change", field.Name)
+}
+
+func (ec *executionContext) childFields_ChangePage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "changes":
+		return ec.fieldContext_ChangePage_changes(ctx, field)
+	case "cursor":
+		return ec.fieldContext_ChangePage_cursor(ctx, field)
+	case "hasMore":
+		return ec.fieldContext_ChangePage_hasMore(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ChangePage", field.Name)
+}
 
 func (ec *executionContext) childFields_GeoPoint(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
@@ -974,6 +1099,28 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_changes_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "since",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["since"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_enrollmentPreview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -1093,6 +1240,185 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _Change_kind(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Change_kind(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Kind, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.ChangeKind) graphql.Marshaler {
+			return ec.marshalNChangeKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeKind(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Change_kind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Change", field, false, false, errors.New("field of type ChangeKind does not have child fields"))
+}
+
+func (ec *executionContext) _Change_path(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Change_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Change_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Change", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Change_deleted(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Change_deleted(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Deleted, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Change_deleted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Change", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Change_media(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Change_media(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Media, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalOMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Change_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Change",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChangePage_changes(ctx context.Context, field graphql.CollectedField, obj *model.ChangePage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ChangePage_changes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Changes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Change) graphql.Marshaler {
+			return ec.marshalNChange2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ChangePage_changes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChangePage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Change(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChangePage_cursor(ctx context.Context, field graphql.CollectedField, obj *model.ChangePage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ChangePage_cursor(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Cursor, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ChangePage_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ChangePage", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ChangePage_hasMore(ctx context.Context, field graphql.CollectedField, obj *model.ChangePage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ChangePage_hasMore(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.HasMore, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ChangePage_hasMore(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ChangePage", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
 
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -2130,6 +2456,50 @@ func (ec *executionContext) fieldContext_Query_media(ctx context.Context, field 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_media_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_changes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_changes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().Changes(ctx, fc.Args["since"].(*string), fc.Args["limit"].(*int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.ChangePage) graphql.Marshaler {
+			return ec.marshalNChangePage2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangePage(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_changes(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ChangePage(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_changes_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -3741,6 +4111,106 @@ func (ec *executionContext) _StartUploadResult(ctx context.Context, sel ast.Sele
 
 // region    **************************** object.gotpl ****************************
 
+var changeImplementors = []string{"Change"}
+
+func (ec *executionContext) _Change(ctx context.Context, sel ast.SelectionSet, obj *model.Change) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, changeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Change")
+		case "kind":
+			out.Values[i] = ec._Change_kind(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "path":
+			out.Values[i] = ec._Change_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleted":
+			out.Values[i] = ec._Change_deleted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "media":
+			out.Values[i] = ec._Change_media(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var changePageImplementors = []string{"ChangePage"}
+
+func (ec *executionContext) _ChangePage(ctx context.Context, sel ast.SelectionSet, obj *model.ChangePage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, changePageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ChangePage")
+		case "changes":
+			out.Values[i] = ec._ChangePage_changes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._ChangePage_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hasMore":
+			out.Values[i] = ec._ChangePage_hasMore(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var enrolledDeviceImplementors = []string{"EnrolledDevice", "EnrollDeviceResult"}
 
 func (ec *executionContext) _EnrolledDevice(ctx context.Context, sel ast.SelectionSet, obj *model.EnrolledDevice) graphql.Marshaler {
@@ -4274,6 +4744,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "changes":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_changes(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "enrollmentPreview":
 			field := field
 
@@ -4769,6 +5261,56 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalNChange2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Change) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNChange2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChange(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNChange2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChange(ctx context.Context, sel ast.SelectionSet, v *model.Change) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Change(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNChangeKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeKind(ctx context.Context, v any) (model.ChangeKind, error) {
+	var res model.ChangeKind
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNChangeKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeKind(ctx context.Context, sel ast.SelectionSet, v model.ChangeKind) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNChangePage2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangePage(ctx context.Context, sel ast.SelectionSet, v model.ChangePage) graphql.Marshaler {
+	return ec._ChangePage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNChangePage2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangePage(ctx context.Context, sel ast.SelectionSet, v *model.ChangePage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ChangePage(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNEnrollDeviceInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx context.Context, v any) (model.EnrollDeviceInput, error) {

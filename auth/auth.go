@@ -31,14 +31,19 @@ type AppConfig struct {
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8081).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
-	AdminTokenFile string       `json:"admin_token_file"`
-	Users          []UserConfig `json:"users"`
+	AdminTokenFile string `json:"admin_token_file"`
+	// Path of the libvips `vips` program, used for previews; found on the PATH or in Homebrew when empty.
+	Vips string `json:"vips"`
+	// Most space the previews of one user may take before the least recently used are deleted (default 50).
+	PreviewCacheMaxGB float64      `json:"preview_cache_max_gb"`
+	Users             []UserConfig `json:"users"`
 }
 
 const (
 	DefaultDevicesFile    = "devices.json"
 	DefaultAdminAddr      = "127.0.0.1:8081"
 	DefaultAdminTokenFile = "admin.token"
+	DefaultPreviewCacheGB = 50
 )
 
 // WithDefaults fills in the optional settings.
@@ -51,6 +56,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.AdminTokenFile == "" {
 		c.AdminTokenFile = DefaultAdminTokenFile
+	}
+	if c.PreviewCacheMaxGB <= 0 {
+		c.PreviewCacheMaxGB = DefaultPreviewCacheGB
 	}
 	return c
 }

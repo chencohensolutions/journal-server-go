@@ -88,7 +88,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library))
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, newPreviews(config)))
 	server.TLS = &tls.Config{
 		ClientAuth:   tls.VerifyClientCertIfGiven,
 		ClientCAs:    pool,

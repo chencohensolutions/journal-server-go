@@ -8,11 +8,11 @@ The clients and the overall design live in `../journal-client-kmp`. **Read its
 [docs/design.md](../journal-client-kmp/docs/design.md)** before server work: it records the agreed data format
 (plain files as the truth, a portable data folder, sha256 ids, story folders named by UTC creation time) and the
 upload and sync design agreed with the owner. **Media upload is built** (package `media`, per-user `data_folder`,
-resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range): see [docs/media.md](docs/media.md). Previews,
-video posters, the change feed for stories and notes, and the story trash are not built yet.
+resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range, `GET /media/{sha256}/preview` via libvips): see
+[docs/media.md](docs/media.md). Video posters, the change feed for stories and notes, and the story trash are not
+built yet.
 
-The server will most likely run on Windows and must stay cross-platform: no cgo, Windows-safe file names (compared
-ignoring case), and image or video tools (libvips, ffmpeg) run as separate programs. Check with
-`GOOS=windows go build ./...`.
+**The server targets macOS for now** (owner, Oct 20, 2026; libvips from Homebrew). Windows comes later, so keep it
+easy: no cgo, Windows-safe file names (compared ignoring case), image/video tools run as separate programs.
 
 `.github/copilot-instructions.md` predates the KMP client (it still says "journal-client-android").

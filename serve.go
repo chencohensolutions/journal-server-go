@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -127,6 +128,36 @@ const (
 	queryWriteTimeout = 2 * time.Minute
 )
 
+// gzipped compresses responses for clients that accept it: the change feed of a large library is mostly
+// repeated field names, and shrinks about fivefold.
+func gzipped(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		zw := gzip.NewWriter(w)
+		defer zw.Close()
+		next.ServeHTTP(gzipWriter{ResponseWriter: w, writer: zw}, r)
+	})
+}
+
+type gzipWriter struct {
+	http.ResponseWriter
+	writer *gzip.Writer
+}
+
+func (g gzipWriter) Write(b []byte) (int, error) { return g.writer.Write(b) }
+
+func (g gzipWriter) WriteHeader(status int) {
+	g.ResponseWriter.Header().Del("Content-Length")
+	g.ResponseWriter.WriteHeader(status)
+}
+
+func (g gzipWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
+
 // withDeadlines bounds how long one request may take to arrive and to be answered.
 func withDeadlines(read, write time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +168,7 @@ func withDeadlines(read, write time.Duration, next http.Handler) http.Handler {
 	})
 }
 
-func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library) *http.ServeMux {
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews) *http.ServeMux {
 	mux := http.NewServeMux()
 	playgroundHandler := playground.Handler("GraphQL playground", "/query")
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +176,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 		playgroundHandler.ServeHTTP(w, r)
 	}))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		identify(config, enrollment.Registry, true, newGraphQLServer(enrollment, library))))
+		gzipped(identify(config, enrollment.Registry, true, newGraphQLServer(enrollment, library)))))
 
 	userStore := func(r *http.Request) *media.Store {
 		if user := auth.FromContext(r.Context()); user != nil {
@@ -157,6 +188,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux.Handle("PUT /upload/{sha256}", upload)
 	mux.Handle("HEAD /upload/{sha256}", upload)
 	mux.Handle("GET /media/{sha256}", identify(config, enrollment.Registry, false, media.OriginalHandler(userStore)))
+	mux.Handle("GET /media/{sha256}/preview", identify(config, enrollment.Registry, false, media.PreviewHandler(userStore, previews)))
 	mux.Handle("/images/", identify(config, enrollment.Registry, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := auth.FromContext(r.Context())
 		if user == nil {
@@ -190,6 +222,17 @@ func openLibrary(config auth.AppConfig) (*media.Library, error) {
 	return media.OpenLibrary(folders, time.Now)
 }
 
+// newPreviews finds libvips; without it the server runs, but previews answer 503.
+func newPreviews(config auth.AppConfig) *media.Previews {
+	vips, vipsheader, err := media.FindVips(config.Vips)
+	if err != nil {
+		log.Printf("Previews are off: %v (brew install vips, or set \"vips\" in config.json)", err)
+	} else {
+		log.Printf("Previews made with %s", vips)
+	}
+	return media.NewPreviews(vips, vipsheader)
+}
+
 func serve(config auth.AppConfig) {
 	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
@@ -219,9 +262,11 @@ func serve(config auth.AppConfig) {
 	if err != nil {
 		log.Fatalf("failed to open data folders: %v", err)
 	}
+	previews := newPreviews(config)
 	go func() {
 		for ; ; time.Sleep(time.Hour) {
 			library.PurgeExpiredUploads()
+			library.TrimPreviews(int64(config.PreviewCacheMaxGB * (1 << 30)))
 		}
 	}()
 
@@ -229,7 +274,7 @@ func serve(config auth.AppConfig) {
 
 	server := &http.Server{
 		Addr:      ":" + defaultPort,
-		Handler:   newMux(config, enrollment, library),
+		Handler:   newMux(config, enrollment, library, previews),
 		TLSConfig: tlsConfig,
 		// No overall read or write timeout: uploads and video streams take as long as they take.
 		// The handlers set their own deadlines.

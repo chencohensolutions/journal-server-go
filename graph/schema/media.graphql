@@ -111,3 +111,32 @@ extend type Mutation {
   "Declares a file before its bytes are sent, or continues an upload that stopped."
   startUpload(input: StartUploadInput!): StartUploadResult!
 }
+
+# --- Change feed --------------------------------------------------------------
+# A device keeps the cursor of the last page it applied and asks for what changed since. Only media so far;
+# stories and notes will come as FILE changes.
+
+enum ChangeKind {
+  MEDIA
+}
+
+type Change {
+  kind: ChangeKind!
+  "media/<sha256> for media."
+  path: String!
+  deleted: Boolean!
+  "The new state; null when deleted."
+  media: Media
+}
+
+type ChangePage {
+  changes: [Change!]!
+  "Pass to the next call. Store it only after applying this page."
+  cursor: String!
+  hasMore: Boolean!
+}
+
+extend type Query {
+  "What changed since the cursor; without one, everything (a new device). At most 5000 per page."
+  changes(since: String, limit: Int = 2000): ChangePage!
+}

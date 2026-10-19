@@ -4,9 +4,10 @@ Devices upload originals to the server, which keeps them byte for byte in the us
 as plain files. The files are the truth: the index in memory is rebuilt from the sidecars every
 time the server starts, so the folder alone is a complete copy, on Windows, macOS or Linux.
 
-Built so far: upload (resumable, deduplicated by sha256) and downloading or streaming originals.
-**Not built yet:** previews (made by the server, at the size the client asks for), video posters,
-sync of stories and notes (change feed), and the story trash. The agreed design is in
+Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, and
+photo previews at the exact size the client asks for, and the change feed for media. **Not built yet:**
+video posters, stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
+(previews need libvips: `brew install vips`); Windows comes later. The agreed design is in
 [journal-client-kmp/docs/design.md](../../journal-client-kmp/docs/design.md) ("Upload and sync").
 
 ## The data folder
@@ -21,6 +22,7 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   media/undated/…                           ← files the device sent no date for
   .cache/uploads/<sha256>.partial           ← an upload in progress
   .cache/uploads/<sha256>.json              ← what the device declared for it
+  .cache/previews/<sha[:2]>/<sha256>/1080x1440-cover.webp   ← previews made so far
 ```
 
 - The month folder is from `takenAt` in the photo's own local time (the offset the device sent).
@@ -106,11 +108,42 @@ PUT … the last piece                          ───▶   checks the sha256
 `Cache-Control: private, max-age=31536000, immutable`, since the content of a sha256 never changes.
 It supports `Range`, which is how videos stream and seek; videos are never converted.
 
+## Previews
+
+`GET /media/{sha256}/preview?w=1080&h=1440&fit=cover&crop=0.1,0.2,0.5,0.5&fmt=webp`
+
+| Parameter | Meaning |
+|---|---|
+| `w`, `h` | The **physical pixels** the client will draw, 1–4096. The answer has exactly this size, so it is drawn 1:1 with no scaling on the device. |
+| `fit` | `cover` (default): fills the box, centered, cutting off what doesn't fit. `contain`: fits inside the box, so one side may be shorter. |
+| `crop` | Optional `x,y,w,h` as fractions of the **upright** photo (rounded to 1/10000): a story tile's focus and zoom. It is cut from the full-resolution original, so a 4× zoom stays sharp. |
+| `fmt` | `webp` (default) or `jpeg`. |
+
+- Made with libvips in one scaling step from the original (`vips thumbnail`, then `extract_area` when
+  something is cut off). EXIF orientation is applied, and the colour profile (Display P3) is kept;
+  other metadata is dropped. Quality 90.
+- **Never scaled up.** When the box is bigger than the photo, the preview keeps the box's shape at the
+  photo's own resolution (so it's smaller than asked); the client scales it on screen.
+- Cached under `.cache/previews/` and served with `Cache-Control: immutable`. When a user's previews
+  pass `preview_cache_max_gb` (default 50), the least recently used are deleted (checked hourly).
+- Answers: `422` bad parameters, `404` unknown sha256, `501` for videos (posters not built yet), `503`
+  when libvips isn't installed (the server logs this at startup; set `"vips"` in config.json if it's
+  installed somewhere unusual).
+
 `query media(sha256)` returns the facts, plus `versions` (edits of this photo) and `paired` (files
 that name it in `pairedWith`).
 
 All of these need a client certificate, like everything except enrollment
 (see [authentication.md](authentication.md)).
+
+## Change feed
+
+`query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA, path: "media/<sha256>",
+deleted, media }`, oldest upload first, with a `cursor` and `hasMore`. A new device starts without `since` and calls
+again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what was uploaded
+since (an empty page returns the same cursor). The cursor is opaque (today the upload time and sha256 of the last
+original in the page), so stories and notes can join the feed later without changing clients. Pages are at most
+5000; responses to `/query` are gzipped when the client accepts it.
 
 ## Timeouts
 

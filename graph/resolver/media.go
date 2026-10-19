@@ -9,7 +9,10 @@ import (
 	"github.com/journal/server-go/media"
 )
 
-const maxHashesPerQuery = 1000
+const (
+	maxHashesPerQuery = 1000
+	maxChangesPerPage = 5000
+)
 
 // store is the data folder of the request's user.
 func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
@@ -25,8 +28,18 @@ func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
 }
 
 func toMedia(store *media.Store, item media.Item) *model.Media {
-	facts := item.Sidecar.Facts
 	versions, paired := store.Related(item.Sha256())
+	return toMediaWith(item, versions, paired)
+}
+
+func toMediaWith(item media.Item, versions, paired []string) *model.Media {
+	facts := item.Sidecar.Facts
+	if versions == nil {
+		versions = []string{}
+	}
+	if paired == nil {
+		paired = []string{}
+	}
 	m := &model.Media{
 		Sha256:     item.Sha256(),
 		Kind:       model.MediaKindPhoto,

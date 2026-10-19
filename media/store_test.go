@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -280,5 +281,45 @@ func TestSafeFileName(t *testing.T) {
 		if got := safeFileName(in); got != want {
 			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
+	f := newFixture(t)
+	var uploaded []string
+	for i := 0; i < 5; i++ {
+		f.now = f.now.Add(time.Second)
+		uploaded = append(uploaded, f.upload([]byte{byte(i), 'x'}, "IMG.jpg").Sha256())
+	}
+	var seen []string
+	cursor := ""
+	for {
+		items, next, more, err := f.store.Changes(cursor, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
+			seen = append(seen, item.Sha256())
+		}
+		cursor = next
+		if !more {
+			break
+		}
+	}
+	if strings.Join(seen, ",") != strings.Join(uploaded, ",") {
+		t.Fatalf("seen %v, want %v", seen, uploaded)
+	}
+
+	// Nothing new: the same cursor comes back. A new upload shows up after it.
+	if items, next, more, _ := f.store.Changes(cursor, 2); len(items) != 0 || next != cursor || more {
+		t.Fatalf("after the end: %v %q %v", items, next, more)
+	}
+	f.now = f.now.Add(time.Second)
+	latest := f.upload([]byte("new"), "IMG.jpg")
+	if items, _, _, _ := f.store.Changes(cursor, 10); len(items) != 1 || items[0].Sha256() != latest.Sha256() {
+		t.Fatalf("new upload: %v", items)
+	}
+	if _, _, _, err := f.store.Changes("garbage", 10); !errors.Is(err, ErrBadCursor) {
+		t.Fatalf("bad cursor: %v", err)
 	}
 }

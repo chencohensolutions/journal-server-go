@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,12 +12,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/journal/server-go/media"
 )
 
 // enrolledClient enrolls a device for hen and returns an HTTP client presenting its certificate.
@@ -132,5 +137,69 @@ func TestDeviceUploadsAndStreamsAVideo(t *testing.T) {
 	anonymous.Body.Close()
 	if anonymous.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous download: %d", anonymous.StatusCode)
+	}
+}
+
+func TestPreviewOfAnUploadedPhoto(t *testing.T) {
+	if _, _, err := media.FindVips(""); err != nil {
+		t.Skip("libvips not installed")
+	}
+	env := newTestEnv(t)
+	device := env.enrolledClient(t)
+	img := image.NewRGBA(image.Rect(0, 0, 300, 200))
+	var photo bytes.Buffer
+	jpeg.Encode(&photo, img, nil)
+	sum := sha256.Sum256(photo.Bytes())
+	sha := hex.EncodeToString(sum[:])
+	env.graphql(t, device, startUploadMutation, map[string]any{"input": map[string]any{
+		"sha256": sha, "size": photo.Len(), "fileName": "IMG.jpg", "mimeType": "image/jpeg", "kind": "PHOTO",
+	}})
+	if resp := env.put(t, device, "/upload/"+sha, photo.Bytes(), 0, photo.Len()); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("upload: %d", resp.StatusCode)
+	}
+
+	resp, err := device.Get(env.server.URL + "/media/" + sha + "/preview?w=90&h=60")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/webp" {
+		t.Fatalf("preview: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if bad, _ := device.Get(env.server.URL + "/media/" + sha + "/preview?w=0&h=60"); bad.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("bad size: %d", bad.StatusCode)
+	}
+}
+
+func TestChangeFeedIsGzipped(t *testing.T) {
+	env := newTestEnv(t)
+	device := env.enrolledClient(t)
+	photo := []byte("a photo")
+	sum := sha256.Sum256(photo)
+	sha := hex.EncodeToString(sum[:])
+	env.graphql(t, device, startUploadMutation, map[string]any{"input": map[string]any{
+		"sha256": sha, "size": len(photo), "fileName": "IMG.jpg", "mimeType": "image/jpeg", "kind": "PHOTO",
+	}})
+	env.put(t, device, "/upload/"+sha, photo, 0, len(photo))
+
+	body, _ := json.Marshal(map[string]any{"query": `{ changes { cursor hasMore changes { kind path media { sha256 fileName } } } }`})
+	req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/query", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept-Encoding", "gzip")
+	resp, err := device.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("not gzipped: %v", resp.Header)
+	}
+	unzipped, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := io.ReadAll(unzipped)
+	if !strings.Contains(string(data), `"path":"media/`+sha+`"`) || !strings.Contains(string(data), `"hasMore":false`) {
+		t.Fatalf("changes = %s", data)
 	}
 }

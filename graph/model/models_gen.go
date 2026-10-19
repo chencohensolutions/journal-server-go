@@ -22,6 +22,22 @@ type StartUploadResult interface {
 	IsStartUploadResult()
 }
 
+type Change struct {
+	Kind ChangeKind `json:"kind"`
+	// media/<sha256> for media.
+	Path    string `json:"path"`
+	Deleted bool   `json:"deleted"`
+	// The new state; null when deleted.
+	Media *Media `json:"media,omitempty"`
+}
+
+type ChangePage struct {
+	Changes []*Change `json:"changes"`
+	// Pass to the next call. Store it only after applying this page.
+	Cursor  string `json:"cursor"`
+	HasMore bool   `json:"hasMore"`
+}
+
 type EnrollDeviceInput struct {
 	// As shown by `journal-server enroll-code`; case, dashes and spaces are ignored.
 	Code string `json:"code"`
@@ -156,6 +172,59 @@ type UploadRejected struct {
 }
 
 func (UploadRejected) IsStartUploadResult() {}
+
+type ChangeKind string
+
+const (
+	ChangeKindMedia ChangeKind = "MEDIA"
+)
+
+var AllChangeKind = []ChangeKind{
+	ChangeKindMedia,
+}
+
+func (e ChangeKind) IsValid() bool {
+	switch e {
+	case ChangeKindMedia:
+		return true
+	}
+	return false
+}
+
+func (e ChangeKind) String() string {
+	return string(e)
+}
+
+func (e *ChangeKind) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ChangeKind(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ChangeKind", str)
+	}
+	return nil
+}
+
+func (e ChangeKind) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ChangeKind) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ChangeKind) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
 
 type EnrollmentRejectedReason string
 
