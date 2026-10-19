@@ -1,0 +1,113 @@
+# --- Media --------------------------------------------------------------------
+# Originals in the user's data folder, identified by the sha256 of their content.
+# The bytes travel over plain HTTP (PUT /upload/{sha256}, GET /media/{sha256}); see docs/media.md.
+
+"64 lowercase hex characters: the sha256 of a file's content."
+scalar Sha256
+scalar Int64
+
+enum MediaKind {
+  PHOTO
+  VIDEO
+}
+
+type GeoPoint {
+  lat: Float!
+  lon: Float!
+}
+
+input GeoPointInput {
+  lat: Float!
+  lon: Float!
+}
+
+type Media {
+  sha256: Sha256!
+  kind: MediaKind!
+  "The name the file had on the device."
+  fileName: String!
+  mimeType: String!
+  size: Int64!
+  "When it was taken, with the offset of the place it was taken."
+  takenAt: Time
+  width: Int
+  height: Int
+  durationMs: Int64
+  location: GeoPoint
+  "The folder it came from on the device, as the device names it: camera, whatsapp, …"
+  source: String
+  "The photo this one is an edit of."
+  versionOf: Sha256
+  "Edits of this photo, oldest first."
+  versions: [Sha256!]!
+  "The file this one belongs with: a Live Photo's video names its photo, a RAW its JPEG."
+  pairedWith: Sha256
+  "Files that name this one in pairedWith."
+  paired: [Sha256!]!
+  uploadedAt: Time!
+  "The device that uploaded it."
+  uploadedBy: String!
+  "The original: /media/{sha256}, with Range support."
+  url: String!
+}
+
+extend type Query {
+  "Which of these hashes the server does not have yet, in the order given. At most 1000 per call."
+  missingMedia(hashes: [Sha256!]!): [Sha256!]!
+  media(sha256: Sha256!): Media
+}
+
+input StartUploadInput {
+  sha256: Sha256!
+  size: Int64!
+  fileName: String!
+  mimeType: String!
+  kind: MediaKind!
+  takenAt: Time
+  width: Int
+  height: Int
+  durationMs: Int64
+  location: GeoPointInput
+  source: String
+  "Set when this file is an edit of a photo already on the server."
+  versionOf: Sha256
+  "Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first."
+  pairedWith: Sha256
+}
+
+union StartUploadResult = UploadReady | MediaExists | UploadRejected
+
+type UploadReady {
+  "Where to PUT the pieces: /upload/{sha256}."
+  url: String!
+  "Bytes already received from an earlier try; send from here."
+  offset: Int64!
+  "Send pieces of this size (the last one may be smaller)."
+  chunkSize: Int64!
+  "Unfinished uploads are deleted after this; startUpload again extends it."
+  expiresAt: Time!
+}
+
+"The server already has this file (from this device or another); nothing to send."
+type MediaExists {
+  media: Media!
+}
+
+type UploadRejected {
+  reason: UploadRejectedReason!
+}
+
+enum UploadRejectedReason {
+  "versionOf names a photo the server doesn't have."
+  UNKNOWN_ORIGINAL
+  "pairedWith names a file the server doesn't have; upload that one first."
+  UNKNOWN_PAIR
+  TOO_LARGE
+  "Not enough free disk space on the server."
+  NO_SPACE
+}
+
+extend type Mutation {
+  "Declares a file before its bytes are sent, or continues an upload that stopped."
+  startUpload(input: StartUploadInput!): StartUploadResult!
+}

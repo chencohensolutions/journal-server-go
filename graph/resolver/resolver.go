@@ -1,6 +1,9 @@
 package resolver
 
-import "github.com/journal/server-go/enroll"
+import (
+	"github.com/journal/server-go/enroll"
+	"github.com/journal/server-go/media"
+)
 
 // This file will not be regenerated automatically.
 //
@@ -9,4 +12,5 @@ import "github.com/journal/server-go/enroll"
 
 type Resolver struct {
 	Enrollment *enroll.Service
+	Media      *media.Library
 }

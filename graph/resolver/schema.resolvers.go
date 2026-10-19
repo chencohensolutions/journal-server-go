@@ -106,16 +106,6 @@ func (r *queryResolver) Image(ctx context.Context, id string) (*model.Image, err
 	}, nil
 }
 
-// MediaEntities is the resolver for the mediaEntities field.
-func (r *queryResolver) MediaEntities(ctx context.Context) ([]*model.Media, error) {
-	panic(fmt.Errorf("not implemented: MediaEntities - mediaEntities"))
-}
-
-// MediaEntity is the resolver for the mediaEntity field.
-func (r *queryResolver) MediaEntity(ctx context.Context, id string) (*model.Media, error) {
-	panic(fmt.Errorf("not implemented: MediaEntity - mediaEntity"))
-}
-
 // EnrollmentPreview is the resolver for the enrollmentPreview field.
 func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error) {
 	preview, rejection := r.Enrollment.Preview(auth.ClientIPFromContext(ctx), code)

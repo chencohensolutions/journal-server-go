@@ -7,12 +7,15 @@ type ContextKey string
 const (
 	UserContextKey     ContextKey = "user"
 	ClientIPContextKey ContextKey = "client_ip"
+	DeviceContextKey   ContextKey = "device"
 )
 
 type UserConfig struct {
 	Username       string `json:"username"`
 	CertCommonName string `json:"cert_common_name"`
 	ImageFolder    string `json:"image_folder"`
+	// The user's journal: originals with their sidecars, stories, and the rebuildable .cache/.
+	DataFolder string `json:"data_folder"`
 }
 
 type AppConfig struct {
@@ -83,4 +86,15 @@ func WithClientIP(ctx context.Context, ip string) context.Context {
 func ClientIPFromContext(ctx context.Context) string {
 	ip, _ := ctx.Value(ClientIPContextKey).(string)
 	return ip
+}
+
+// WithDeviceName records which enrolled device sent the request.
+func WithDeviceName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, DeviceContextKey, name)
+}
+
+// DeviceNameFromContext is the enrolled device's name, or "" for certificates issued outside enrollment.
+func DeviceNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(DeviceContextKey).(string)
+	return name
 }

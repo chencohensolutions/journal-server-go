@@ -1,14 +1,7 @@
-enum MediaType {
-  IMAGE
-  VIDEO
-  AUDIO
-}
-
-interface File {
-  id: ID!
-  url: String!
-}
-
+"""
+A file in the user's image_folder. Kept while the app still uses `images` to check its connection;
+journal media is `Media` (media.graphql).
+"""
 type Image {
   id: ID!
   url: String!
@@ -16,20 +9,9 @@ type Image {
   description: String
 }
 
-type Media implements File {
-  id: ID!
-  url: String!
-  mediaType: MediaType!
-  title: String!
-  description: String
-  mediaEntities: [Media!]
-}
-
 type Query {
   images: [Image!]!
   image(id: ID!): Image
-  mediaEntities: [Media!]!
-  mediaEntity(id: ID!): Media
 }
 
 # --- Authentication -----------------------------------------------------------

@@ -18,10 +18,8 @@ type EnrollmentPreviewResult interface {
 	IsEnrollmentPreviewResult()
 }
 
-type File interface {
-	IsFile()
-	GetID() string
-	GetURL() string
+type StartUploadResult interface {
+	IsStartUploadResult()
 }
 
 type EnrollDeviceInput struct {
@@ -60,6 +58,18 @@ func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
 func (EnrollmentRejected) IsEnrollDeviceResult() {}
 
+type GeoPoint struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+type GeoPointInput struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+// A file in the user's image_folder. Kept while the app still uses `images` to check its connection;
+// journal media is `Media` (media.graphql).
 type Image struct {
 	ID          string  `json:"id"`
 	URL         string  `json:"url"`
@@ -68,23 +78,84 @@ type Image struct {
 }
 
 type Media struct {
-	ID            string    `json:"id"`
-	URL           string    `json:"url"`
-	MediaType     MediaType `json:"mediaType"`
-	Title         string    `json:"title"`
-	Description   *string   `json:"description,omitempty"`
-	MediaEntities []*Media  `json:"mediaEntities,omitempty"`
+	Sha256 string    `json:"sha256"`
+	Kind   MediaKind `json:"kind"`
+	// The name the file had on the device.
+	FileName string `json:"fileName"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+	// When it was taken, with the offset of the place it was taken.
+	TakenAt    *time.Time `json:"takenAt,omitempty"`
+	Width      *int       `json:"width,omitempty"`
+	Height     *int       `json:"height,omitempty"`
+	DurationMs *int64     `json:"durationMs,omitempty"`
+	Location   *GeoPoint  `json:"location,omitempty"`
+	// The folder it came from on the device, as the device names it: camera, whatsapp, …
+	Source *string `json:"source,omitempty"`
+	// The photo this one is an edit of.
+	VersionOf *string `json:"versionOf,omitempty"`
+	// Edits of this photo, oldest first.
+	Versions []string `json:"versions"`
+	// The file this one belongs with: a Live Photo's video names its photo, a RAW its JPEG.
+	PairedWith *string `json:"pairedWith,omitempty"`
+	// Files that name this one in pairedWith.
+	Paired     []string  `json:"paired"`
+	UploadedAt time.Time `json:"uploadedAt"`
+	// The device that uploaded it.
+	UploadedBy string `json:"uploadedBy"`
+	// The original: /media/{sha256}, with Range support.
+	URL string `json:"url"`
 }
 
-func (Media) IsFile()             {}
-func (this Media) GetID() string  { return this.ID }
-func (this Media) GetURL() string { return this.URL }
+// The server already has this file (from this device or another); nothing to send.
+type MediaExists struct {
+	Media *Media `json:"media"`
+}
+
+func (MediaExists) IsStartUploadResult() {}
 
 type Mutation struct {
 }
 
 type Query struct {
 }
+
+type StartUploadInput struct {
+	Sha256     string         `json:"sha256"`
+	Size       int64          `json:"size"`
+	FileName   string         `json:"fileName"`
+	MimeType   string         `json:"mimeType"`
+	Kind       MediaKind      `json:"kind"`
+	TakenAt    *time.Time     `json:"takenAt,omitempty"`
+	Width      *int           `json:"width,omitempty"`
+	Height     *int           `json:"height,omitempty"`
+	DurationMs *int64         `json:"durationMs,omitempty"`
+	Location   *GeoPointInput `json:"location,omitempty"`
+	Source     *string        `json:"source,omitempty"`
+	// Set when this file is an edit of a photo already on the server.
+	VersionOf *string `json:"versionOf,omitempty"`
+	// Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first.
+	PairedWith *string `json:"pairedWith,omitempty"`
+}
+
+type UploadReady struct {
+	// Where to PUT the pieces: /upload/{sha256}.
+	URL string `json:"url"`
+	// Bytes already received from an earlier try; send from here.
+	Offset int64 `json:"offset"`
+	// Send pieces of this size (the last one may be smaller).
+	ChunkSize int64 `json:"chunkSize"`
+	// Unfinished uploads are deleted after this; startUpload again extends it.
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (UploadReady) IsStartUploadResult() {}
+
+type UploadRejected struct {
+	Reason UploadRejectedReason `json:"reason"`
+}
+
+func (UploadRejected) IsStartUploadResult() {}
 
 type EnrollmentRejectedReason string
 
@@ -210,50 +281,48 @@ func (e KeyProtection) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-type MediaType string
+type MediaKind string
 
 const (
-	MediaTypeImage MediaType = "IMAGE"
-	MediaTypeVideo MediaType = "VIDEO"
-	MediaTypeAudio MediaType = "AUDIO"
+	MediaKindPhoto MediaKind = "PHOTO"
+	MediaKindVideo MediaKind = "VIDEO"
 )
 
-var AllMediaType = []MediaType{
-	MediaTypeImage,
-	MediaTypeVideo,
-	MediaTypeAudio,
+var AllMediaKind = []MediaKind{
+	MediaKindPhoto,
+	MediaKindVideo,
 }
 
-func (e MediaType) IsValid() bool {
+func (e MediaKind) IsValid() bool {
 	switch e {
-	case MediaTypeImage, MediaTypeVideo, MediaTypeAudio:
+	case MediaKindPhoto, MediaKindVideo:
 		return true
 	}
 	return false
 }
 
-func (e MediaType) String() string {
+func (e MediaKind) String() string {
 	return string(e)
 }
 
-func (e *MediaType) UnmarshalGQL(v any) error {
+func (e *MediaKind) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
 		return fmt.Errorf("enums must be strings")
 	}
 
-	*e = MediaType(str)
+	*e = MediaKind(str)
 	if !e.IsValid() {
-		return fmt.Errorf("%s is not a valid MediaType", str)
+		return fmt.Errorf("%s is not a valid MediaKind", str)
 	}
 	return nil
 }
 
-func (e MediaType) MarshalGQL(w io.Writer) {
+func (e MediaKind) MarshalGQL(w io.Writer) {
 	fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
-func (e *MediaType) UnmarshalJSON(b []byte) error {
+func (e *MediaKind) UnmarshalJSON(b []byte) error {
 	s, err := strconv.Unquote(string(b))
 	if err != nil {
 		return err
@@ -261,7 +330,69 @@ func (e *MediaType) UnmarshalJSON(b []byte) error {
 	return e.UnmarshalGQL(s)
 }
 
-func (e MediaType) MarshalJSON() ([]byte, error) {
+func (e MediaKind) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type UploadRejectedReason string
+
+const (
+	// versionOf names a photo the server doesn't have.
+	UploadRejectedReasonUnknownOriginal UploadRejectedReason = "UNKNOWN_ORIGINAL"
+	// pairedWith names a file the server doesn't have; upload that one first.
+	UploadRejectedReasonUnknownPair UploadRejectedReason = "UNKNOWN_PAIR"
+	UploadRejectedReasonTooLarge    UploadRejectedReason = "TOO_LARGE"
+	// Not enough free disk space on the server.
+	UploadRejectedReasonNoSpace UploadRejectedReason = "NO_SPACE"
+)
+
+var AllUploadRejectedReason = []UploadRejectedReason{
+	UploadRejectedReasonUnknownOriginal,
+	UploadRejectedReasonUnknownPair,
+	UploadRejectedReasonTooLarge,
+	UploadRejectedReasonNoSpace,
+}
+
+func (e UploadRejectedReason) IsValid() bool {
+	switch e {
+	case UploadRejectedReasonUnknownOriginal, UploadRejectedReasonUnknownPair, UploadRejectedReasonTooLarge, UploadRejectedReasonNoSpace:
+		return true
+	}
+	return false
+}
+
+func (e UploadRejectedReason) String() string {
+	return string(e)
+}
+
+func (e *UploadRejectedReason) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = UploadRejectedReason(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid UploadRejectedReason", str)
+	}
+	return nil
+}
+
+func (e UploadRejectedReason) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *UploadRejectedReason) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e UploadRejectedReason) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

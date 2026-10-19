@@ -98,6 +98,18 @@ func (r *Registry) Revoke(serial string, at time.Time) (Device, error) {
 	return Device{}, ErrDeviceNotFound
 }
 
+// Find returns the device with this certificate serial.
+func (r *Registry) Find(serial string) (Device, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, d := range r.devices {
+		if d.Serial == serial {
+			return d, true
+		}
+	}
+	return Device{}, false
+}
+
 func (r *Registry) IsRevoked(serial string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

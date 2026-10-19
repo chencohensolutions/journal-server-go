@@ -22,6 +22,7 @@ import (
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/graph/generated"
 	"github.com/journal/server-go/graph/resolver"
+	"github.com/journal/server-go/media"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -75,6 +76,9 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 			return
 		}
 
+		if device, ok := registry.Find(enroll.SerialString(clientCert.SerialNumber)); ok {
+			ctx = auth.WithDeviceName(ctx, device.Name)
+		}
 		log.Printf("Client connected: username=%s from %s (%s %s)", currentUser.Username, r.RemoteAddr, r.Method, r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, auth.UserContextKey, currentUser)))
 	})
@@ -100,9 +104,9 @@ func createTLSConfig(config auth.AppConfig) (*tls.Config, error) {
 	}, nil
 }
 
-func newGraphQLServer(enrollment *enroll.Service) *handler.Server {
+func newGraphQLServer(enrollment *enroll.Service, library *media.Library) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers:  &resolver.Resolver{Enrollment: enrollment},
+		Resolvers:  &resolver.Resolver{Enrollment: enrollment, Media: library},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})
@@ -117,14 +121,42 @@ func newGraphQLServer(enrollment *enroll.Service) *handler.Server {
 	return srv
 }
 
-func newMux(config auth.AppConfig, enrollment *enroll.Service) *http.ServeMux {
+// GraphQL requests are small; uploads and video streams have their own handlers without these limits.
+const (
+	queryReadTimeout  = 30 * time.Second
+	queryWriteTimeout = 2 * time.Minute
+)
+
+// withDeadlines bounds how long one request may take to arrive and to be answered.
+func withDeadlines(read, write time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		rc.SetReadDeadline(time.Now().Add(read))
+		rc.SetWriteDeadline(time.Now().Add(write))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library) *http.ServeMux {
 	mux := http.NewServeMux()
 	playgroundHandler := playground.Handler("GraphQL playground", "/query")
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Request to / from %s: %s %s", r.RemoteAddr, r.Method, r.URL.Path)
 		playgroundHandler.ServeHTTP(w, r)
 	}))
-	mux.Handle("/query", identify(config, enrollment.Registry, true, newGraphQLServer(enrollment)))
+	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
+		identify(config, enrollment.Registry, true, newGraphQLServer(enrollment, library))))
+
+	userStore := func(r *http.Request) *media.Store {
+		if user := auth.FromContext(r.Context()); user != nil {
+			return library.Store(user.Username)
+		}
+		return nil
+	}
+	upload := identify(config, enrollment.Registry, false, media.UploadHandler(userStore))
+	mux.Handle("PUT /upload/{sha256}", upload)
+	mux.Handle("HEAD /upload/{sha256}", upload)
+	mux.Handle("GET /media/{sha256}", identify(config, enrollment.Registry, false, media.OriginalHandler(userStore)))
 	mux.Handle("/images/", identify(config, enrollment.Registry, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := auth.FromContext(r.Context())
 		if user == nil {
@@ -143,6 +175,19 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service) *http.ServeMux {
 		http.ServeFile(w, r, fullPath)
 	})))
 	return mux
+}
+
+// openLibrary opens the data folder of every user that has one configured.
+func openLibrary(config auth.AppConfig) (*media.Library, error) {
+	folders := map[string]string{}
+	for _, user := range config.Users {
+		if user.DataFolder != "" {
+			folders[user.Username] = user.DataFolder
+		} else {
+			log.Printf("User %s has no data_folder in config.json; uploads are refused for them", user.Username)
+		}
+	}
+	return media.OpenLibrary(folders, time.Now)
 }
 
 func serve(config auth.AppConfig) {
@@ -170,12 +215,26 @@ func serve(config auth.AppConfig) {
 	}
 	enrollment := enroll.NewService(issuer, registry, time.Now)
 
+	library, err := openLibrary(config)
+	if err != nil {
+		log.Fatalf("failed to open data folders: %v", err)
+	}
+	go func() {
+		for ; ; time.Sleep(time.Hour) {
+			library.PurgeExpiredUploads()
+		}
+	}()
+
 	go serveAdmin(config, enrollment)
 
 	server := &http.Server{
 		Addr:      ":" + defaultPort,
-		Handler:   newMux(config, enrollment),
+		Handler:   newMux(config, enrollment, library),
 		TLSConfig: tlsConfig,
+		// No overall read or write timeout: uploads and video streams take as long as they take.
+		// The handlers set their own deadlines.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	ln, err := net.Listen("tcp", server.Addr)

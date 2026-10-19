@@ -28,6 +28,7 @@ import (
 
 type testEnv struct {
 	server     *httptest.Server
+	dataFolder string
 	enrollment *enroll.Service
 	roots      *x509.CertPool
 	config     auth.AppConfig
@@ -71,7 +72,9 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	config := auth.AppConfig{
 		PublicURL: "https://journal.test:8080",
-		Users:     []auth.UserConfig{{Username: "hen", CertCommonName: "hen", ImageFolder: imageFolder}},
+		Users: []auth.UserConfig{{
+			Username: "hen", CertCommonName: "hen", ImageFolder: imageFolder, DataFolder: filepath.Join(dir, "journal"),
+		}},
 	}.WithDefaults()
 	registry, err := enroll.OpenRegistry(filepath.Join(dir, "devices.json"))
 	if err != nil {
@@ -81,7 +84,11 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
-	server := httptest.NewUnstartedServer(newMux(config, enrollment))
+	library, err := openLibrary(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library))
 	server.TLS = &tls.Config{
 		ClientAuth:   tls.VerifyClientCertIfGiven,
 		ClientCAs:    pool,
@@ -89,7 +96,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	}
 	server.StartTLS()
 	t.Cleanup(server.Close)
-	return &testEnv{server: server, enrollment: enrollment, roots: pool, config: config}
+	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool, config: config}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {
