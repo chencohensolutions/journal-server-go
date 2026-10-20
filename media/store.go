@@ -31,6 +31,9 @@ type Store struct {
 	// two devices (or a retry racing the first try) is written once.
 	uploadLocks keyedMutex
 
+	// Taking turns with other processes that have this data folder open (turns.go).
+	turns turns
+
 	// Keep previews (and developed DNGs) in .cache/previews; else each is made, sent and deleted.
 	// Set once, before the store serves requests (config.json "preview_cache").
 	CachePreviews bool
@@ -44,6 +47,7 @@ func OpenStore(root string, now func() time.Time) (*Store, error) {
 			return nil, err
 		}
 	}
+	s.startJournal()
 	if err := s.scan(); err != nil {
 		return nil, fmt.Errorf("index %s: %w", root, err)
 	}
@@ -104,6 +108,7 @@ func (s *Store) Get(sha256 string) (Item, bool) {
 
 // Missing returns the hashes the store does not have, in the order given, without repeats.
 func (s *Store) Missing(hashes []string) []string {
+	s.CatchUp()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	missing := []string{}
@@ -229,6 +234,7 @@ func (s *Store) Changes(cursor string, limit int) (items []Item, next string, ha
 	if err != nil {
 		return nil, "", false, err
 	}
+	s.CatchUp()
 	s.mu.RLock()
 	all := make([]Item, 0, len(s.items))
 	for _, item := range s.items {
@@ -256,6 +262,7 @@ type Usage struct {
 }
 
 func (s *Store) Usage() Usage {
+	s.CatchUp()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var u Usage

@@ -224,8 +224,11 @@ func TestPreviewFormatsWithoutAServerCache(t *testing.T) {
 	if entries, _ := os.ReadDir(filepath.Join(f.root, ".cache", "previews")); len(entries) != 0 {
 		t.Errorf("kept on the server without preview_cache: %v", entries)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(f.root, ".cache")); len(entries) > 1 {
-		t.Errorf("temporary folders left in .cache: %v", entries)
+	for _, entry := range func() []os.DirEntry { e, _ := os.ReadDir(filepath.Join(f.root, ".cache")); return e }() {
+		// uploads/, and the lock and journal processes take turns with (turns.go)
+		if name := entry.Name(); name != "uploads" && name != "write.lock" && name != "write-journal.tsv" {
+			t.Errorf("temporary file left in .cache: %s", name)
+		}
 	}
 	t.Logf("sizes: %v", sizes)
 }

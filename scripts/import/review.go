@@ -91,7 +91,10 @@ func (im *importer) addToReview() {
 	if len(im.toReview) == 0 {
 		return
 	}
-	im.withTurn(im.addToReviewInTurn)
+	// Other imports and the review page change the list too: one at a time.
+	if err := im.store.Turn(func() error { im.addToReviewInTurn(); return nil }); err != nil {
+		log.Printf("%s: %v", im.reviewFile(), err)
+	}
 }
 
 func (im *importer) addToReviewInTurn() {
@@ -280,10 +283,6 @@ func (r *reviewer) preview(w http.ResponseWriter, req *http.Request) {
 func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock() // one decision at a time
 	defer r.mu.Unlock()
-	r.im.withTurn(func() { r.decideInTurn(w, req) })
-}
-
-func (r *reviewer) decideInTurn(w http.ResponseWriter, req *http.Request) {
 	// Imports running meanwhile may have added near-duplicates to the list.
 	if items, err := r.im.loadReview(); err == nil {
 		r.items = items
@@ -320,13 +319,10 @@ func (r *reviewer) decideInTurn(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "no date in its file name or metadata", http.StatusUnprocessableEntity)
 			return
 		}
-		placed, existed, err := im.importInto(item.Path, item.Sha256, info.Size(), facts, item.folders())
+		placed, _, err := im.importInto(item.Path, item.Sha256, info.Size(), facts, item.folders())
 		if err != nil {
 			http.Error(w, "not imported: "+err.Error(), http.StatusInternalServerError)
 			return
-		}
-		if !existed {
-			im.wrote(placed)
 		}
 		message = "Imported as " + placed.Path
 		fallthrough
@@ -340,16 +336,28 @@ func (r *reviewer) decideInTurn(w http.ResponseWriter, req *http.Request) {
 			// Its folder is a clue about the photo it is a copy of.
 			if folders := item.folders(); len(folders) > 0 {
 				if changed, err := im.store.AddFolders(item.LikeSha256, folders); err == nil && changed {
-					if like, ok := im.store.Get(item.LikeSha256); ok {
-						im.wrote(like)
-					}
 					message += " Its folders were added to the look-alike's: " + strings.Join(folders, ", ") + "."
 				}
 			}
 		}
 	}
 	r.items = append(r.items[:index:index], r.items[index+1:]...)
-	if err := im.saveReview(r.items); err != nil {
+	// Taken off the list as it is on disk now: imports running meanwhile may have added to it.
+	err = im.store.Turn(func() error {
+		items, err := im.loadReview()
+		if err != nil {
+			return err
+		}
+		kept := items[:0]
+		for _, other := range items {
+			if other.Sha256 != item.Sha256 {
+				kept = append(kept, other)
+			}
+		}
+		r.items = kept
+		return im.saveReview(kept)
+	})
+	if err != nil {
 		log.Printf("%s: %v", im.reviewFile(), err)
 	}
 	os.MkdirAll(im.runFolder, 0o755)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Import copies a file from elsewhere on the server's disk into the store, as if a device had uploaded
@@ -20,6 +21,7 @@ func (s *Store) Import(source string, req UploadRequest) (item Item, existed boo
 	unlock := s.uploadLocks.Lock(req.Sha256)
 	defer unlock()
 
+	s.CatchUp()
 	if existing, ok := s.Get(req.Sha256); ok {
 		return existing, true, nil
 	}
@@ -52,16 +54,33 @@ func (s *Store) Import(source string, req UploadRequest) (item Item, existed boo
 	if sum != req.Sha256 {
 		return Item{}, false, fmt.Errorf("the copy's sha256 is %s, not %s (was the file changed meanwhile?)", sum, req.Sha256)
 	}
-	placed, err := s.place(tmp.Name(), req)
-	if err != nil {
-		return Item{}, false, err
-	}
-	return *placed, false, nil
+	// Copied and checked outside the turn; only placing it is in it.
+	err = s.Turn(func() error {
+		if existing, ok := s.Get(req.Sha256); ok {
+			item, existed = existing, true // another process placed it meanwhile
+			return nil
+		}
+		placed, err := s.place(tmp.Name(), req)
+		if err == nil {
+			item = *placed
+		}
+		return err
+	})
+	return item, existed, err
 }
 
 // AddFolders adds folders the file was found in to its sidecar's facts (those it lists already, ignoring
 // case, are left out). Only the sidecar is rewritten; the original is never touched.
 func (s *Store) AddFolders(sha string, folders []string) (changed bool, err error) {
+	err = s.Turn(func() error {
+		var err error
+		changed, err = s.addFolders(sha, folders)
+		return err
+	})
+	return changed, err
+}
+
+func (s *Store) addFolders(sha string, folders []string) (changed bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item, ok := s.items[sha]
@@ -92,12 +111,21 @@ func (s *Store) AddFolders(sha string, folders []string) (changed bool, err erro
 		return false, err
 	}
 	item.Sidecar = sidecar
+	s.wrote(item)
 	return true, nil
 }
 
 // SetNudity writes a nudity scan's answer into the file's sidecar, replacing an earlier one. Only the sidecar is
-// rewritten; the original is never touched. The file comes again in the change feed (see ChangedAt).
+// rewritten; the original is never touched. The file comes again in the change feed (see ChangedAt), so
+// ScannedAt is set to now, during the turn: a device's feed position can't have passed it.
 func (s *Store) SetNudity(sha string, detection Detection) error {
+	return s.Turn(func() error {
+		detection.ScannedAt = s.now().UTC()
+		return s.setNudity(sha, detection)
+	})
+}
+
+func (s *Store) setNudity(sha string, detection Detection) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item, ok := s.items[sha]
@@ -119,6 +147,7 @@ func (s *Store) SetNudity(sha string, detection Detection) error {
 		return err
 	}
 	item.Sidecar = sidecar
+	s.wrote(item)
 	return nil
 }
 
@@ -145,8 +174,23 @@ func (s *Store) Reload(path string) error {
 	return nil
 }
 
-// ClearImports deletes copies left behind by an import that was stopped halfway.
-func (s *Store) ClearImports() error { return os.RemoveAll(s.importDir()) }
+// ClearImports deletes copies left behind by an import that was stopped halfway: those not written to for a
+// day, as another import may be copying right now.
+func (s *Store) ClearImports() error {
+	entries, err := os.ReadDir(s.importDir())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if info, err := entry.Info(); err == nil && s.now().Sub(info.ModTime()) > 24*time.Hour {
+			os.Remove(filepath.Join(s.importDir(), entry.Name()))
+		}
+	}
+	return nil
+}
 
 func (s *Store) importDir() string { return filepath.Join(s.root, ".cache", "import") }
 

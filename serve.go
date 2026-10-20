@@ -27,7 +27,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-const defaultPort = "8080"
+const defaultPort = "56398"
 
 type loggingListener struct {
 	net.Listener
@@ -306,6 +306,6 @@ func serve(config auth.AppConfig) {
 	}
 	ln = &loggingListener{Listener: ln}
 
-	log.Printf("Listening on https://localhost:%s", defaultPort)
+	log.Printf("Listening on https://0.0.0.0:%s", defaultPort)
 	log.Fatal(server.Serve(tls.NewListener(ln, tlsConfig)))
 }

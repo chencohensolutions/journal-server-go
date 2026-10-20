@@ -27,7 +27,7 @@ type AppConfig struct {
 	ClientCA string `json:"client_ca"`
 	// Private key of ClientCA; signs the certificates issued to enrolled devices.
 	ClientCAKey string `json:"client_ca_key"`
-	// Address devices use to reach the server (e.g. https://192.168.50.2:8080); printed by enroll-code.
+	// Address devices use to reach the server (e.g. https://192.168.50.2:56398); printed by enroll-code.
 	PublicURL string `json:"public_url"`
 	// Registry of enrolled devices (default devices.json).
 	DevicesFile string `json:"devices_file"`

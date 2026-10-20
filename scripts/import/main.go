@@ -19,7 +19,8 @@
 // .cache/source-hashes.tsv (by path, size and modified time), so the import after a dry run doesn't read
 // everything again.
 //
-// Stop the server first: it reads the data folder only when it starts. Run from the server folder:
+// The server may keep running: it and every import take turns at writing to the data folder (media/turns.go),
+// and it sees imported files at once. Run from the server folder:
 //
 //	go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] D:\Backups "E:\Old phone"
 package main
@@ -35,7 +36,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -94,7 +94,6 @@ type importer struct {
 	nearDistance   int
 	dhashes        *dhashTable
 	sources        *sourceHashes
-	shared         *shared      // taking turns with other imports running at the same time (shared.go)
 	cloud          *cloudImport // set when importing from Google Drive or OneDrive (cloud.go)
 
 	mu           sync.Mutex      // everything below
@@ -181,10 +180,6 @@ func main() {
 	if dataFolder == "" {
 		log.Fatalf("%s: user %q has no data_folder", *configPath, *user)
 	}
-	if conn, err := net.DialTimeout("tcp", config.AdminAddr, time.Second); err == nil {
-		conn.Close()
-		log.Fatalf("the server is running (its admin API answers on %s); stop it first, it reads the data folder only when it starts", config.AdminAddr)
-	}
 	vips, vipsheader, err := media.FindVips(config.Vips)
 	if err != nil {
 		log.Fatalf("%v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
@@ -228,9 +223,6 @@ func main() {
 	im.roots = roots
 	im.store, err = media.OpenStore(im.dataFolder, time.Now)
 	check(err)
-	im.shared, err = openShared(im.dataFolder)
-	check(err)
-	defer im.shared.close()
 	im.dhashes, err = openDHashTable(im.dataFolder)
 	check(err)
 	defer im.dhashes.close()
@@ -240,9 +232,10 @@ func main() {
 	im.workDir, err = os.MkdirTemp("", "journal-import-")
 	check(err)
 	if !im.dryRun {
-		// Copies are only being made during another import's turn, so none is cleared from under it.
-		im.withTurn(func() { check(im.store.ClearImports()) })
+		check(im.store.ClearImports())
 	}
+	// Files other imports, the server or a scan place meanwhile are compared with as well.
+	im.store.OnCatchUp(im.learn)
 	defer os.RemoveAll(im.workDir)
 	defer func() {
 		// A run that moved nothing and wrote no report leaves no folders behind.
@@ -359,7 +352,8 @@ func (im *importer) importFiles(ctx context.Context, files []sourceFile, jobs in
 		if ctx.Err() != nil {
 			break
 		}
-		im.withTurn(func() { im.decide(e) })
+		im.store.CatchUp() // decide knowing what the others placed meanwhile
+		im.decide(e)
 		doneBytes += e.size
 		if time.Since(last) >= 10*time.Second || i == len(news)-1 {
 			log.Printf("Importing: %5.1f%%  %s of %s, %d of %d files, about %s left",
@@ -530,12 +524,10 @@ func (im *importer) examine(ctx context.Context, path string) *examined {
 	}
 	folder := folderOf(im.rootOf(path), path)
 	if _, ok := im.store.Get(sha); ok {
-		im.withTurn(func() {
-			if im.addFolder(path, sha, folder) {
-				im.count(true, info.Size())
-				im.done(path, sha, resultDuplicate)
-			}
-		})
+		if im.addFolder(path, sha, folder) {
+			im.count(true, info.Size())
+			im.done(path, sha, resultDuplicate)
+		}
 		return nil
 	}
 
@@ -605,10 +597,7 @@ func (im *importer) decide(e *examined) {
 		im.count(false, e.size)
 		return
 	}
-	placed, existed, err := im.importInto(e.path, e.sha256, e.size, e.facts, folders)
-	if err == nil && !existed {
-		im.wrote(placed)
-	}
+	_, existed, err := im.importInto(e.path, e.sha256, e.size, e.facts, folders)
 	if err != nil {
 		im.reject(e.path, notImportedFailed, err.Error())
 		im.mu.Lock()
@@ -633,13 +622,9 @@ func (im *importer) addFolder(path, sha, folder string) bool {
 	if im.dryRun || folder == "" {
 		return true
 	}
-	changed, err := im.store.AddFolders(sha, []string{folder})
-	if err != nil {
+	if _, err := im.store.AddFolders(sha, []string{folder}); err != nil {
 		im.leave(path, "its folder couldn't be added to the copy in the data folder: "+err.Error())
 		return false
-	}
-	if item, ok := im.store.Get(sha); ok && changed {
-		im.wrote(item)
 	}
 	return true
 }
@@ -790,6 +775,20 @@ func (im *importer) moveOthers() {
 			why, reason = notImportedHidden, "hidden (Android's .trashed-… is deleted on the phone, .pending-… never finished)"
 		}
 		im.reject(f.path, why, reason)
+	}
+}
+
+// learn adds a photo another process placed (another import, a phone's upload) to the photos new ones
+// are compared with, so near-duplicates are found across them too.
+func (im *importer) learn(item media.Item) {
+	if item.Sidecar.Facts.Kind != media.KindPhoto {
+		return
+	}
+	if h := im.dhashOf(context.Background(), item.Sha256(), filepath.Join(im.dataFolder, filepath.FromSlash(item.Path))); h != nil {
+		facts := item.Sidecar.Facts
+		im.mu.Lock()
+		im.photos = append(im.photos, photo{hash: *h, sha256: item.Sha256(), name: facts.FileName, takenAt: facts.TakenAt})
+		im.mu.Unlock()
 	}
 }
 
@@ -1430,17 +1429,14 @@ func (im *importer) backfillFolders() {
 			notInDataFolder++
 			return
 		}
-		im.withTurn(func() {
-			changed, err := im.store.AddFolders(sha, []string{folder})
-			if err != nil {
-				log.Printf("%s: %v", path, err)
-				return
-			}
-			if item, ok := im.store.Get(sha); ok && changed {
-				im.wrote(item)
-				added++
-			}
-		})
+		changed, err := im.store.AddFolders(sha, []string{folder})
+		if err != nil {
+			log.Printf("%s: %v", path, err)
+			return
+		}
+		if changed {
+			added++
+		}
 	})
 	fmt.Printf("%d files looked at before under these folders; %d folders added to sidecars, %d files not in the data folder (not imported yet, or waiting for review)\n",
 		found, added, notInDataFolder)

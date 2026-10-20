@@ -132,6 +132,7 @@ func (s *Store) StartUpload(req UploadRequest) (StartResult, error) {
 	unlock := s.uploadLocks.Lock(req.Sha256)
 	defer unlock()
 
+	s.CatchUp()
 	if item, ok := s.Get(req.Sha256); ok {
 		return StartResult{Existing: &item}, nil
 	}
@@ -280,7 +281,18 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 		os.Remove(s.sessionPath(req.Sha256))
 		return nil, ErrHashMismatch
 	}
-	item, err := s.place(partialPath, req)
+	var item *Item
+	err = s.Turn(func() error {
+		// An import running meanwhile may have placed the same file.
+		if existing, ok := s.Get(req.Sha256); ok {
+			os.Remove(partialPath)
+			item = &existing
+			return nil
+		}
+		var err error
+		item, err = s.place(partialPath, req)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +300,7 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 	return item, nil
 }
 
-// place moves a file whose sha256 was checked to its month folder and writes its sidecar.
+// place moves a file whose sha256 was checked to its month folder and writes its sidecar, during a turn.
 func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -343,6 +355,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 	}
 	item := &Item{Path: dirRel + "/" + name, Sidecar: sidecar}
 	s.items[req.Sha256] = item
+	s.wrote(item)
 	copied := *item
 	return &copied, nil
 }

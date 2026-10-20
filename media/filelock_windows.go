@@ -1,4 +1,6 @@
-package main
+//go:build windows
+
+package media
 
 import (
 	"os"

@@ -8,7 +8,8 @@
 // never the original. Files already scanned by the same model are skipped, so running again continues where it
 // stopped (Ctrl+C finishes the files in hand); --rescan scans everything again.
 //
-// Stop the server first: it reads the data folder only when it starts. Run from the server folder:
+// The server may keep running: they take turns at writing to the data folder (media/turns.go), and devices
+// get the answers through the change feed. Run from the server folder:
 //
 //	go run ./scripts/scan-nudity --user hen [--rescan] [--python python3]
 package main
@@ -23,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -74,10 +74,6 @@ func main() {
 	}
 	if dataFolder == "" {
 		log.Fatalf("%s: user %q has no data_folder", *configPath, *user)
-	}
-	if conn, err := net.DialTimeout("tcp", config.AdminAddr, time.Second); err == nil {
-		conn.Close()
-		log.Fatalf("the server is running (its admin API answers on %s); stop it first, it reads the data folder only when it starts", config.AdminAddr)
 	}
 	vips, vipsheader, err := media.FindVips(config.Vips)
 	if err != nil {

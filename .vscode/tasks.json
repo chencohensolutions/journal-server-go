@@ -33,7 +33,7 @@
 		},
 		{
 			// Runs the server under Delve, waiting for "Attach to server PC" (launch.json) from another machine on port 2345.
-			// Stop "server: run" first: both use port 8080. Needs Delve: go install github.com/go-delve/delve/cmd/dlv@latest
+			// Stop "server: run" first: both use port 56398. Needs Delve: go install github.com/go-delve/delve/cmd/dlv@latest
 			// Delve has no password: anything on the network that reaches port 2345 can run code on this machine. On Windows,
 			// allow only the Mac, in an administrator PowerShell:
 			//   New-NetFirewallRule -DisplayName "Delve from Mac" -Direction Inbound -Protocol TCP -LocalPort 2345 -RemoteAddress 192.168.50.150 -Action Allow

@@ -152,7 +152,7 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
   "tls_key": "certs/server-key.pem",
   "client_ca": "certs/ca.pem",
   "client_ca_key": "certs/ca-key.pem",          // required: signs enrolled devices
-  "public_url": "https://192.168.50.2:8080",    // optional: printed by enroll-code
+  "public_url": "https://192.168.50.2:56398",    // optional: printed by enroll-code
   "devices_file": "devices.json",               // optional (default)
   "admin_addr": "127.0.0.1:8081",               // optional (default), must be loopback
   "admin_token_file": "admin.token",            // optional (default)
@@ -185,7 +185,7 @@ What iOS insists on (Android is more lenient, but follow the same rules):
   address devices use.** The scripts issue it for `localhost`, `journal.example.com` and
   `192.168.50.2` and `192.168.50.150`; edit `alt_names` in the script to add more. A device connecting by an address that
   is not listed rejects the server, e.g. `127.0.0.1` (only the name `localhost` is listed). From the
-  Android emulator, run `adb reverse tcp:8080 tcp:8080` and use `localhost:8080`.
+  Android emulator, run `adb reverse tcp:56398 tcp:56398` and use `localhost:56398`.
 
 The Bash scripts write private keys with mode `0600`.
 

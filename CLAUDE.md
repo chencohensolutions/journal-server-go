@@ -12,7 +12,9 @@ resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range, `GET /media/
 deletes its copy): see
 [docs/media.md](docs/media.md). Video posters are made with ffmpeg (a separate program, like libvips). `go run ./scripts/import` copies photos
 and videos already on the server's disk into a data folder once each (by sha256) and moves the sources to an
-"imported" folder; the server must be stopped while it runs. `go run ./scripts/scan-nudity` scores files with
+"imported" folder. The server, imports and scans may run at once: they take turns at writing to the data folder
+(`media/turns.go`, lock and journal in `.cache/`), so any new code that places files or rewrites sidecars must do
+it inside `Store.Turn` (the store's own write methods already do). `go run ./scripts/scan-nudity` scores files with
 NudeNet (Python, a separate program) into the sidecar's `detected.nudity` (never a tag; clients hide what is over
 the user's threshold); run by hand for now. The change
 feed for stories and notes, and the story trash, are not built yet.

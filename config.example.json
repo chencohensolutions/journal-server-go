@@ -3,7 +3,7 @@
   "tls_key": "certs/server-key.pem",
   "client_ca": "certs/ca.pem",
   "client_ca_key": "certs/ca-key.pem",
-  "public_url": "https://192.168.50.2:8080",
+  "public_url": "https://192.168.50.2:56398",
   "users": [
     {
       "username": "alice",

@@ -179,13 +179,9 @@ func (c *cloudImport) list(ctx context.Context) []remoteFile {
 				c.skippedKnown++
 				c.skippedKnownBytes += f.Size
 				folder := folderOf(c.root, filepath.Join(c.root, filepath.FromSlash(f.Path)))
-				if !c.im.dryRun {
-					c.im.withTurn(func() {
-						if c.im.addFolder(key, sha, folder) {
-							c.log(resultDuplicate, key, sha, "not downloaded: its sha256 is already in the data folder")
-							c.remember(key, c.stamp(f))
-						}
-					})
+				if !c.im.dryRun && c.im.addFolder(key, sha, folder) {
+					c.log(resultDuplicate, key, sha, "not downloaded: its sha256 is already in the data folder")
+					c.remember(key, c.stamp(f))
 				}
 				continue
 			}

@@ -330,8 +330,10 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 	item := f.upload([]byte("photo"), "IMG.jpg")
 	_, cursor, _, _ := f.store.Changes("", 10)
 
-	scanned := f.now.Add(time.Hour)
-	if err := f.store.SetNudity(item.Sha256(), Detection{Score: 0.93, Model: "nudenet-320n", ScannedAt: scanned}); err != nil {
+	// Scanned an hour later; the time is the store's, taken during the write's turn.
+	f.now = f.now.Add(time.Hour)
+	scanned := f.now
+	if err := f.store.SetNudity(item.Sha256(), Detection{Score: 0.93, Model: "nudenet-320n", ScannedAt: scanned.Add(-time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
 	items, _, _, _ := f.store.Changes(cursor, 10)

@@ -27,7 +27,7 @@ A GraphQL API server built with Go using gqlgen.
    go run .
    ```
 
-The GraphQL playground will be available at `https://localhost:8080/`
+The GraphQL playground will be available at `https://localhost:56398/`
 
 ### Authentication
 

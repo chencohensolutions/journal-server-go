@@ -206,14 +206,15 @@ and writes the answer into the sidecar:
   original).
 - NudeNet runs in Python as a separate program and is given a 640 px JPEG preview (a video's poster frame), never the
   original. Files already scanned by the same `model` are skipped, so a stopped run continues where it stopped;
-  `--rescan` scans everything again. Stop the server first, as for the import.
+  `--rescan` scans everything again. The server may keep running (see "Several processes on one data folder").
 - For now it is run by hand after uploads or imports; later it will run on each new file.
 
 ## Importing files already on the server's disk
 
 `scripts/import` copies photos and videos from folders on the server's disk (old phone backups) into a user's
-data folder, once each. **Stop the server first**: it reads the data folder only when it starts, and the script
-refuses to run while the admin API answers. Run from the server folder; try `--dry-run` first (it only counts):
+data folder, once each. **The server may keep running**: phones keep backing up, and imported files reach them at
+once (see "Several processes on one data folder"). Run from the server folder; try `--dry-run` first (it only
+counts):
 
 ```
 go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] [--move-other] D:\Backups "E:\Old phone"
@@ -238,13 +239,9 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
   `not-imported.tsv` lists each with its reason, where it was found and where it is now. Only files that can't
   be moved stay where they are (`left-where-they-are.tsv`). Running again continues where it stopped (also after
   Ctrl+C); neither folder is ever searched.
-- **Several imports may run at once** on one data folder (different source folders, a cloud import, `--review`).
-  Reading and hashing run side by side; everything that writes to the data folder (deciding on a file and placing
-  it, adding folders to a sidecar, the review list) takes turns, holding the exclusive lock on
-  `.cache/import.lock`. Whoever takes a turn first reads what the others placed since from
-  `.cache/import-journal.tsv` (`<sha256>\t<path>` per file placed or sidecar changed), so a file another import
-  just placed is a duplicate, not a second copy, and two files of the same name never overwrite each other. Each
-  run claims its own run folder (`…-2` when two start in the same second). The server must still be stopped.
+- **Several imports may run at once**, next to the server (different source folders, a cloud import, `--review`);
+  each claims its own run folder (`…-2` when two start in the same second), and the review list is changed by one
+  at a time. See "Several processes on one data folder".
 - **Files are read several at a time, then decided one at a time, largest first**, so the original of a photo
   goes in before its smaller copies (which wait as near-duplicates), whatever order they were read in. An
   identical copy of a waiting near-duplicate is moved to the imported folder as its duplicate; its folder is
@@ -300,6 +297,24 @@ each service, rclone opens the browser to sign in, with **read-only** access (re
 - `--dry-run` only lists: how many would be downloaded, and how many Google Drive files are already in the data
   folder. Ctrl+C stops; files already downloaded stay in `--temp` and the next run imports them.
 - Google Photos can't be read by programs since March 2025: use Google Takeout, then import its folders.
+
+## Several processes on one data folder
+
+The server, `scripts/import` (one or more at once) and `scripts/scan-nudity` may all have the same data folder
+open. Each keeps the index in memory, so they **take turns** at the few steps that change it (`media/turns.go`):
+placing a file (a finished upload, an import), and rewriting a sidecar (folders, a scan's answer).
+
+- A turn holds the exclusive lock on `.cache/write.lock` (the operating system's file lock, dropped if the process
+  dies). It first catches up with what the others did, from `.cache/write-journal.tsv` (`<sha256>\t<path>` per file
+  placed or sidecar rewritten), then checks again that the file is new, picks its name and writes, and appends its
+  own lines. A turn takes milliseconds: copying and hashing an import, or receiving an upload, happen before it.
+- So a file is stored once even when a phone and an import bring it at the same moment (the second finds it
+  there: `MediaExists`, or a duplicate), and two files of the same name never overwrite each other.
+- Outside turns a store catches up before answering about the whole folder (`missingMedia`, `startUpload`,
+  `changes`, `storageUsage`): an imported file reaches the phones in their next change feed, and a feed position
+  can't pass a file placed by another process. A scan's `scannedAt` is the time of its turn, for the same reason.
+- The journal only grows (about 100 bytes a file); a store opened later starts reading at its end, as the sidecars
+  already hold everything before it.
 
 ## Timeouts
 
