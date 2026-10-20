@@ -3,12 +3,11 @@
   "tls_key": "certs/server-key.pem",
   "client_ca": "certs/ca.pem",
   "client_ca_key": "certs/ca-key.pem",
-  "image_folder": "D:\\Archive\\Hen\\phone DCIM",
   "users": [
     {
       "username": "hen",
       "cert_common_name": "hen",
-      "archive_folder": "D:\\Archive\\Hen\\phone DCIM"
+      "data_folder": "D:\\Archive\\Hen\\journal"
     }
   ]
 }
