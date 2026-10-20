@@ -130,14 +130,15 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
 
 ## Previews
 
-`GET /media/{sha256}/preview?w=1080&h=1440&fit=cover&crop=0.1,0.2,0.5,0.5&fmt=webp`
+`GET /media/{sha256}/preview?w=1080&h=1440&fit=cover&crop=0.1,0.2,0.5,0.5&fmt=webp&q=high`
 
 | Parameter | Meaning |
 |---|---|
 | `w`, `h` | The **physical pixels** the client will draw, 1–4096. The answer has exactly this size, so it is drawn 1:1 with no scaling on the device. |
 | `fit` | `cover` (default): fills the box, centered, cutting off what doesn't fit. `contain`: fits inside the box, so one side may be shorter. |
 | `crop` | Optional `x,y,w,h` as fractions of the **upright** photo (rounded to 1/10000): a story tile's focus and zoom. It is cut from the full-resolution original, so a 4× zoom stays sharp. |
-| `fmt` | `webp` (default) or `jpeg`. |
+| `fmt` | `webp` (default), `jpeg`, `heif` (HEVC, 4:2:0 so phones decode it), `avif` (AV1, 4:2:0) or `jxl` (JPEG XL). |
+| `q` | `low`, `medium`, `high` (default) or `max`: libvips Q 50, 70, 85, 95. |
 
 - Made with libvips in one scaling step from the original (`vips thumbnail`, then `extract_area` when
   something is cut off). EXIF orientation is applied, and the colour profile (Display P3) is kept;
@@ -148,12 +149,16 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
   the DNG's own colour processing is applied (black and white levels, white balance and its ColorMatrix /
   ForwardMatrix to sRGB, BaselineExposure, the ProfileGainTableMap that lifts the shadows, a soft roll-off of
   highlights, its default crop and orientation). The result is kept full size as `developed.jpg` beside the
-  photo's previews (about 2.5 s the first time for a 24 MP photo; previews from it then take as long as any).
+  photo's previews when the user's `preview_cache` is on (about 2.5 s for a 24 MP photo, so with the cache off
+  every preview of such a DNG takes that long).
   libvips needs JPEG XL support for this: Homebrew's has it, and so does the Windows bundle.
 - **Never scaled up.** When the box is bigger than the photo, the preview keeps the box's shape at the
   photo's own resolution (so it's smaller than asked); the client scales it on screen.
-- Cached under `.cache/previews/` and served with `Cache-Control: immutable`. When a user's previews
-  pass `preview_cache_max_gb` (default 50), the least recently used are deleted (checked hourly).
+- Served with `Cache-Control: immutable`; devices keep each size they ask for, and ask for a size only when they
+  have neither it nor the original. **Kept on the server only with `"preview_cache": true`** in the user's entry in
+  `config.json` (off by default): then under `.cache/previews/`, and when they pass `preview_cache_max_gb` (default
+  50) the least recently used are deleted (checked hourly). Without it each preview is made in a temporary folder,
+  sent and deleted.
 - Answers: `422` bad parameters, `404` unknown sha256, `501` for videos (posters not built yet), `503`
   when libvips isn't installed (the server logs this at startup; set `"vips"` in config.json if it's
   installed somewhere unusual).
