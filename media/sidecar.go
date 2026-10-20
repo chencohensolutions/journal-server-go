@@ -42,6 +42,11 @@ type Facts struct {
 	PairedWith *string   `json:"pairedWith"`
 	UploadedAt time.Time `json:"uploadedAt"`
 	UploadedBy string    `json:"uploadedBy"`
+	// Where scripts/import found the file on the server's disk; absent on uploads from devices.
+	ImportedFrom *string `json:"importedFrom,omitempty"`
+	// Every folder scripts/import found this file in, from the searched folder down ("phone DCIM/Flowers"):
+	// the albums it was kept in, as clues. Copies found later add theirs.
+	Folders []string `json:"folders,omitempty"`
 }
 
 // Sidecar is the <file>.json next to an original.

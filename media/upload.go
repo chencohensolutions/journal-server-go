@@ -42,6 +42,9 @@ type UploadRequest struct {
 	VersionOf  *string    `json:"versionOf"`
 	PairedWith *string    `json:"pairedWith"`
 	UploadedBy string     `json:"uploadedBy"`
+	// Set only by Import.
+	ImportedFrom *string  `json:"importedFrom,omitempty"`
+	Folders      []string `json:"folders,omitempty"`
 }
 
 // InvalidRequestError is a request no device should send (a client bug, not a user error).
@@ -277,7 +280,16 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 		os.Remove(s.sessionPath(req.Sha256))
 		return nil, ErrHashMismatch
 	}
+	item, err := s.place(partialPath, req)
+	if err != nil {
+		return nil, err
+	}
+	os.Remove(s.sessionPath(req.Sha256))
+	return item, nil
+}
 
+// place moves a file whose sha256 was checked to its month folder and writes its sidecar.
+func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	dirRel := monthDir(req.TakenAt)
@@ -290,7 +302,7 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 		return nil, err
 	}
 	dest := filepath.Join(dir, name)
-	if err := rename(partialPath, dest); err != nil {
+	if err := rename(from, dest); err != nil {
 		return nil, err
 	}
 
@@ -302,20 +314,22 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 		Format: SidecarFormat,
 		Sha256: req.Sha256,
 		Facts: Facts{
-			FileName:   req.FileName,
-			Kind:       req.Kind,
-			MimeType:   mimeType,
-			Size:       req.Size,
-			TakenAt:    req.TakenAt,
-			Width:      req.Width,
-			Height:     req.Height,
-			DurationMs: req.DurationMs,
-			Location:   req.Location,
-			Source:     req.Source,
-			VersionOf:  req.VersionOf,
-			PairedWith: req.PairedWith,
-			UploadedAt: s.now().UTC(),
-			UploadedBy: req.UploadedBy,
+			FileName:     req.FileName,
+			Kind:         req.Kind,
+			MimeType:     mimeType,
+			Size:         req.Size,
+			TakenAt:      req.TakenAt,
+			Width:        req.Width,
+			Height:       req.Height,
+			DurationMs:   req.DurationMs,
+			Location:     req.Location,
+			Source:       req.Source,
+			VersionOf:    req.VersionOf,
+			PairedWith:   req.PairedWith,
+			UploadedAt:   s.now().UTC(),
+			UploadedBy:   req.UploadedBy,
+			ImportedFrom: req.ImportedFrom,
+			Folders:      req.Folders,
 		},
 	}
 	data, err := json.MarshalIndent(sidecar, "", "  ")
@@ -324,12 +338,11 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 	}
 	if err := writeFileAtomic(dest+".json", data); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.
-		rename(dest, partialPath)
+		rename(dest, from)
 		return nil, err
 	}
 	item := &Item{Path: dirRel + "/" + name, Sidecar: sidecar}
 	s.items[req.Sha256] = item
-	os.Remove(s.sessionPath(req.Sha256))
 	copied := *item
 	return &copied, nil
 }

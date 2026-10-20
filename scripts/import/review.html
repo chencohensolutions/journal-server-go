@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Near-duplicates</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
+    --accent: #2f6fdb; --accent-text: #ffffff; --diff: #fff3c4; --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --card: #22221f; --text: #ececE8; --muted: #9a9a93; --line: #34342f;
+      --accent: #6ea0ff; --accent-text: #0d1a33; --diff: #4a3f12; --danger: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--line);
+    padding: 12px 16px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header p { margin: 0; color: var(--muted); }
+  main { max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 24px; }
+  .pair { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .pair.done { opacity: .45; }
+  .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .sides { grid-template-columns: 1fr; } }
+  .side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .photo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: var(--bg);
+    border-radius: 8px; cursor: zoom-in; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  td:first-child { color: var(--muted); white-space: nowrap; width: 1%; }
+  tr.differs td { background: var(--diff); }
+  .bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+  .bar .meta { color: var(--muted); margin-right: auto; }
+  button { font: inherit; border-radius: 8px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  .result { color: var(--muted); }
+  .result.error { color: var(--danger); }
+  .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Near-duplicates</h1>
+  <p id="count"></p>
+  <p>Rows that differ are highlighted. Click a photo to see it larger.</p>
+</header>
+<main id="pairs"></main>
+<script>
+const pairs = document.getElementById("pairs");
+let left = 0;
+
+function showCount() {
+  document.getElementById("count").textContent = left === 1 ? "1 waits for you" : `${left} wait for you`;
+  if (left === 0 && !pairs.querySelector(".pair:not(.done)")) {
+    pairs.insertAdjacentHTML("beforeend", '<p class="empty">Nothing left to decide.</p>');
+  }
+}
+
+function side(id, which, title) {
+  const el = document.createElement("section");
+  el.className = "side";
+  const src = `/preview?id=${id}&side=${which}`;
+  el.innerHTML = `<h2>${title}</h2><img class="photo" loading="lazy" alt=""><table></table>`;
+  const img = el.querySelector("img");
+  img.src = src;
+  img.onclick = () => window.open(src, "_blank");
+  return el;
+}
+
+async function fillInfo(id, sides) {
+  const [a, b] = await Promise.all(["new", "like"].map(s => fetch(`/info?id=${id}&side=${s}`).then(r => r.json())));
+  const other = [new Map(b.map(r => [r.Label, r.Value])), new Map(a.map(r => [r.Label, r.Value]))];
+  [a, b].forEach((rows, i) => {
+    const table = sides[i].querySelector("table");
+    for (const row of rows) {
+      const tr = table.insertRow();
+      const theirs = other[i].get(row.Label);
+      if (row.Label !== "sha256" && row.Label !== "Folder" && theirs !== undefined && theirs !== row.Value) tr.className = "differs";
+      tr.insertCell().textContent = row.Label;
+      tr.insertCell().textContent = row.Value || "—";
+    }
+  });
+}
+
+async function decide(card, id, action) {
+  const buttons = card.querySelectorAll("button");
+  buttons.forEach(b => b.disabled = true);
+  const result = card.querySelector(".result");
+  result.className = "result";
+  result.textContent = action === "import" ? "Importing…" : "Skipping…";
+  const response = await fetch(`/decide?id=${id}&action=${action}`, { method: "POST" });
+  if (!response.ok) {
+    result.className = "result error";
+    result.textContent = await response.text();
+    buttons.forEach(b => b.disabled = false);
+    return;
+  }
+  const body = await response.json();
+  result.textContent = body.message;
+  card.classList.add("done");
+  left = body.left;
+  showCount();
+}
+
+async function load() {
+  const items = await fetch("/items").then(r => r.json());
+  left = items.length;
+  showCount();
+  for (const item of items) {
+    const card = document.createElement("article");
+    card.className = "pair";
+    const sides = [side(item.id, "new", "New photo (not imported yet)"), side(item.id, "like", "Looks like (already in the journal)")];
+    const grid = document.createElement("div");
+    grid.className = "sides";
+    grid.append(...sides);
+    card.append(grid);
+    card.insertAdjacentHTML("beforeend", `<div class="bar">
+      <span class="meta">${item.distance} of 64 dHash bits apart</span>
+      <span class="result"></span>
+      <button data-action="skip">Skip it (duplicate)</button>
+      <button class="primary" data-action="import">Import it too</button></div>`);
+    card.querySelectorAll("button").forEach(b => b.onclick = () => decide(card, item.id, b.dataset.action));
+    pairs.append(card);
+    fillInfo(item.id, sides);
+  }
+}
+load();
+</script>
+</body>
+</html>

@@ -64,7 +64,8 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
 The device sends the facts (it already read them from MediaStore/PhotoKit); the server adds
 `uploadedAt` and `uploadedBy` (the enrolled device's name). `versionOf` is set on an edit of a photo
 (same device id, new content). `pairedWith` is set on a Live Photo's video (it names the photo) and on
-a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync.
+a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. Files brought in
+by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at.
 
 ## Uploading a file
 
@@ -184,6 +185,66 @@ again with each page's cursor until `hasMore` is false; afterwards it asks with 
 since (an empty page returns the same cursor). The cursor is opaque (today the upload time and sha256 of the last
 original in the page), so stories and notes can join the feed later without changing clients. Pages are at most
 5000; responses to `/query` are gzipped when the client accepts it.
+
+## Importing files already on the server's disk
+
+`scripts/import` copies photos and videos from folders on the server's disk (old phone backups) into a user's
+data folder, once each. **Stop the server first**: it reads the data folder only when it starts, and the script
+refuses to run while the admin API answers. Run from the server folder; try `--dry-run` first (it only counts):
+
+```
+go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] [--move-other] D:\Backups "E:\Old phone"
+```
+
+- Each folder given is searched at any depth, except hidden folders (`.thumbnails`), `$RECYCLE.BIN`,
+  `System Volume Information`, the data folder and the imported folder. Hidden files (Android's `.trashed-…`)
+  and files that aren't photos or videos are counted, not touched.
+- Each file is hashed; one whose sha256 the data folder already has (an earlier run, a device, or another copy
+  found in this run) is a **duplicate** and isn't copied. A new file is copied to `.cache/import/`, hashed again,
+  and placed like an upload (month folder, safe name, sidecar), with `source` from its folder like the Android
+  app (`camera`, `screenshots`, `whatsapp`, `other`).
+- **Every source file that is done, copied or duplicate, is moved to a folder of this run inside `--imported`**,
+  named by when the run started, keeping its path from the searched folder down
+  (`D:\Archive\phone DCIM\Camera\x.jpg` → `D:\Imported\2026-10-20-19-15-42\phone DCIM\Camera\x.jpg`), so runs
+  never mix or overwrite each other and each can be deleted once its result looks right (with the run's
+  `dates.tsv` and `near-duplicates.tsv`).
+- **Files that weren't imported are moved to `--not-imported`**, a separate folder so deleting an imported run
+  never deletes them: `<not-imported>\<run time>\<why>\phone DCIM\…`, with `<why>` one of `no date`, `failed`,
+  `near-duplicates` (waiting for `--review`), and with `--move-other` also `not photos or videos` and `hidden`
+  (`.trashed-…`); off by default, so searching a whole drive never moves its other files. The run's
+  `not-imported.tsv` lists each with its reason, where it was found and where it is now. Only files that can't
+  be moved stay where they are (`left-where-they-are.tsv`). Running again continues where it stopped (also after
+  Ctrl+C); neither folder is ever searched.
+- **Files are read several at a time, then decided one at a time, largest first**, so the original of a photo
+  goes in before its smaller copies (which wait as near-duplicates), whatever order they were read in. An
+  identical copy of a waiting near-duplicate is moved to the imported folder as its duplicate; its folder is
+  kept with the waiting photo, which is decided on once.
+- **Files are only copied**, byte for byte (the copy's sha256 is checked); nothing is written into them. What is
+  read from them goes in the sidecar, like an upload's facts.
+- **Dates come from the file name first** (`20251202_222720.mp4`, `PIC_20251202_192632357.jpg`,
+  `Screenshot_20251201_093154_App.png`): the metadata is used only when it shows the same local time (it adds the
+  offset) or when the name has no date. For photos that is EXIF `DateTimeOriginal` with `OffsetTimeOriginal`, read
+  with `vipsheader`, or from the file itself for DNG (vipsheader shows no EXIF for them). For videos it is Apple's
+  `com.apple.quicktime.creationdate`, or ffprobe's `creation_time` (UTC), from which the offset is worked out against
+  the name's local time. A time without an offset is in the server machine's time zone. Name and metadata more
+  than a day apart are listed in `dates.tsv`. Files with no date stay where they are.
+- Width and height (upright), length, and GPS location (EXIF, or a video's ISO 6709 `location` tag) are read too.
+- **Folders are kept as clues.** The data folder stays arranged by date (`media/YYYY/YYYY-MM/`); the folder each
+  file was found in, from the searched folder down (`phone DCIM/Flowers`, `phone DCIM/2026-06/2025`), goes in the
+  sidecar's `folders`, as found. A duplicate adds its folder to the copy already in the data folder (often the
+  copy kept in an album is the duplicate), and so does a near-duplicate skipped on the review page. Only the
+  sidecar is rewritten. `--backfill-folders <folder>…` adds the folders of files looked at by runs from before
+  this, from `.cache/source-hashes.tsv`.
+- **Near-duplicates** (photos that look alike but aren't the same bytes: a resized copy, a burst) are found by
+  **dHash** (the photo shrunk by libvips to 9×8 grey pixels, one bit per pair of neighbors) and listed in
+  `near-duplicates.tsv` when within `--near` bits (default 4) of a photo in the data folder or imported
+  before. **Shots of a burst** (taken 1–60 s apart, or in the same second with different burst numbers,
+  `20260120_081253_035.jpg` / `…_041.jpg`) are imported. **Any other near-duplicate is left where it is** and
+  added to `<imported>/review.json`; `--review` opens a page on this machine showing each next to the photo it
+  looks like, with both photos' facts (rows that differ highlighted), to **import it too** or **skip it** (moved to
+  the imported folder like a duplicate; decisions are logged in that run folder's `review-decisions.tsv`; `review.json` stays at the top of `--imported`, across runs). The dHash of every photo
+  in the data folder is kept in `.cache/dhash.tsv` (by sha256), and the sha256 of every file looked at in
+  `.cache/source-hashes.tsv` (by path, size and modified time), so later runs don't redo them. Videos have no dHash.
 
 ## Timeouts
 
