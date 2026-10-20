@@ -32,13 +32,11 @@
 			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
 		},
 		{
-			// Codes live in the running server's memory, so start "server: run" first.
+			// Codes live in the running server's memory, so start the server first ("server: run" or the debugger).
+			// Uses go run so it works without the binary that "server: run" builds.
 			"label": "server: enroll code",
 			"type": "shell",
-			"command": "./journal-server enroll-code ${input:enrollUser}",
-			"windows": {
-				"command": ".\\journal-server.exe enroll-code ${input:enrollUser}"
-			},
+			"command": "go run . enroll-code ${input:enrollUser}",
 			"options": { "cwd": "${workspaceFolder}" },
 			"problemMatcher": []
 		},
