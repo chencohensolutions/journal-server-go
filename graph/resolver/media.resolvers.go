@@ -93,6 +93,22 @@ func (r *queryResolver) Media(ctx context.Context, sha256 string) (*model.Media,
 	return toMedia(store, item), nil
 }
 
+// StorageUsage is the resolver for the storageUsage field.
+func (r *queryResolver) StorageUsage(ctx context.Context) (*model.StorageUsage, error) {
+	store, err := r.store(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u := store.Usage()
+	return &model.StorageUsage{
+		Photos:     u.Photos,
+		Videos:     u.Videos,
+		PhotoBytes: u.PhotoBytes,
+		VideoBytes: u.VideoBytes,
+		Bytes:      u.PhotoBytes + u.VideoBytes,
+	}, nil
+}
+
 // Changes is the resolver for the changes field.
 func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error) {
 	store, err := r.store(ctx)

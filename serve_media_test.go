@@ -116,6 +116,10 @@ func TestDeviceUploadsAndStreamsAVideo(t *testing.T) {
 			t.Errorf("media = %s, want %s (%+v)", got, want, media.Errors)
 		}
 	}
+	usage := env.graphql(t, device, `{ storageUsage { photos videos videoBytes bytes } }`, nil)
+	if got := string(usage.Data["storageUsage"]); got != `{"photos":0,"videos":1,"videoBytes":10000,"bytes":10000}` {
+		t.Errorf("storageUsage = %s %+v", got, usage.Errors)
+	}
 	again := env.graphql(t, device, startUploadMutation, map[string]any{"input": input})
 	if !strings.Contains(string(again.Data["startUpload"]), "MediaExists") {
 		t.Fatalf("second startUpload = %s", again.Data["startUpload"])

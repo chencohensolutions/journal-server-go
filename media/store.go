@@ -243,6 +243,30 @@ func (s *Store) Changes(cursor string, limit int) (items []Item, next string, ha
 	return all, next, hasMore, nil
 }
 
+// Usage is what the originals take up: how many photos and videos, and their bytes. Sidecars, uploads in progress
+// and previews are left out; they are small, or rebuilt.
+type Usage struct {
+	Photos, Videos         int
+	PhotoBytes, VideoBytes int64
+}
+
+func (s *Store) Usage() Usage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var u Usage
+	for _, item := range s.items {
+		facts := item.Sidecar.Facts
+		if facts.Kind == KindVideo {
+			u.Videos++
+			u.VideoBytes += facts.Size
+		} else {
+			u.Photos++
+			u.PhotoBytes += facts.Size
+		}
+	}
+	return u
+}
+
 // RelatedIndex is Related for every original at once: edits and paired files by the sha256 they point at.
 func (s *Store) RelatedIndex() (versions, paired map[string][]string) {
 	s.mu.RLock()

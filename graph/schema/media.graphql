@@ -51,10 +51,21 @@ type Media {
   url: String!
 }
 
+"What the user's originals take up on the server (sidecars and previews not counted)."
+type StorageUsage {
+  photos: Int!
+  videos: Int!
+  photoBytes: Int64!
+  videoBytes: Int64!
+  "photoBytes + videoBytes."
+  bytes: Int64!
+}
+
 extend type Query {
   "Which of these hashes the server does not have yet, in the order given. At most 1000 per call."
   missingMedia(hashes: [Sha256!]!): [Sha256!]!
   media(sha256: Sha256!): Media
+  storageUsage: StorageUsage!
 }
 
 input StartUploadInput {

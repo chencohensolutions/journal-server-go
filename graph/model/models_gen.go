@@ -154,6 +154,16 @@ type StartUploadInput struct {
 	PairedWith *string `json:"pairedWith,omitempty"`
 }
 
+// What the user's originals take up on the server (sidecars and previews not counted).
+type StorageUsage struct {
+	Photos     int   `json:"photos"`
+	Videos     int   `json:"videos"`
+	PhotoBytes int64 `json:"photoBytes"`
+	VideoBytes int64 `json:"videoBytes"`
+	// photoBytes + videoBytes.
+	Bytes int64 `json:"bytes"`
+}
+
 type UploadReady struct {
 	// Where to PUT the pieces: /upload/{sha256}.
 	URL string `json:"url"`

@@ -117,6 +117,15 @@ type ComplexityRoot struct {
 		Images            func(childComplexity int) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
+		StorageUsage      func(childComplexity int) int
+	}
+
+	StorageUsage struct {
+		Bytes      func(childComplexity int) int
+		PhotoBytes func(childComplexity int) int
+		Photos     func(childComplexity int) int
+		VideoBytes func(childComplexity int) int
+		Videos     func(childComplexity int) int
 	}
 
 	UploadReady struct {
@@ -140,6 +149,7 @@ type QueryResolver interface {
 	Image(ctx context.Context, id string) (*model.Image, error)
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
+	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
 	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 }
@@ -492,6 +502,43 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.MissingMedia(childComplexity, args["hashes"].([]string)), true
+	case "Query.storageUsage":
+		if e.ComplexityRoot.Query.StorageUsage == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.StorageUsage(childComplexity), true
+
+	case "StorageUsage.bytes":
+		if e.ComplexityRoot.StorageUsage.Bytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.Bytes(childComplexity), true
+	case "StorageUsage.photoBytes":
+		if e.ComplexityRoot.StorageUsage.PhotoBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.PhotoBytes(childComplexity), true
+	case "StorageUsage.photos":
+		if e.ComplexityRoot.StorageUsage.Photos == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.Photos(childComplexity), true
+	case "StorageUsage.videoBytes":
+		if e.ComplexityRoot.StorageUsage.VideoBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.VideoBytes(childComplexity), true
+	case "StorageUsage.videos":
+		if e.ComplexityRoot.StorageUsage.Videos == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.Videos(childComplexity), true
 
 	case "UploadReady.chunkSize":
 		if e.ComplexityRoot.UploadReady.ChunkSize == nil {
@@ -664,10 +711,21 @@ type Media {
   url: String!
 }
 
+"What the user's originals take up on the server (sidecars and previews not counted)."
+type StorageUsage {
+  photos: Int!
+  videos: Int!
+  photoBytes: Int64!
+  videoBytes: Int64!
+  "photoBytes + videoBytes."
+  bytes: Int64!
+}
+
 extend type Query {
   "Which of these hashes the server does not have yet, in the order given. At most 1000 per call."
   missingMedia(hashes: [Sha256!]!): [Sha256!]!
   media(sha256: Sha256!): Media
+  storageUsage: StorageUsage!
 }
 
 input StartUploadInput {
@@ -939,6 +997,22 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_url(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
+}
+
+func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "photos":
+		return ec.fieldContext_StorageUsage_photos(ctx, field)
+	case "videos":
+		return ec.fieldContext_StorageUsage_videos(ctx, field)
+	case "photoBytes":
+		return ec.fieldContext_StorageUsage_photoBytes(ctx, field)
+	case "videoBytes":
+		return ec.fieldContext_StorageUsage_videoBytes(ctx, field)
+	case "bytes":
+		return ec.fieldContext_StorageUsage_bytes(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type StorageUsage", field.Name)
 }
 
 func (ec *executionContext) childFields___Directive(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2462,6 +2536,38 @@ func (ec *executionContext) fieldContext_Query_media(ctx context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_storageUsage(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_storageUsage(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().StorageUsage(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.StorageUsage) graphql.Marshaler {
+			return ec.marshalNStorageUsage2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐStorageUsage(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_storageUsage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_StorageUsage(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_changes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -2637,6 +2743,121 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _StorageUsage_photos(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_photos(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Photos, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_photos(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _StorageUsage_videos(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_videos(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Videos, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_videos(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _StorageUsage_photoBytes(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_photoBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PhotoBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_photoBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _StorageUsage_videoBytes(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_videoBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VideoBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_videoBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _StorageUsage_bytes(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Bytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
 }
 
 func (ec *executionContext) _UploadReady_url(ctx context.Context, field graphql.CollectedField, obj *model.UploadReady) (ret graphql.Marshaler) {
@@ -4744,6 +4965,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "storageUsage":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_storageUsage(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "changes":
 			field := field
 
@@ -4796,6 +5039,65 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___schema(ctx, field)
 			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var storageUsageImplementors = []string{"StorageUsage"}
+
+func (ec *executionContext) _StorageUsage(ctx context.Context, sel ast.SelectionSet, obj *model.StorageUsage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, storageUsageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("StorageUsage")
+		case "photos":
+			out.Values[i] = ec._StorageUsage_photos(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "videos":
+			out.Values[i] = ec._StorageUsage_videos(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "photoBytes":
+			out.Values[i] = ec._StorageUsage_photoBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "videoBytes":
+			out.Values[i] = ec._StorageUsage_videoBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "bytes":
+			out.Values[i] = ec._StorageUsage_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -5406,6 +5708,22 @@ func (ec *executionContext) marshalNImage2ᚖgithubᚗcomᚋjournalᚋserverᚑg
 	return ec._Image(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
+	res, err := graphql.UnmarshalInt(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.SelectionSet, v int) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalInt(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
 func (ec *executionContext) unmarshalNInt642int64(ctx context.Context, v any) (int64, error) {
 	res, err := graphql.UnmarshalInt64(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -5511,6 +5829,20 @@ func (ec *executionContext) marshalNStartUploadResult2githubᚗcomᚋjournalᚋs
 		return graphql.Null
 	}
 	return ec._StartUploadResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNStorageUsage2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐStorageUsage(ctx context.Context, sel ast.SelectionSet, v model.StorageUsage) graphql.Marshaler {
+	return ec._StorageUsage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNStorageUsage2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐStorageUsage(ctx context.Context, sel ast.SelectionSet, v *model.StorageUsage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._StorageUsage(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

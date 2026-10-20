@@ -137,6 +137,10 @@ It supports `Range`, which is how videos stream and seek; videos are never conve
 `query media(sha256)` returns the facts, plus `versions` (edits of this photo) and `paired` (files
 that name it in `pairedWith`).
 
+`query storageUsage` returns how many photos and videos the user has and the bytes their originals take
+(`photoBytes`, `videoBytes`, `bytes`), counted from the index, so it answers at once. Sidecars, uploads in
+progress and previews aren't counted. The app shows it in Settings → Backup.
+
 All of these need a client certificate, like everything except enrollment
 (see [authentication.md](authentication.md)).
 
