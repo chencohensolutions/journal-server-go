@@ -48,9 +48,12 @@ func OpenStore(root string, now func() time.Time) (*Store, error) {
 		}
 	}
 	s.startJournal()
+	log.Printf("media: indexing %s", root)
+	started := time.Now()
 	if err := s.scan(); err != nil {
 		return nil, fmt.Errorf("index %s: %w", root, err)
 	}
+	log.Printf("media: indexed %d files in %s after %s", len(s.items), root, time.Since(started).Round(time.Millisecond))
 	return s, nil
 }
 
@@ -58,30 +61,68 @@ func (s *Store) Root() string { return s.root }
 
 func (s *Store) uploadsDir() string { return filepath.Join(s.root, ".cache", "uploads") }
 
+// scanReaders is how many sidecars scan reads at once: even one spinning disk serves a queue of reads in a
+// better order than one read at a time.
+const scanReaders = 16
+
 // scan reads every sidecar under media/. A sidecar that can't be read, or whose original is
 // missing, is logged and skipped: it is left on disk for the owner to look at.
 func (s *Store) scan() error {
-	mediaDir := filepath.Join(s.root, "media")
-	return filepath.WalkDir(mediaDir, func(path string, entry fs.DirEntry, err error) error {
+	// The walk lists every file, so whether an original exists is known without asking the disk again.
+	var sidecars []string
+	files := map[string]bool{}
+	err := filepath.WalkDir(filepath.Join(s.root, "media"), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			return nil
+		if entry.Type().IsRegular() {
+			files[path] = true
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			sidecars = append(sidecars, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Read in parallel, but index in walk order, so which of two copies is kept doesn't depend on timing.
+	type read struct {
+		data []byte
+		err  error
+	}
+	reads := make([]read, len(sidecars))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for range scanReaders {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				reads[i].data, reads[i].err = os.ReadFile(sidecars[i])
+			}
+		}()
+	}
+	for i := range sidecars {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+
+	for i, path := range sidecars {
+		if reads[i].err != nil {
+			return reads[i].err
 		}
 		var sidecar Sidecar
-		if err := json.Unmarshal(data, &sidecar); err != nil || sidecar.Format != SidecarFormat || !IsSha256(sidecar.Sha256) {
+		if err := json.Unmarshal(reads[i].data, &sidecar); err != nil || sidecar.Format != SidecarFormat || !IsSha256(sidecar.Sha256) {
 			// Also an original that happens to be a .json file; its sidecar is <name>.json.json.
-			return nil
+			continue
 		}
 		original := strings.TrimSuffix(path, ".json")
-		if info, err := os.Stat(original); err != nil || !info.Mode().IsRegular() {
+		if !files[original] {
 			log.Printf("media: %s has no original next to it; skipped", path)
-			return nil
+			continue
 		}
 		rel, err := filepath.Rel(s.root, original)
 		if err != nil {
@@ -89,11 +130,11 @@ func (s *Store) scan() error {
 		}
 		if existing, ok := s.items[sidecar.Sha256]; ok {
 			log.Printf("media: %s is a second copy of %s; skipped", rel, existing.Path)
-			return nil
+			continue
 		}
 		s.items[sidecar.Sha256] = &Item{Path: filepath.ToSlash(rel), Sidecar: sidecar}
-		return nil
-	})
+	}
+	return nil
 }
 
 func (s *Store) Get(sha256 string) (Item, bool) {
