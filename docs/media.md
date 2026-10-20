@@ -4,8 +4,8 @@ Devices upload originals to the server, which keeps them byte for byte in the us
 as plain files. The files are the truth: the index in memory is rebuilt from the sidecars every
 time the server starts, so the folder alone is a complete copy, on Windows, macOS or Linux.
 
-Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, and
-photo previews at the exact size the client asks for, and the change feed for media. **Not built yet:**
+Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, verifying an
+original before a device deletes its copy, and photo previews at the exact size the client asks for, and the change feed for media. **Not built yet:**
 video posters, stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
 (previews need libvips: `brew install vips`); Windows comes later. To run it on Windows now, run
 `go run ./scripts/bundle-vips` once in the server folder: the official Windows builds of libvips (WinGet,
@@ -111,6 +111,21 @@ PUT … the last piece                          ───▶   checks the sha256
 `GET /media/{sha256}` returns the original with its MIME type, `ETag: "<sha256>"`, and
 `Cache-Control: private, max-age=31536000, immutable`, since the content of a sha256 never changes.
 It supports `Range`, which is how videos stream and seek; videos are never converted.
+
+## Verifying before a device deletes its copy
+
+`POST /media/{sha256}/verify` reads the original from disk again and hashes it, every time (nothing is remembered).
+It answers `200 {"sha256": "…", "result": "ok" | "missing" | "mismatch"}`:
+
+- `ok`: the original and its sidecar are there and the bytes have the sha256. Only then may a device delete its copy
+  (the app's "Free up space" hashes its own copy at the same time; see the client's design.md).
+- `missing`: not in the index, or the original or its sidecar is gone from the folder (logged).
+- `mismatch`: the original is there but its size or bytes are wrong. The server logs `THE ORIGINAL IS DAMAGED`;
+  it doesn't repair it, and an upload of the same sha256 still answers `MediaExists`, so fix it by hand from the
+  device's copy for now.
+
+At most 2 files are hashed at once, so checks don't starve uploads of the disk. There is no time limit (a 32 GB
+video on a slow disk takes minutes); hashing stops when the device drops the request.
 
 ## Previews
 

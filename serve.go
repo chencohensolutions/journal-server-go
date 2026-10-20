@@ -189,6 +189,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux.Handle("HEAD /upload/{sha256}", upload)
 	mux.Handle("GET /media/{sha256}", identify(config, enrollment.Registry, false, media.OriginalHandler(userStore)))
 	mux.Handle("GET /media/{sha256}/preview", identify(config, enrollment.Registry, false, media.PreviewHandler(userStore, previews)))
+	mux.Handle("POST /media/{sha256}/verify", identify(config, enrollment.Registry, false, media.VerifyHandler(userStore)))
 	mux.Handle("/images/", identify(config, enrollment.Registry, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := auth.FromContext(r.Context())
 		if user == nil {

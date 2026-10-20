@@ -8,7 +8,8 @@ The clients and the overall design live in `../journal-client-kmp`. **Read its
 [docs/design.md](../journal-client-kmp/docs/design.md)** before server work: it records the agreed data format
 (plain files as the truth, a portable data folder, sha256 ids, story folders named by UTC creation time) and the
 upload and sync design agreed with the owner. **Media upload is built** (package `media`, per-user `data_folder`,
-resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range, `GET /media/{sha256}/preview` via libvips): see
+resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range, `GET /media/{sha256}/preview` via libvips, `POST /media/{sha256}/verify` re-hashes an original before a device
+deletes its copy): see
 [docs/media.md](docs/media.md). Video posters, the change feed for stories and notes, and the story trash are not
 built yet.
 
