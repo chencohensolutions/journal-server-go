@@ -8,8 +8,9 @@ Built so far: upload (resumable, deduplicated by sha256), downloading or streami
 original before a device deletes its copy, and photo previews at the exact size the client asks for, and the change feed for media. **Not built yet:**
 video posters, stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
 (previews need libvips: `brew install vips`); Windows comes later. To run it on Windows now, run
-`go run ./scripts/bundle-vips` once in the server folder: the official Windows builds of libvips (WinGet,
-libvips.org) leave out the HEVC decoder and can't read iPhone HEIC photos, so this copies MSYS2's build,
+`go run ./scripts/bundle-vips` once in the server folder (from PowerShell or cmd: Git Bash's `tar` can't read its
+Windows paths): the official Windows builds of libvips (WinGet, libvips.org) leave out the HEVC decoder and can't
+read iPhone HEIC photos, so this copies MSYS2's build, with JPEG XL for Samsung's DNGs,
 with only the DLLs it loads (about 130 MB), into `vips/`. The server uses `vips/bin` before the PATH, and the
 folder can be moved along with the server. The agreed design is in
 [journal-client-kmp/docs/design.md](../../journal-client-kmp/docs/design.md) ("Upload and sync").
@@ -141,6 +142,14 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
 - Made with libvips in one scaling step from the original (`vips thumbnail`, then `extract_area` when
   something is cut off). EXIF orientation is applied, and the colour profile (Display P3) is kept;
   other metadata is dropped. Quality 90.
+- **DNG (RAW)** previews show the raw data, never the JPEG a DNG carries. Most DNGs are read by libvips
+  (LibRaw). Samsung's Expert RAW and Pro mode DNGs (DNG 1.7: demosaiced "linear" data compressed with JPEG XL,
+  which LibRaw can't unpack) are developed by the server (`media/develop.go`): libvips decodes the JPEG XL, then
+  the DNG's own colour processing is applied (black and white levels, white balance and its ColorMatrix /
+  ForwardMatrix to sRGB, BaselineExposure, the ProfileGainTableMap that lifts the shadows, a soft roll-off of
+  highlights, its default crop and orientation). The result is kept full size as `developed.jpg` beside the
+  photo's previews (about 2.5 s the first time for a 24 MP photo; previews from it then take as long as any).
+  libvips needs JPEG XL support for this: Homebrew's has it, and so does the Windows bundle.
 - **Never scaled up.** When the box is bigger than the photo, the preview keeps the box's shape at the
   photo's own resolution (so it's smaller than asked); the client scales it on screen.
 - Cached under `.cache/previews/` and served with `Cache-Control: immutable`. When a user's previews

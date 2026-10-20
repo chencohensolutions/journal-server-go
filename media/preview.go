@@ -149,7 +149,7 @@ type Previews struct {
 	// Running vips is heavy; this many at once.
 	slots chan struct{}
 	locks keyedMutex
-	sizes sync.Map // sha256 → [2]int upright size
+	sizes sync.Map // sha256 (or sha256 + "/developed", a developed DNG) → [2]int upright size
 }
 
 var ErrPreviewsUnavailable = errors.New("libvips is not installed")
@@ -205,13 +205,6 @@ func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec Previe
 		return "", ctx.Err()
 	}
 
-	original := filepath.Join(store.root, filepath.FromSlash(item.Path))
-	width, height, err := p.uprightSize(ctx, item.Sha256(), original)
-	if err != nil {
-		return "", err
-	}
-	pl := planPreview(spec, width, height)
-
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
@@ -221,23 +214,27 @@ func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec Previe
 	}
 	defer os.RemoveAll(work)
 
-	// Only the colour profile is kept: EXIF would carry an orientation that is already applied.
-	saveOptions := "[Q=90,keep=icc]"
-	out := filepath.Join(work, "out."+spec.Format)
-	size := []string{strconv.Itoa(pl.scaledW), "--height", strconv.Itoa(pl.scaledH), "--size", "force"}
-	if !pl.needsCut() {
-		if err := p.run(ctx, append([]string{"thumbnail", original, out + saveOptions}, size...)...); err != nil {
-			return "", err
+	original := filepath.Join(store.root, filepath.FromSlash(item.Path))
+	source, sizeKey := original, item.Sha256()
+	// A DNG with demosaiced, JPEG XL compressed raw data (DNG 1.7) is developed here first, since LibRaw
+	// can't unpack it; other DNGs go to libvips (LibRaw) like any photo. The JPEG a DNG carries is never
+	// used: previews show the raw data.
+	if isDNG(item.Path) {
+		d, err := readLinearDNG(original)
+		if err != nil {
+			return "", fmt.Errorf("reading %s as DNG: %w", item.Path, err)
 		}
-	} else {
-		scaled := filepath.Join(work, "scaled.v")
-		if err := p.run(ctx, append([]string{"thumbnail", original, scaled}, size...)...); err != nil {
-			return "", err
+		if d != nil {
+			if source, err = p.developed(ctx, store, item, d, original); err != nil {
+				return "", err
+			}
+			sizeKey = item.Sha256() + "/developed"
 		}
-		if err := p.run(ctx, "extract_area", scaled, out+saveOptions,
-			strconv.Itoa(pl.left), strconv.Itoa(pl.top), strconv.Itoa(pl.outW), strconv.Itoa(pl.outH)); err != nil {
-			return "", err
-		}
+	}
+
+	out, err := p.render(ctx, sizeKey, source, work, spec)
+	if err != nil {
+		return "", err
 	}
 	if err := rename(out, path); err != nil {
 		return "", err
@@ -245,10 +242,39 @@ func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec Previe
 	return path, nil
 }
 
+// render makes the preview of source (sizeKey caches its upright size) in work, and returns its path.
+func (p *Previews) render(ctx context.Context, sizeKey, source, work string, spec PreviewSpec) (string, error) {
+	width, height, err := p.uprightSize(ctx, sizeKey, source)
+	if err != nil {
+		return "", err
+	}
+	pl := planPreview(spec, width, height)
+
+	// Only the colour profile is kept: EXIF would carry an orientation that is already applied.
+	saveOptions := "[Q=90,keep=icc]"
+	out := filepath.Join(work, "out."+spec.Format)
+	size := []string{strconv.Itoa(pl.scaledW), "--height", strconv.Itoa(pl.scaledH), "--size", "force"}
+	if !pl.needsCut() {
+		if err := p.run(ctx, append([]string{"thumbnail", source, out + saveOptions}, size...)...); err != nil {
+			return "", err
+		}
+	} else {
+		scaled := filepath.Join(work, "scaled.v")
+		if err := p.run(ctx, append([]string{"thumbnail", source, scaled}, size...)...); err != nil {
+			return "", err
+		}
+		if err := p.run(ctx, "extract_area", scaled, out+saveOptions,
+			strconv.Itoa(pl.left), strconv.Itoa(pl.top), strconv.Itoa(pl.outW), strconv.Itoa(pl.outH)); err != nil {
+			return "", err
+		}
+	}
+	return out, nil
+}
+
 // uprightSize is the original's size as shown, after its EXIF orientation (HEIC files are already
 // upright when libvips reads them).
-func (p *Previews) uprightSize(ctx context.Context, sha, original string) (int, int, error) {
-	if size, ok := p.sizes.Load(sha); ok {
+func (p *Previews) uprightSize(ctx context.Context, key, original string) (int, int, error) {
+	if size, ok := p.sizes.Load(key); ok {
 		s := size.([2]int)
 		return s[0], s[1], nil
 	}
@@ -275,7 +301,7 @@ func (p *Previews) uprightSize(ctx context.Context, sha, original string) (int, 
 	if o := fields["orientation"]; o >= 5 && o <= 8 {
 		width, height = height, width
 	}
-	p.sizes.Store(sha, [2]int{width, height})
+	p.sizes.Store(key, [2]int{width, height})
 	return width, height, nil
 }
 

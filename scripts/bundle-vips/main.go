@@ -30,6 +30,8 @@ var wanted = []string{
 	"bin/vips.exe",
 	"bin/vipsheader.exe",
 	"lib/vips-modules-*/vips-heif.dll",
+	// JPEG XL: the raw data of DNG 1.7 files (Samsung Expert RAW and Pro mode), see media/develop.go.
+	"lib/vips-modules-*/vips-jxl.dll",
 	"lib/libheif/plugins/*.dll",
 }
 
@@ -48,7 +50,7 @@ func main() {
 	check(os.MkdirAll(cache, 0o755))
 
 	pkgs := readDatabase(cache)
-	names := resolve(pkgs, "libvips", "libheif", "libde265")
+	names := resolve(pkgs, "libvips", "libheif", "libde265", "libjxl")
 	log.Printf("%d packages", len(names))
 
 	staging := filepath.Join(cache, "staging")
