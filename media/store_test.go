@@ -323,3 +323,29 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 		t.Fatalf("bad cursor: %v", err)
 	}
 }
+
+func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
+	f := newFixture(t)
+	f.now = f.now.Add(time.Second)
+	item := f.upload([]byte("photo"), "IMG.jpg")
+	_, cursor, _, _ := f.store.Changes("", 10)
+
+	scanned := f.now.Add(time.Hour)
+	if err := f.store.SetNudity(item.Sha256(), Detection{Score: 0.93, Model: "nudenet-320n", ScannedAt: scanned}); err != nil {
+		t.Fatal(err)
+	}
+	items, _, _, _ := f.store.Changes(cursor, 10)
+	if len(items) != 1 || items[0].Sidecar.Detected.Nudity.Score != 0.93 {
+		t.Fatalf("after the scan: %v", items)
+	}
+
+	// The answer is in the file: a store opened again reads it, with the facts as they were.
+	again, err := OpenStore(f.store.Root(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := again.Get(item.Sha256())
+	if d := got.Sidecar.Detected; d == nil || d.Nudity.Model != "nudenet-320n" || !d.Nudity.ScannedAt.Equal(scanned) || got.Sidecar.Facts.FileName != "IMG.jpg" {
+		t.Fatalf("reopened: %+v", got.Sidecar)
+	}
+}

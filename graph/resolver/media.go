@@ -65,5 +65,9 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 	if facts.Location != nil {
 		m.Location = &model.GeoPoint{Lat: facts.Location.Lat, Lon: facts.Location.Lon}
 	}
+	if d := item.Sidecar.Detected; d != nil && d.Nudity != nil {
+		score := d.Nudity.Score
+		m.Nudity = &score
+	}
 	return m
 }

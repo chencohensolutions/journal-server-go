@@ -56,6 +56,31 @@ type Sidecar struct {
 	Facts  Facts  `json:"facts"`
 	// Caption and tags, written through sync (not built yet). Kept as is when the facts are rewritten.
 	Note json.RawMessage `json:"note,omitempty"`
+	// What models found in the file (scripts/scan-nudity). Never the user's tags: clients decide what to hide.
+	Detected *Detected `json:"detected,omitempty"`
+}
+
+// Detected is what models found in a file, one entry per kind of finding.
+type Detected struct {
+	Nudity *Detection `json:"nudity,omitempty"`
+}
+
+// Detection is one model's answer about a file.
+type Detection struct {
+	// 0 (nothing found) to 1 (sure).
+	Score float64 `json:"score"`
+	// Which model and version answered ("nudenet-320n"), so a better one can scan again.
+	Model     string    `json:"model"`
+	ScannedAt time.Time `json:"scannedAt"`
+}
+
+// ChangedAt is the last time the sidecar changed in a way clients see: its upload, or a later scan.
+func (s Sidecar) ChangedAt() time.Time {
+	changed := s.Facts.UploadedAt
+	if s.Detected != nil && s.Detected.Nudity != nil && s.Detected.Nudity.ScannedAt.After(changed) {
+		changed = s.Detected.Nudity.ScannedAt
+	}
+	return changed
 }
 
 // Item is one original known to a store.

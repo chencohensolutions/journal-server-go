@@ -87,6 +87,7 @@ type ComplexityRoot struct {
 		Kind       func(childComplexity int) int
 		Location   func(childComplexity int) int
 		MimeType   func(childComplexity int) int
+		Nudity     func(childComplexity int) int
 		Paired     func(childComplexity int) int
 		PairedWith func(childComplexity int) int
 		Sha256     func(childComplexity int) int
@@ -337,6 +338,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.MimeType(childComplexity), true
+	case "Media.nudity":
+		if e.ComplexityRoot.Media.Nudity == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Nudity(childComplexity), true
 	case "Media.paired":
 		if e.ComplexityRoot.Media.Paired == nil {
 			break
@@ -707,6 +714,11 @@ type Media {
   uploadedAt: Time!
   "The device that uploaded it."
   uploadedBy: String!
+  """
+  How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
+  user's threshold, and fetch nothing of it.
+  """
+  nudity: Float
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -993,6 +1005,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_uploadedAt(ctx, field)
 	case "uploadedBy":
 		return ec.fieldContext_Media_uploadedBy(ctx, field)
+	case "nudity":
+		return ec.fieldContext_Media_nudity(ctx, field)
 	case "url":
 		return ec.fieldContext_Media_url(ctx, field)
 	}
@@ -2214,6 +2228,29 @@ func (ec *executionContext) _Media_uploadedBy(ctx context.Context, field graphql
 }
 func (ec *executionContext) fieldContext_Media_uploadedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_nudity(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_nudity(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Nudity, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
+			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_nudity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Float does not have child fields"))
 }
 
 func (ec *executionContext) _Media_url(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
@@ -4741,6 +4778,8 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "nudity":
+			out.Values[i] = ec._Media_nudity(ctx, field, obj)
 		case "url":
 			out.Values[i] = ec._Media_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -6056,6 +6095,23 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	_ = ctx
 	res := graphql.MarshalBoolean(*v)
 	return res
+}
+
+func (ec *executionContext) unmarshalOFloat2ᚖfloat64(ctx context.Context, v any) (*float64, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOFloat2ᚖfloat64(ctx context.Context, sel ast.SelectionSet, v *float64) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	res := graphql.MarshalFloatContext(*v)
+	return graphql.WrapContextMarshaler(ctx, res)
 }
 
 func (ec *executionContext) marshalOGeoPoint2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐGeoPoint(ctx context.Context, sel ast.SelectionSet, v *model.GeoPoint) graphql.Marshaler {

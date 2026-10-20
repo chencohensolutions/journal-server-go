@@ -95,6 +95,33 @@ func (s *Store) AddFolders(sha string, folders []string) (changed bool, err erro
 	return true, nil
 }
 
+// SetNudity writes a nudity scan's answer into the file's sidecar, replacing an earlier one. Only the sidecar is
+// rewritten; the original is never touched. The file comes again in the change feed (see ChangedAt).
+func (s *Store) SetNudity(sha string, detection Detection) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[sha]
+	if !ok {
+		return fmt.Errorf("%s isn't in the data folder", sha)
+	}
+	sidecar := item.Sidecar
+	detected := Detected{}
+	if sidecar.Detected != nil {
+		detected = *sidecar.Detected
+	}
+	detected.Nudity = &detection
+	sidecar.Detected = &detected
+	data, err := json.MarshalIndent(sidecar, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomic(filepath.Join(s.root, filepath.FromSlash(item.Path))+".json", data); err != nil {
+		return err
+	}
+	item.Sidecar = sidecar
+	return nil
+}
+
 // ClearImports deletes copies left behind by an import that was stopped halfway.
 func (s *Store) ClearImports() error { return os.RemoveAll(s.importDir()) }
 

@@ -47,6 +47,11 @@ type Media {
   uploadedAt: Time!
   "The device that uploaded it."
   uploadedBy: String!
+  """
+  How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
+  user's threshold, and fetch nothing of it.
+  """
+  nudity: Float
   "The original: /media/{sha256}, with Range support."
   url: String!
 }

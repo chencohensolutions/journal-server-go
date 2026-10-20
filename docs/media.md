@@ -64,7 +64,8 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
 The device sends the facts (it already read them from MediaStore/PhotoKit); the server adds
 `uploadedAt` and `uploadedBy` (the enrolled device's name). `versionOf` is set on an edit of a photo
 (same device id, new content). `pairedWith` is set on a Live Photo's video (it names the photo) and on
-a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. Files brought in
+a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
+models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at.
 
 ## Uploading a file
@@ -180,11 +181,33 @@ All of these need a client certificate, like everything except enrollment
 ## Change feed
 
 `query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA, path: "media/<sha256>",
-deleted, media }`, oldest upload first, with a `cursor` and `hasMore`. A new device starts without `since` and calls
-again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what was uploaded
-since (an empty page returns the same cursor). The cursor is opaque (today the upload time and sha256 of the last
-original in the page), so stories and notes can join the feed later without changing clients. Pages are at most
-5000; responses to `/query` are gzipped when the client accepts it.
+deleted, media }`, oldest change first, with a `cursor` and `hasMore`. A new device starts without `since` and calls
+again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed
+since (an empty page returns the same cursor). A file changes when it is uploaded, and again when a scan writes its
+answer into the sidecar (see [Nudity scan](#nudity-scan)): it then comes again, whole. The cursor is opaque (today
+the time of the last change and sha256 of the last original in the page), so stories and notes can join the feed later
+without changing clients. Pages are at most 5000; responses to `/query` are gzipped when the client accepts it.
+
+## Nudity scan
+
+`go run ./scripts/scan-nudity --user hen` scores every photo and video for nudity with
+[NudeNet](https://github.com/notAI-tech/NudeNet) (`python3 -m pip install nudenet`; `--python` picks another Python)
+and writes the answer into the sidecar:
+
+```json
+"detected": {
+  "nudity": { "score": 0.93, "model": "nudenet-320n", "scannedAt": "2026-10-20T19:24:10Z" }
+}
+```
+
+- The score is NudeNet's highest confidence in an exposed breast, genitals, buttocks or anus; 0 when it finds none.
+- It is never a tag: the user's tags stay theirs. The API gives it as `Media.nudity` (null until scanned). Clients
+  hide what is over the user's threshold while "Show private media" is off, and fetch nothing of it (no preview, no
+  original).
+- NudeNet runs in Python as a separate program and is given a 640 px JPEG preview (a video's poster frame), never the
+  original. Files already scanned by the same `model` are skipped, so a stopped run continues where it stopped;
+  `--rescan` scans everything again. Stop the server first, as for the import.
+- For now it is run by hand after uploads or imports; later it will run on each new file.
 
 ## Importing files already on the server's disk
 

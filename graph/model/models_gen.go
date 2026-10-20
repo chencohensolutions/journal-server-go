@@ -119,6 +119,9 @@ type Media struct {
 	UploadedAt time.Time `json:"uploadedAt"`
 	// The device that uploaded it.
 	UploadedBy string `json:"uploadedBy"`
+	// How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
+	// user's threshold, and fetch nothing of it.
+	Nudity *float64 `json:"nudity,omitempty"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
 }

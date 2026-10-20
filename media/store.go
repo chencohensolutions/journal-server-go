@@ -220,9 +220,10 @@ func (l *Library) PurgeExpiredUploads() {
 	}
 }
 
-// Changes returns up to limit originals uploaded after cursor ("" for all), oldest upload first, with the cursor
-// to continue from. Originals never change, so their upload order is the order of changes; the cursor is
-// opaque to clients, so the feed can later count edits to notes and stories too.
+// Changes returns up to limit originals changed after cursor ("" for all), oldest change first, with the cursor
+// to continue from. Originals never change, but their sidecars can get a scan's answer later (Sidecar.ChangedAt),
+// so a file comes again once scanned; the cursor is opaque to clients, so the feed can later count edits to notes
+// and stories too.
 func (s *Store) Changes(cursor string, limit int) (items []Item, next string, hasMore bool, err error) {
 	after, err := decodeCursor(cursor)
 	if err != nil {
@@ -294,25 +295,26 @@ func (s *Store) RelatedIndex() (versions, paired map[string][]string) {
 	return versions, paired
 }
 
-// feedPosition orders the feed: upload time, then sha256 for files uploaded in the same instant.
+// feedPosition orders the feed: the time of the last change (upload or scan), then sha256 for files changed in
+// the same instant.
 type feedPosition struct {
-	uploadedAt int64
-	sha        string
+	changedAt int64
+	sha       string
 }
 
 func position(item Item) feedPosition {
-	return feedPosition{item.Sidecar.Facts.UploadedAt.UnixNano(), item.Sidecar.Sha256}
+	return feedPosition{item.Sidecar.ChangedAt().UnixNano(), item.Sidecar.Sha256}
 }
 
 func (p feedPosition) less(o feedPosition) bool {
-	return p.uploadedAt < o.uploadedAt || p.uploadedAt == o.uploadedAt && p.sha < o.sha
+	return p.changedAt < o.changedAt || p.changedAt == o.changedAt && p.sha < o.sha
 }
 
 // before reports whether item comes after p; the zero position comes before everything.
 func (p *feedPosition) before(item Item) bool { return p == nil || p.less(position(item)) }
 
 func (p feedPosition) encode() string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("m1:%d:%s", p.uploadedAt, p.sha)))
+	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("m1:%d:%s", p.changedAt, p.sha)))
 }
 
 // ErrBadCursor is a cursor this server didn't hand out.
@@ -327,7 +329,7 @@ func decodeCursor(cursor string) (*feedPosition, error) {
 		return nil, ErrBadCursor
 	}
 	var p feedPosition
-	if _, err := fmt.Sscanf(string(raw), "m1:%d:%s", &p.uploadedAt, &p.sha); err != nil || !IsSha256(p.sha) {
+	if _, err := fmt.Sscanf(string(raw), "m1:%d:%s", &p.changedAt, &p.sha); err != nil || !IsSha256(p.sha) {
 		return nil, ErrBadCursor
 	}
 	return &p, nil
