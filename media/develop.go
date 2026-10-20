@@ -24,11 +24,16 @@ import (
 
 const developedName = "developed.jpg"
 
-// developed returns the developed image of a linear DNG, making it first if it isn't cached.
-func (p *Previews) developed(ctx context.Context, store *Store, item Item, d *linearDNG, original string) (string, error) {
-	path := filepath.Join(store.previewDir(item.Sha256()), developedName)
-	unlock := p.locks.Lock(path)
-	defer unlock()
+// developed returns the developed image of a linear DNG. With the store's CachePreviews it is kept
+// beside the photo's previews (and found there next time); without, it is made in into, the request's
+// temporary folder.
+func (p *Previews) developed(ctx context.Context, store *Store, item Item, d *linearDNG, original, into string) (string, error) {
+	path := filepath.Join(into, developedName)
+	if store.CachePreviews {
+		path = filepath.Join(store.previewDir(item.Sha256()), developedName)
+		unlock := p.locks.Lock(path)
+		defer unlock()
+	}
 	if info, err := os.Stat(path); err == nil {
 		touch(path, info)
 		return path, nil

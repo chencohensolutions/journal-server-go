@@ -30,17 +30,31 @@ type PreviewSpec struct {
 	Fit string
 	// Part of the upright original to show, as fractions of its width and height; nil for all of it.
 	Crop *Rect
-	// "webp" or "jpeg".
+	// "webp", "jpeg", "heif" (HEVC), "avif" (AV1) or "jxl" (JPEG XL).
 	Format string
+	// "low", "medium", "high" or "max": how much detail is kept against how small the file is.
+	Quality string
 }
+
+// previewFormats are the encodings a preview can be asked for, with their MIME type and libvips options.
+var previewFormats = map[string]struct{ mime, options string }{
+	"webp": {"image/webp", ""},
+	"jpeg": {"image/jpeg", ""},
+	"heif": {"image/heif", "compression=hevc,subsample_mode=on,"}, // 4:2:0: phones decode Main profile HEVC
+	"avif": {"image/avif", "compression=av1,subsample_mode=on,"},
+	"jxl":  {"image/jxl", ""},
+}
+
+// previewQualities are the libvips Q of each quality step.
+var previewQualities = map[string]int{"low": 50, "medium": 70, "high": 85, "max": 95}
 
 type Rect struct{ X, Y, W, H float64 }
 
 var ErrInvalidPreview = errors.New("invalid preview request")
 
-// ParsePreviewSpec reads ?w=1080&h=1440&fit=cover&crop=x,y,w,h&fmt=webp.
+// ParsePreviewSpec reads ?w=1080&h=1440&fit=cover&crop=x,y,w,h&fmt=webp&q=high.
 func ParsePreviewSpec(q url.Values) (PreviewSpec, error) {
-	spec := PreviewSpec{Fit: "cover", Format: "webp"}
+	spec := PreviewSpec{Fit: "cover", Format: "webp", Quality: "high"}
 	var err error
 	if spec.Width, err = strconv.Atoi(q.Get("w")); err != nil || spec.Width < 1 || spec.Width > MaxPreviewSide {
 		return spec, fmt.Errorf("%w: w must be 1–%d", ErrInvalidPreview, MaxPreviewSide)
@@ -55,10 +69,16 @@ func ParsePreviewSpec(q url.Values) (PreviewSpec, error) {
 		spec.Fit = fit
 	}
 	if format := q.Get("fmt"); format != "" {
-		if format != "webp" && format != "jpeg" {
-			return spec, fmt.Errorf("%w: fmt is webp or jpeg", ErrInvalidPreview)
+		if _, ok := previewFormats[format]; !ok {
+			return spec, fmt.Errorf("%w: fmt is webp, jpeg, heif, avif or jxl", ErrInvalidPreview)
 		}
 		spec.Format = format
+	}
+	if quality := q.Get("q"); quality != "" {
+		if _, ok := previewQualities[quality]; !ok {
+			return spec, fmt.Errorf("%w: q is low, medium, high or max", ErrInvalidPreview)
+		}
+		spec.Quality = quality
 	}
 	if crop := q.Get("crop"); crop != "" {
 		parts := strings.Split(crop, ",")
@@ -91,10 +111,16 @@ func (s PreviewSpec) fileName() string {
 	if s.Crop != nil {
 		name += fmt.Sprintf("-%g,%g,%g,%g", s.Crop.X, s.Crop.Y, s.Crop.W, s.Crop.H)
 	}
-	return name + "." + s.Format
+	return name + "-" + s.Quality + "." + s.Format
 }
 
-func (s PreviewSpec) ContentType() string { return "image/" + s.Format }
+func (s PreviewSpec) ContentType() string { return previewFormats[s.Format].mime }
+
+// saveOptions are libvips' options for writing the preview. Only the colour profile is kept: EXIF
+// would carry an orientation that is already applied.
+func (s PreviewSpec) saveOptions() string {
+	return fmt.Sprintf("[%sQ=%d,keep=icc]", previewFormats[s.Format].options, previewQualities[s.Quality])
+}
 
 // plan is how to get from an upright original of size W×H to the preview: scale the whole picture to
 // scaledW×scaledH in one step, then cut out the width×height area at left, top.
@@ -182,38 +208,67 @@ func (s *Store) previewDir(sha string) string {
 	return filepath.Join(s.root, ".cache", "previews", sha[:2], sha)
 }
 
-// Get returns the path of the preview, making it first if it isn't cached.
-func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec PreviewSpec) (string, error) {
-	path := filepath.Join(store.previewDir(item.Sha256()), spec.fileName())
-	if info, err := os.Stat(path); err == nil {
-		touch(path, info)
-		return path, nil
+// Get returns the path of the preview, and release, to call once it has been sent. With the store's
+// CachePreviews it is kept in .cache/previews (and found there next time); without, it is made in a
+// temporary folder that release deletes.
+func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec PreviewSpec) (path string, release func(), err error) {
+	release = func() {}
+	cached := filepath.Join(store.previewDir(item.Sha256()), spec.fileName())
+	if info, err := os.Stat(cached); err == nil {
+		touch(cached, info)
+		return cached, release, nil
 	}
 	if p.vips == "" {
-		return "", ErrPreviewsUnavailable
+		return "", release, ErrPreviewsUnavailable
 	}
 
-	unlock := p.locks.Lock(path)
-	defer unlock()
-	if _, err := os.Stat(path); err == nil {
-		return path, nil
+	if store.CachePreviews {
+		unlock := p.locks.Lock(cached)
+		defer unlock()
+		if _, err := os.Stat(cached); err == nil {
+			return cached, release, nil
+		}
 	}
 	select {
 	case p.slots <- struct{}{}:
 		defer func() { <-p.slots }()
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return "", release, ctx.Err()
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
+	if err := os.MkdirAll(filepath.Join(store.root, ".cache"), 0o755); err != nil {
+		return "", release, err
 	}
 	work, err := os.MkdirTemp(filepath.Join(store.root, ".cache"), "preview-")
 	if err != nil {
-		return "", err
+		return "", release, err
 	}
-	defer os.RemoveAll(work)
+	keepWork := false
+	defer func() {
+		if !keepWork {
+			os.RemoveAll(work)
+		}
+	}()
 
+	out, err := p.make(ctx, store, item, spec, work)
+	if err != nil {
+		return "", release, err
+	}
+	if !store.CachePreviews {
+		keepWork = true
+		return out, func() { os.RemoveAll(work) }, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(cached), 0o755); err != nil {
+		return "", release, err
+	}
+	if err := rename(out, cached); err != nil {
+		return "", release, err
+	}
+	return cached, release, nil
+}
+
+// make makes the preview in work and returns its path.
+func (p *Previews) make(ctx context.Context, store *Store, item Item, spec PreviewSpec, work string) (string, error) {
 	original := filepath.Join(store.root, filepath.FromSlash(item.Path))
 	source, sizeKey := original, item.Sha256()
 	// A DNG with demosaiced, JPEG XL compressed raw data (DNG 1.7) is developed here first, since LibRaw
@@ -225,21 +280,13 @@ func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec Previe
 			return "", fmt.Errorf("reading %s as DNG: %w", item.Path, err)
 		}
 		if d != nil {
-			if source, err = p.developed(ctx, store, item, d, original); err != nil {
+			if source, err = p.developed(ctx, store, item, d, original, work); err != nil {
 				return "", err
 			}
 			sizeKey = item.Sha256() + "/developed"
 		}
 	}
-
-	out, err := p.render(ctx, sizeKey, source, work, spec)
-	if err != nil {
-		return "", err
-	}
-	if err := rename(out, path); err != nil {
-		return "", err
-	}
-	return path, nil
+	return p.render(ctx, sizeKey, source, work, spec)
 }
 
 // render makes the preview of source (sizeKey caches its upright size) in work, and returns its path.
@@ -250,8 +297,7 @@ func (p *Previews) render(ctx context.Context, sizeKey, source, work string, spe
 	}
 	pl := planPreview(spec, width, height)
 
-	// Only the colour profile is kept: EXIF would carry an orientation that is already applied.
-	saveOptions := "[Q=90,keep=icc]"
+	saveOptions := spec.saveOptions()
 	out := filepath.Join(work, "out."+spec.Format)
 	size := []string{strconv.Itoa(pl.scaledW), "--height", strconv.Itoa(pl.scaledH), "--size", "force"}
 	if !pl.needsCut() {

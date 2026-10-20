@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -42,8 +43,20 @@ func TestPlanPreview(t *testing.T) {
 
 func TestParsePreviewSpec(t *testing.T) {
 	spec, err := ParsePreviewSpec(url.Values{"w": {"1080"}, "h": {"1440"}, "crop": {"0.1,0.2,0.50001,0.5"}})
-	if err != nil || spec.Fit != "cover" || spec.Format != "webp" || spec.fileName() != "1080x1440-cover-0.1,0.2,0.5,0.5.webp" {
+	if err != nil || spec.Fit != "cover" || spec.Format != "webp" || spec.fileName() != "1080x1440-cover-0.1,0.2,0.5,0.5-high.webp" {
 		t.Fatalf("spec = %+v %q %v", spec, spec.fileName(), err)
+	}
+	if s, err := ParsePreviewSpec(url.Values{"w": {"10"}, "h": {"10"}, "fmt": {"jxl"}, "q": {"max"}}); err != nil ||
+		s.ContentType() != "image/jxl" || s.saveOptions() != "[Q=95,keep=icc]" || s.fileName() != "10x10-cover-max.jxl" {
+		t.Fatalf("jxl max: %+v %v", s, err)
+	}
+	if s, _ := ParsePreviewSpec(url.Values{"w": {"10"}, "h": {"10"}, "fmt": {"avif"}, "q": {"low"}}); s.saveOptions() != "[compression=av1,subsample_mode=on,Q=50,keep=icc]" {
+		t.Fatalf("avif low: %q", s.saveOptions())
+	}
+	for _, bad := range []url.Values{{"w": {"10"}, "h": {"10"}, "fmt": {"png"}}, {"w": {"10"}, "h": {"10"}, "q": {"90"}}} {
+		if _, err := ParsePreviewSpec(bad); err == nil {
+			t.Errorf("accepted %v", bad)
+		}
 	}
 	if whole, _ := ParsePreviewSpec(url.Values{"w": {"10"}, "h": {"10"}, "crop": {"0,0,1,1"}}); whole.Crop != nil {
 		t.Fatalf("whole-picture crop kept: %+v", whole.Crop)
@@ -110,6 +123,7 @@ func TestPreviewsAreUprightAndExactSize(t *testing.T) {
 		t.Skip("libvips not installed")
 	}
 	f := newFixture(t)
+	f.store.CachePreviews = true
 	item := f.upload(orientedJPEG(t), "rotated.jpg")
 	previews := NewPreviews(vips, header)
 	get := func(q url.Values) image.Image {
@@ -118,7 +132,7 @@ func TestPreviewsAreUprightAndExactSize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		path, err := previews.Get(context.Background(), f.store, item, spec)
+		path, _, err := previews.Get(context.Background(), f.store, item, spec)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,7 +164,7 @@ func TestPreviewsAreUprightAndExactSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := previews.Get(context.Background(), f.store, item, webp)
+	path, _, err := previews.Get(context.Background(), f.store, item, webp)
 	if data, _ := os.ReadFile(path); err != nil || len(data) < 12 || string(data[8:12]) != "WEBP" {
 		t.Fatalf("webp preview: %v", err)
 	}
@@ -160,4 +174,73 @@ func TestPreviewsAreUprightAndExactSize(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("trim kept previews over the limit")
 	}
+}
+
+func TestPreviewFormatsWithoutAServerCache(t *testing.T) {
+	vips, header, err := FindVips("")
+	if err != nil {
+		t.Skip("libvips not installed")
+	}
+	if bundled, bundledHeader, err := FindVips(filepath.Join("..", "vips", "bin", "vips")); err == nil {
+		vips, header = bundled, bundledHeader // the server's own libvips, with every encoder
+	}
+	f := newFixture(t)
+	item := f.upload(noisyJPEG(t), "noise.jpg")
+	previews := NewPreviews(vips, header)
+	signatures := map[string]func([]byte) bool{
+		"webp": func(b []byte) bool { return string(b[8:12]) == "WEBP" },
+		"jpeg": func(b []byte) bool { return b[0] == 0xFF && b[1] == 0xD8 },
+		"heif": func(b []byte) bool { return string(b[4:8]) == "ftyp" && string(b[8:12]) == "heic" },
+		"avif": func(b []byte) bool { return string(b[4:8]) == "ftyp" && string(b[8:12]) == "avif" },
+		"jxl":  func(b []byte) bool { return (b[0] == 0xFF && b[1] == 0x0A) || string(b[4:8]) == "JXL " },
+	}
+	sizes := map[string]int{}
+	for format, isFormat := range signatures {
+		for _, quality := range []string{"low", "max"} {
+			spec, err := ParsePreviewSpec(url.Values{"w": {"200"}, "h": {"400"}, "fmt": {format}, "q": {quality}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			path, release, err := previews.Get(context.Background(), f.store, item, spec)
+			if err != nil {
+				// The libvips here may lack an encoder (HEVC isn't in every build).
+				t.Logf("%s: %v", format, err)
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || len(data) < 12 || !isFormat(data) {
+				t.Errorf("%s %s: not that format (% x)", format, quality, data[:min(len(data), 12)])
+			}
+			sizes[format+"/"+quality] = len(data)
+			release()
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Errorf("%s: the preview stays after it was sent: %v", format, err)
+			}
+		}
+		if sizes[format+"/low"] > 0 && sizes[format+"/low"] >= sizes[format+"/max"] {
+			t.Errorf("%s: low quality isn't smaller: %d vs %d bytes", format, sizes[format+"/low"], sizes[format+"/max"])
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(f.root, ".cache", "previews")); len(entries) != 0 {
+		t.Errorf("kept on the server without preview_cache: %v", entries)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(f.root, ".cache")); len(entries) > 1 {
+		t.Errorf("temporary folders left in .cache: %v", entries)
+	}
+	t.Logf("sizes: %v", sizes)
+}
+
+// noisyJPEG is 400×400 of random colours, so a lower quality makes a visibly smaller file.
+func noisyJPEG(t *testing.T) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 400, 400))
+	seed := uint32(1)
+	for i := range img.Pix {
+		seed = seed*1664525 + 1013904223
+		img.Pix[i] = byte(seed >> 24)
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	return encoded.Bytes()
 }

@@ -269,6 +269,7 @@ func TestPreviewsOfALinearDNGAreDevelopedFromItsRawData(t *testing.T) {
 	}
 
 	f := newFixture(t)
+	f.store.CachePreviews = true
 	spec, err := ParsePreviewSpec(url.Values{"w": {"100"}, "h": {"200"}, "fit": {"contain"}, "fmt": {"jpeg"}})
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +295,7 @@ func TestPreviewsOfALinearDNGAreDevelopedFromItsRawData(t *testing.T) {
 		if err != nil || result.Item == nil {
 			t.Fatalf("upload %s: %v", c.name, err)
 		}
-		path, err := previews.Get(context.Background(), f.store, *result.Item, spec)
+		path, _, err := previews.Get(context.Background(), f.store, *result.Item, spec)
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}

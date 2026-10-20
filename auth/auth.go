@@ -16,6 +16,9 @@ type UserConfig struct {
 	ImageFolder    string `json:"image_folder"`
 	// The user's journal: originals with their sidecars, stories, and the rebuildable .cache/.
 	DataFolder string `json:"data_folder"`
+	// Keep the previews made for this user's devices (and developed DNGs) in the data folder's .cache, so
+	// asking again is instant. Off by default: devices keep the previews they asked for themselves.
+	PreviewCache bool `json:"preview_cache"`
 }
 
 type AppConfig struct {

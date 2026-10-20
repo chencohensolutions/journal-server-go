@@ -170,7 +170,8 @@ func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
 			http.Error(w, "video posters are not made yet", http.StatusNotImplemented)
 			return
 		}
-		path, err := previews.Get(r.Context(), store, item, spec)
+		path, release, err := previews.Get(r.Context(), store, item, spec)
+		defer release()
 		switch {
 		case errors.Is(err, ErrPreviewsUnavailable):
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)

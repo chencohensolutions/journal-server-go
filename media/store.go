@@ -30,6 +30,10 @@ type Store struct {
 	// Held while a file's upload is started, written to or finished, so the same file arriving from
 	// two devices (or a retry racing the first try) is written once.
 	uploadLocks keyedMutex
+
+	// Keep previews (and developed DNGs) in .cache/previews; else each is made, sent and deleted.
+	// Set once, before the store serves requests (config.json "preview_cache").
+	CachePreviews bool
 }
 
 // OpenStore creates the folders it needs and indexes the sidecars already in root.

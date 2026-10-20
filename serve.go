@@ -220,7 +220,16 @@ func openLibrary(config auth.AppConfig) (*media.Library, error) {
 			log.Printf("User %s has no data_folder in config.json; uploads are refused for them", user.Username)
 		}
 	}
-	return media.OpenLibrary(folders, time.Now)
+	library, err := media.OpenLibrary(folders, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range config.Users {
+		if store := library.Store(user.Username); store != nil {
+			store.CachePreviews = user.PreviewCache
+		}
+	}
+	return library, nil
 }
 
 // newPreviews finds libvips; without it the server runs, but previews answer 503.
