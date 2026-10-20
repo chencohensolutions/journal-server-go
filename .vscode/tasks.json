@@ -5,9 +5,43 @@
 			"id": "phoneIp",
 			"type": "promptString",
 			"description": "Phone IP on the hotspot (from the 'adb: hotspot IP' task)"
+		},
+		{
+			"id": "enrollUser",
+			"type": "promptString",
+			"description": "User to make an enrollment code for (as in config.json)",
+			"default": "hen"
 		}
 	],
 	"tasks": [
+		{
+			// Builds and starts the server with config.json from this folder; stop it with the trash icon or Ctrl+C.
+			"label": "server: run",
+			"type": "shell",
+			"command": "go build -o journal-server . && ./journal-server",
+			"windows": {
+				"command": "go build -o journal-server.exe . ; if ($?) { .\\journal-server.exe }"
+			},
+			"options": { "cwd": "${workspaceFolder}" },
+			"isBackground": true,
+			"problemMatcher": {
+				"owner": "go",
+				"pattern": { "regexp": "^(.*\\.go):(\\d+):(\\d+): (.*)$", "file": 1, "line": 2, "column": 3, "message": 4 },
+				"background": { "beginsPattern": "^", "endsPattern": "Listening on https://" }
+			},
+			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
+		},
+		{
+			// Codes live in the running server's memory, so start "server: run" first.
+			"label": "server: enroll code",
+			"type": "shell",
+			"command": "./journal-server enroll-code ${input:enrollUser}",
+			"windows": {
+				"command": ".\\journal-server.exe enroll-code ${input:enrollUser}"
+			},
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": []
+		},
 		{
 			"label": "adb: devices",
 			"type": "shell",

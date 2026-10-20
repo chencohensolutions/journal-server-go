@@ -39,3 +39,6 @@ certs/
 # Server state (admin API token, enrolled device registry)
 admin.token
 devices.json
+
+# Built by the "server: run" task
+/journal-server
