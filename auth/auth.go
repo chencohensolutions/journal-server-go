@@ -37,6 +37,8 @@ type AppConfig struct {
 	AdminTokenFile string `json:"admin_token_file"`
 	// Path of the libvips `vips` program, used for previews; found on the PATH or in Homebrew when empty.
 	Vips string `json:"vips"`
+	// Path of the ffmpeg program, used for video posters (ffprobe beside it); found on the PATH or in Homebrew when empty.
+	FFmpeg string `json:"ffmpeg"`
 	// Most space the previews of one user may take before the least recently used are deleted (default 50).
 	PreviewCacheMaxGB float64      `json:"preview_cache_max_gb"`
 	Users             []UserConfig `json:"users"`

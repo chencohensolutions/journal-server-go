@@ -172,6 +172,8 @@ func planPreview(spec PreviewSpec, width, height int) plan {
 // Previews makes previews with libvips and keeps them in each store's .cache/previews/.
 type Previews struct {
 	vips, vipsheader string
+	// Take video posters (see poster.go); empty without ffmpeg.
+	ffmpeg, ffprobe string
 	// Running vips is heavy; this many at once.
 	slots chan struct{}
 	locks keyedMutex
@@ -271,6 +273,14 @@ func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec Previe
 func (p *Previews) make(ctx context.Context, store *Store, item Item, spec PreviewSpec, work string) (string, error) {
 	original := filepath.Join(store.root, filepath.FromSlash(item.Path))
 	source, sizeKey := original, item.Sha256()
+	// A video's preview is made from its poster frame.
+	if item.Sidecar.Facts.Kind == KindVideo {
+		poster, err := p.poster(ctx, store, item, original, work)
+		if err != nil {
+			return "", err
+		}
+		return p.render(ctx, item.Sha256()+"/poster", poster, work, spec)
+	}
 	// A DNG with demosaiced, JPEG XL compressed raw data (DNG 1.7) is developed here first, since LibRaw
 	// can't unpack it; other DNGs go to libvips (LibRaw) like any photo. The JPEG a DNG carries is never
 	// used: previews show the raw data.

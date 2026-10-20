@@ -240,7 +240,15 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	} else {
 		log.Printf("Previews made with %s", vips)
 	}
-	return media.NewPreviews(vips, vipsheader)
+	previews := media.NewPreviews(vips, vipsheader)
+	ffmpeg, ffprobe, err := media.FindFFmpeg(config.FFmpeg)
+	if err != nil {
+		log.Printf("Video posters are off: %v (brew install ffmpeg; on Windows winget install Gyan.FFmpeg; or set \"ffmpeg\" in config.json)", err)
+	} else {
+		log.Printf("Video posters made with %s", ffmpeg)
+		previews.WithFFmpeg(ffmpeg, ffprobe)
+	}
+	return previews
 }
 
 func serve(config auth.AppConfig) {

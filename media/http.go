@@ -145,9 +145,9 @@ func OriginalHandler(lookup StoreLookup) http.Handler {
 	})
 }
 
-// PreviewHandler serves GET /media/{sha256}/preview?w=&h=&fit=&crop=&fmt=: a photo scaled down once
-// from the original to exactly the pixels the client will draw (see PreviewSpec). Videos get their
-// poster frame later; for now they answer 501.
+// PreviewHandler serves GET /media/{sha256}/preview?w=&h=&fit=&crop=&fmt=&q=: a photo scaled down once
+// from the original to exactly the pixels the client will draw (see PreviewSpec); for a video, its
+// poster frame (see poster.go).
 func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		store := lookup(r)
@@ -166,14 +166,10 @@ func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
-		if item.Sidecar.Facts.Kind == KindVideo {
-			http.Error(w, "video posters are not made yet", http.StatusNotImplemented)
-			return
-		}
 		path, release, err := previews.Get(r.Context(), store, item, spec)
 		defer release()
 		switch {
-		case errors.Is(err, ErrPreviewsUnavailable):
+		case errors.Is(err, ErrPreviewsUnavailable), errors.Is(err, ErrPostersUnavailable):
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		case err != nil:

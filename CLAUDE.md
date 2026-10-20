@@ -10,8 +10,8 @@ The clients and the overall design live in `../journal-client-kmp`. **Read its
 upload and sync design agreed with the owner. **Media upload is built** (package `media`, per-user `data_folder`,
 resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range, `GET /media/{sha256}/preview` via libvips, `POST /media/{sha256}/verify` re-hashes an original before a device
 deletes its copy): see
-[docs/media.md](docs/media.md). Video posters, the change feed for stories and notes, and the story trash are not
-built yet.
+[docs/media.md](docs/media.md). Video posters are made with ffmpeg (a separate program, like libvips). The change
+feed for stories and notes, and the story trash, are not built yet.
 
 **The server targets macOS for now** (owner, Oct 20, 2026; libvips from Homebrew). Windows comes later, so keep it
 easy: no cgo, Windows-safe file names (compared ignoring case), image/video tools run as separate programs. To run

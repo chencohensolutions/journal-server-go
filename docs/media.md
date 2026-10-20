@@ -5,8 +5,8 @@ as plain files. The files are the truth: the index in memory is rebuilt from the
 time the server starts, so the folder alone is a complete copy, on Windows, macOS or Linux.
 
 Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, verifying an
-original before a device deletes its copy, and photo previews at the exact size the client asks for, and the change feed for media. **Not built yet:**
-video posters, stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
+original before a device deletes its copy, and photo previews at the exact size the client asks for, video posters, and the change feed for media. **Not built
+yet:** stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
 (previews need libvips: `brew install vips`); Windows comes later. To run it on Windows now, run
 `go run ./scripts/bundle-vips` once in the server folder (from PowerShell or cmd: Git Bash's `tar` can't read its
 Windows paths): the official Windows builds of libvips (WinGet, libvips.org) leave out the HEVC decoder and can't
@@ -159,8 +159,11 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
   `config.json` (off by default): then under `.cache/previews/`, and when they pass `preview_cache_max_gb` (default
   50) the least recently used are deleted (checked hourly). Without it each preview is made in a temporary folder,
   sent and deleted.
-- Answers: `422` bad parameters, `404` unknown sha256, `501` for videos (posters not built yet), `503`
-  when libvips isn't installed (the server logs this at startup; set `"vips"` in config.json if it's
+- **Videos** get their poster: one frame about 1 s in (halfway through a shorter one), taken by **ffmpeg** with the
+  video's rotation applied, HDR (HLG or PQ) tone-mapped to standard range, then made into the preview like a photo.
+  ffmpeg is found like libvips (`"ffmpeg"` in config.json, the PATH, or Homebrew; on Windows `winget install
+  Gyan.FFmpeg`). The frame is kept as `poster.jpg` only with `preview_cache` (about 2 s for a large video on a disk).
+- Answers: `422` bad parameters, `404` unknown sha256, `503` when libvips (or, for a video, ffmpeg) isn't installed (the server logs this at startup; set `"vips"` in config.json if it's
   installed somewhere unusual).
 
 `query media(sha256)` returns the facts, plus `versions` (edits of this photo) and `paired` (files
