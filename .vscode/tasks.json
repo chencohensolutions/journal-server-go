@@ -32,6 +32,24 @@
 			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
 		},
 		{
+			// Runs the server under Delve, waiting for "Attach to server PC" (launch.json) from another machine on port 2345.
+			// Stop "server: run" first: both use port 8080. Needs Delve: go install github.com/go-delve/delve/cmd/dlv@latest
+			// Delve has no password: anything on the network that reaches port 2345 can run code on this machine. On Windows,
+			// allow only the Mac, in an administrator PowerShell:
+			//   New-NetFirewallRule -DisplayName "Delve from Mac" -Direction Inbound -Protocol TCP -LocalPort 2345 -RemoteAddress 192.168.50.150 -Action Allow
+			"label": "server: debug (Delve on 0.0.0.0:2345)",
+			"type": "shell",
+			"command": "dlv debug . --headless --listen=0.0.0.0:2345 --api-version=2 --accept-multiclient --continue",
+			"options": { "cwd": "${workspaceFolder}" },
+			"isBackground": true,
+			"problemMatcher": {
+				"owner": "go",
+				"pattern": { "regexp": "^(.*\\.go):(\\d+):(\\d+): (.*)$", "file": 1, "line": 2, "column": 3, "message": 4 },
+				"background": { "beginsPattern": "^", "endsPattern": "API server listening at" }
+			},
+			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
+		},
+		{
 			// Codes live in the running server's memory, so start the server first ("server: run" or the debugger).
 			// Uses go run so it works without the binary that "server: run" builds.
 			"label": "server: enroll code",
