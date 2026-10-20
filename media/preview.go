@@ -154,10 +154,11 @@ type Previews struct {
 
 var ErrPreviewsUnavailable = errors.New("libvips is not installed")
 
-// FindVips returns the vips and vipsheader programs: the configured path, the PATH, or Homebrew's
-// folders (a server started from an IDE often runs without Homebrew in its PATH).
+// FindVips returns the vips and vipsheader programs: the configured path, the bundle in vips/bin (made
+// on Windows by scripts/bundle-vips, as the official Windows builds can't read HEIC), the PATH, or
+// Homebrew's folders (a server started from an IDE often runs without Homebrew in its PATH).
 func FindVips(configured string) (vips, vipsheader string, err error) {
-	candidates := []string{configured, "vips", "/opt/homebrew/bin/vips", "/usr/local/bin/vips"}
+	candidates := []string{configured, filepath.Join("vips", "bin", "vips"), "vips", "/opt/homebrew/bin/vips", "/usr/local/bin/vips"}
 	for _, candidate := range candidates {
 		if candidate == "" {
 			continue

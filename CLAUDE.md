@@ -13,6 +13,7 @@ resumable `PUT /upload/{sha256}`, `GET /media/{sha256}` with Range, `GET /media/
 built yet.
 
 **The server targets macOS for now** (owner, Oct 20, 2026; libvips from Homebrew). Windows comes later, so keep it
-easy: no cgo, Windows-safe file names (compared ignoring case), image/video tools run as separate programs.
+easy: no cgo, Windows-safe file names (compared ignoring case), image/video tools run as separate programs. To run
+on Windows meanwhile, `go run ./scripts/bundle-vips` puts a portable libvips that reads HEIC in `vips/` (gitignored).
 
 `.github/copilot-instructions.md` predates the KMP client (it still says "journal-client-android").

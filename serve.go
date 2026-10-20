@@ -226,7 +226,7 @@ func openLibrary(config auth.AppConfig) (*media.Library, error) {
 func newPreviews(config auth.AppConfig) *media.Previews {
 	vips, vipsheader, err := media.FindVips(config.Vips)
 	if err != nil {
-		log.Printf("Previews are off: %v (brew install vips, or set \"vips\" in config.json)", err)
+		log.Printf("Previews are off: %v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
 	} else {
 		log.Printf("Previews made with %s", vips)
 	}

@@ -40,5 +40,8 @@ certs/
 admin.token
 devices.json
 
+# Portable libvips for Windows, made by scripts/bundle-vips
+/vips/
+
 # Built by the "server: run" task
 /journal-server

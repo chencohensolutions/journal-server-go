@@ -7,7 +7,11 @@ time the server starts, so the folder alone is a complete copy, on Windows, macO
 Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, and
 photo previews at the exact size the client asks for, and the change feed for media. **Not built yet:**
 video posters, stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
-(previews need libvips: `brew install vips`); Windows comes later. The agreed design is in
+(previews need libvips: `brew install vips`); Windows comes later. To run it on Windows now, run
+`go run ./scripts/bundle-vips` once in the server folder: the official Windows builds of libvips (WinGet,
+libvips.org) leave out the HEVC decoder and can't read iPhone HEIC photos, so this copies MSYS2's build,
+with only the DLLs it loads (about 130 MB), into `vips/`. The server uses `vips/bin` before the PATH, and the
+folder can be moved along with the server. The agreed design is in
 [journal-client-kmp/docs/design.md](../../journal-client-kmp/docs/design.md) ("Upload and sync").
 
 ## The data folder
