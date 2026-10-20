@@ -1,9 +1,9 @@
 {
   "recommendations": [
-    "golang.go",
     "graphql.vscode-graphql",
     "graphql.vscode-graphql-syntax",
     "esbenp.prettier-vscode",
-    "ms-vscode.powershell"
+    "ms-vscode.powershell",
+    "golang.go"
   ]
 }
