@@ -91,6 +91,10 @@ func (im *importer) addToReview() {
 	if len(im.toReview) == 0 {
 		return
 	}
+	im.withTurn(im.addToReviewInTurn)
+}
+
+func (im *importer) addToReviewInTurn() {
 	items, err := im.loadReview()
 	if err != nil {
 		log.Printf("%s: %v; this run's near-duplicates are only in the near-duplicates report", im.reviewFile(), err)
@@ -276,6 +280,14 @@ func (r *reviewer) preview(w http.ResponseWriter, req *http.Request) {
 func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 	r.mu.Lock() // one decision at a time
 	defer r.mu.Unlock()
+	r.im.withTurn(func() { r.decideInTurn(w, req) })
+}
+
+func (r *reviewer) decideInTurn(w http.ResponseWriter, req *http.Request) {
+	// Imports running meanwhile may have added near-duplicates to the list.
+	if items, err := r.im.loadReview(); err == nil {
+		r.items = items
+	}
 	sha, action := req.URL.Query().Get("id"), req.URL.Query().Get("action")
 	index := -1
 	for i, item := range r.items {
@@ -308,10 +320,13 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "no date in its file name or metadata", http.StatusUnprocessableEntity)
 			return
 		}
-		placed, _, err := im.importInto(item.Path, item.Sha256, info.Size(), facts, item.folders())
+		placed, existed, err := im.importInto(item.Path, item.Sha256, info.Size(), facts, item.folders())
 		if err != nil {
 			http.Error(w, "not imported: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if !existed {
+			im.wrote(placed)
 		}
 		message = "Imported as " + placed.Path
 		fallthrough
@@ -325,6 +340,9 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 			// Its folder is a clue about the photo it is a copy of.
 			if folders := item.folders(); len(folders) > 0 {
 				if changed, err := im.store.AddFolders(item.LikeSha256, folders); err == nil && changed {
+					if like, ok := im.store.Get(item.LikeSha256); ok {
+						im.wrote(like)
+					}
 					message += " Its folders were added to the look-alike's: " + strings.Join(folders, ", ") + "."
 				}
 			}

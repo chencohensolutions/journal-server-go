@@ -94,6 +94,8 @@ type importer struct {
 	nearDistance   int
 	dhashes        *dhashTable
 	sources        *sourceHashes
+	shared         *shared      // taking turns with other imports running at the same time (shared.go)
+	cloud          *cloudImport // set when importing from Google Drive or OneDrive (cloud.go)
 
 	mu           sync.Mutex      // everything below
 	seen         map[string]bool // dry run: sha256s that would have been imported
@@ -149,15 +151,21 @@ func main() {
 	notImported := flag.String("not-imported", "", "folder the files that weren't imported are moved to, by why (required to import)")
 	moveOther := flag.Bool("move-other", false, "also move files that aren't photos or videos, and hidden ones (.trashed-…), to the not-imported folder")
 	backfill := flag.Bool("backfill-folders", false, "only add the folders of files looked at by earlier runs (from .cache/source-hashes.tsv) to their sidecars")
+	cloud := flag.String("cloud", "", "import from the cloud instead of folders: gdrive, onedrive, or gdrive,onedrive (through rclone; see cloud.go)")
+	temp := flag.String("temp", "", "with --cloud, the folder files are downloaded to before they are imported (emptied as they are)")
+	batchGB := flag.Float64("batch-gb", 20, "with --cloud, about how much is downloaded at a time")
+	rclonePath := flag.String("rclone", "", "with --cloud, the rclone program (found on the PATH or where winget links it when empty)")
 	configPath := flag.String("config", "config.json", "the server's config file")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--move-other] <folder>...")
+		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> --cloud gdrive,onedrive --temp <folder> [--dry-run]")
 		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --review")
 		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --backfill-folders <folder>...")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if *user == "" || *imported == "" || (flag.NArg() == 0) != *review || *jobs < 1 {
+	if *user == "" || *imported == "" || (flag.NArg() == 0) != (*review || *cloud != "") || *jobs < 1 ||
+		(*cloud != "") != (*temp != "") || *batchGB <= 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -189,7 +197,7 @@ func main() {
 	if !*review && !*backfill && *notImported == "" {
 		log.Fatal("--not-imported: the folder for the files that aren't imported (for example \"D:\\Not imported\")")
 	}
-	started := time.Now().Format("2006-01-02-15-04-05")
+	started := claimRunName(absolute(*imported), time.Now().Format("2006-01-02-15-04-05"))
 	im := &importer{
 		vips:           vips,
 		vipsheader:     vipsheader,
@@ -220,9 +228,9 @@ func main() {
 	im.roots = roots
 	im.store, err = media.OpenStore(im.dataFolder, time.Now)
 	check(err)
-	if !im.dryRun {
-		check(im.store.ClearImports())
-	}
+	im.shared, err = openShared(im.dataFolder)
+	check(err)
+	defer im.shared.close()
 	im.dhashes, err = openDHashTable(im.dataFolder)
 	check(err)
 	defer im.dhashes.close()
@@ -231,7 +239,18 @@ func main() {
 	defer im.sources.close()
 	im.workDir, err = os.MkdirTemp("", "journal-import-")
 	check(err)
+	if !im.dryRun {
+		// Copies are only being made during another import's turn, so none is cleared from under it.
+		im.withTurn(func() { check(im.store.ClearImports()) })
+	}
 	defer os.RemoveAll(im.workDir)
+	defer func() {
+		// A run that moved nothing and wrote no report leaves no folders behind.
+		os.Remove(im.runFolder)
+		if im.notImportedRun != "" {
+			os.Remove(im.notImportedRun)
+		}
+	}()
 
 	// Ctrl+C finishes the files in hand, then stops; running again continues where it stopped.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -251,8 +270,21 @@ func main() {
 	im.hashDataFolder(ctx, *jobs)
 	if im.dryRun {
 		log.Print("Dry run: nothing is copied or moved")
-	} else {
+	} else if *cloud == "" {
 		log.Printf("Moving what is done to %s", im.runFolder)
+	}
+
+	if *cloud != "" {
+		rclone, err := findRclone(*rclonePath)
+		check(err)
+		tempFolder := absolute(*temp)
+		if im.excluded(tempFolder) {
+			log.Fatalf("--temp %s is inside the data folder, the imported folder or the not-imported folder", *temp)
+		}
+		im.importCloud(ctx, strings.Split(*cloud, ","), rclone, tempFolder, int64(*batchGB*(1<<30)), *jobs)
+		im.summarize()
+		im.addToReview()
+		return
 	}
 
 	// List everything first, so progress can be shown against the total.
@@ -271,16 +303,27 @@ func main() {
 		im.totalBytes += f.size
 	}
 	im.totalFiles = len(files)
-	im.started = time.Now()
 	log.Printf("%d photos and videos to look at, %s", im.totalFiles, gb(im.totalBytes))
+	im.importFiles(ctx, files, *jobs)
+	if ctx.Err() != nil {
+		log.Print("Stopped; running again continues where it stopped")
+	}
+	if im.moveOther && ctx.Err() == nil {
+		im.moveOthers()
+	}
+	im.summarize()
+	im.addToReview()
+}
 
-	// Read every file several at a time, then decide on the new ones one at a time, largest first: the
-	// original of a photo then goes in before its smaller copies (which wait as near-duplicates), and
-	// what happens doesn't depend on which file was read first.
+// importFiles reads every file several at a time, then decides on the new ones one at a time, largest
+// first: the original of a photo then goes in before its smaller copies (which wait as near-duplicates),
+// and what happens doesn't depend on which file was read first.
+func (im *importer) importFiles(ctx context.Context, files []sourceFile, jobs int) {
+	im.started = time.Now()
 	found := make([]*examined, len(files))
 	queue := make(chan int)
 	var workers sync.WaitGroup
-	for range *jobs {
+	for range jobs {
 		workers.Go(func() {
 			for i := range queue {
 				found[i] = im.examine(ctx, files[i].path)
@@ -306,32 +349,25 @@ func main() {
 		}
 	}
 	sort.SliceStable(news, func(i, j int) bool { return news[i].size > news[j].size })
-	if ctx.Err() == nil && len(news) > 0 {
-		log.Printf("%d new files (%s): importing, largest first", len(news), gb(newBytes))
-		start, last := time.Now(), time.Now()
-		var doneBytes int64
-		for i, e := range news {
-			if ctx.Err() != nil {
-				break
-			}
-			im.decide(e)
-			doneBytes += e.size
-			if time.Since(last) >= 10*time.Second || i == len(news)-1 {
-				log.Printf("Importing: %5.1f%%  %s of %s, %d of %d files, about %s left",
-					float64(doneBytes)*100/float64(max(newBytes, 1)), gb(doneBytes), gb(newBytes), i+1, len(news),
-					timeLeft(time.Since(start), doneBytes, newBytes))
-				last = time.Now()
-			}
+	if ctx.Err() != nil || len(news) == 0 {
+		return
+	}
+	log.Printf("%d new files (%s): importing, largest first", len(news), gb(newBytes))
+	start, last := time.Now(), time.Now()
+	var doneBytes int64
+	for i, e := range news {
+		if ctx.Err() != nil {
+			break
+		}
+		im.withTurn(func() { im.decide(e) })
+		doneBytes += e.size
+		if time.Since(last) >= 10*time.Second || i == len(news)-1 {
+			log.Printf("Importing: %5.1f%%  %s of %s, %d of %d files, about %s left",
+				float64(doneBytes)*100/float64(max(newBytes, 1)), gb(doneBytes), gb(newBytes), i+1, len(news),
+				timeLeft(time.Since(start), doneBytes, newBytes))
+			last = time.Now()
 		}
 	}
-	if ctx.Err() != nil {
-		log.Print("Stopped; running again continues where it stopped")
-	}
-	if im.moveOther && ctx.Err() == nil {
-		im.moveOthers()
-	}
-	im.summarize()
-	im.addToReview()
 }
 
 // hashDataFolder makes the dHash of the photos in the data folder that don't have one in the table yet
@@ -494,10 +530,12 @@ func (im *importer) examine(ctx context.Context, path string) *examined {
 	}
 	folder := folderOf(im.rootOf(path), path)
 	if _, ok := im.store.Get(sha); ok {
-		if im.addFolder(path, sha, folder) {
-			im.count(true, info.Size())
-			im.done(path)
-		}
+		im.withTurn(func() {
+			if im.addFolder(path, sha, folder) {
+				im.count(true, info.Size())
+				im.done(path, sha, resultDuplicate)
+			}
+		})
 		return nil
 	}
 
@@ -538,7 +576,7 @@ func (im *importer) decide(e *examined) {
 	if _, ok := im.store.Get(e.sha256); ok {
 		if im.addFolder(e.path, e.sha256, e.folder) {
 			im.count(true, e.size)
-			im.done(e.path)
+			im.done(e.path, e.sha256, resultDuplicate)
 		}
 		return
 	}
@@ -547,7 +585,7 @@ func (im *importer) decide(e *examined) {
 			im.toReview[i].AlsoFoundIn = append(im.toReview[i].AlsoFoundIn, folders...)
 		}
 		im.count(true, e.size)
-		im.done(e.path)
+		im.done(e.path, e.sha256, resultDuplicateWaiting)
 		return
 	}
 	if im.dryRun && im.seen[e.sha256] {
@@ -567,7 +605,10 @@ func (im *importer) decide(e *examined) {
 		im.count(false, e.size)
 		return
 	}
-	_, existed, err := im.importInto(e.path, e.sha256, e.size, e.facts, folders)
+	placed, existed, err := im.importInto(e.path, e.sha256, e.size, e.facts, folders)
+	if err == nil && !existed {
+		im.wrote(placed)
+	}
 	if err != nil {
 		im.reject(e.path, notImportedFailed, err.Error())
 		im.mu.Lock()
@@ -579,7 +620,11 @@ func (im *importer) decide(e *examined) {
 		return
 	}
 	im.count(existed, e.size)
-	im.done(e.path)
+	result := resultImported
+	if existed {
+		result = resultDuplicate
+	}
+	im.done(e.path, e.sha256, result)
 }
 
 // addFolder records the folder a copy of a file already in the data folder was found in, in that file's
@@ -588,9 +633,13 @@ func (im *importer) addFolder(path, sha, folder string) bool {
 	if im.dryRun || folder == "" {
 		return true
 	}
-	if _, err := im.store.AddFolders(sha, []string{folder}); err != nil {
+	changed, err := im.store.AddFolders(sha, []string{folder})
+	if err != nil {
 		im.leave(path, "its folder couldn't be added to the copy in the data folder: "+err.Error())
 		return false
+	}
+	if item, ok := im.store.Get(sha); ok && changed {
+		im.wrote(item)
 	}
 	return true
 }
@@ -608,6 +657,10 @@ func folderOf(root, path string) string {
 // importInto copies the file into the data folder with the facts read from it.
 func (im *importer) importInto(path, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
 	source := sourceOfPath(path)
+	from := path
+	if im.cloud != nil {
+		from = im.cloud.origin(path)
+	}
 	return im.store.Import(path, media.UploadRequest{
 		Sha256:       sha,
 		Size:         size,
@@ -621,7 +674,7 @@ func (im *importer) importInto(path, sha string, size int64, facts facts, folder
 		Location:     facts.location,
 		Source:       &source,
 		UploadedBy:   "import",
-		ImportedFrom: &path,
+		ImportedFrom: &from,
 		Folders:      folders,
 	})
 }
@@ -675,6 +728,9 @@ func (im *importer) waitForReview(item reviewItem) {
 		im.leave(item.Path, "a near-duplicate, but not moved to the not-imported folder: "+err.Error())
 	} else {
 		item.Path = dest
+		if im.cloud != nil {
+			im.cloud.record(item.FoundAt, item.Sha256, resultWaiting, "", dest)
+		}
 	}
 	im.mu.Lock()
 	im.toReview = append(im.toReview, item)
@@ -699,6 +755,25 @@ func sameBurst(a, b photo) bool {
 	}
 	ma, mb := burstNumber.FindStringSubmatch(a.name), burstNumber.FindStringSubmatch(b.name)
 	return ma != nil && mb != nil && ma[1] == mb[1] && ma[2] == mb[2] && ma[3] != mb[3]
+}
+
+// claimRunName makes this run's folder in the imported folder, named by when it started, with "-2", "-3", …
+// when another import started in the same second; the not-imported folder uses the same name.
+func claimRunName(importedFolder, started string) string {
+	check(os.MkdirAll(importedFolder, 0o755))
+	for n := 1; ; n++ {
+		name := started
+		if n > 1 {
+			name = fmt.Sprintf("%s-%d", started, n)
+		}
+		err := os.Mkdir(filepath.Join(importedFolder, name), 0o755)
+		if err == nil {
+			return name
+		}
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
+	}
 }
 
 // excluded reports whether path is in a folder the script writes to, which is never searched.
@@ -729,8 +804,13 @@ func (im *importer) rootOf(path string) string {
 }
 
 // done moves a source file whose content is in the data folder to the imported folder.
-func (im *importer) done(path string) {
+// (A file downloaded from a cloud is deleted from the temp folder instead, and logged.)
+func (im *importer) done(path, sha, result string) {
 	if im.dryRun {
+		return
+	}
+	if im.cloud != nil {
+		im.cloud.finished(path, sha, result, "")
 		return
 	}
 	if _, err := moveFile(path, filepath.Join(im.runFolder, pathInside(im.roots, path))); err != nil {
@@ -738,6 +818,15 @@ func (im *importer) done(path string) {
 		im.leave(path, "imported, but not moved: "+err.Error())
 	}
 }
+
+// What happened to a file, as the cloud log says it.
+const (
+	resultImported         = "imported"
+	resultDuplicate        = "duplicate"
+	resultDuplicateWaiting = "duplicate of a near-duplicate waiting for review"
+	resultWaiting          = "near-duplicate, waiting for review"
+	resultNotImported      = "not imported"
+)
 
 // reject moves a file that wasn't imported to this run's not-imported folder, in the folder for why
 // (dry run: only listed).
@@ -750,6 +839,9 @@ func (im *importer) reject(path, why, reason string) {
 			return
 		}
 		movedTo = dest
+		if im.cloud != nil {
+			im.cloud.record(path, "", resultNotImported, why+": "+reason, dest)
+		}
 	}
 	im.mu.Lock()
 	im.rejected = append(im.rejected, strings.Join([]string{why, reason, path, movedTo}, "\t"))
@@ -1338,14 +1430,17 @@ func (im *importer) backfillFolders() {
 			notInDataFolder++
 			return
 		}
-		changed, err := im.store.AddFolders(sha, []string{folder})
-		if err != nil {
-			log.Printf("%s: %v", path, err)
-			return
-		}
-		if changed {
-			added++
-		}
+		im.withTurn(func() {
+			changed, err := im.store.AddFolders(sha, []string{folder})
+			if err != nil {
+				log.Printf("%s: %v", path, err)
+				return
+			}
+			if item, ok := im.store.Get(sha); ok && changed {
+				im.wrote(item)
+				added++
+			}
+		})
 	})
 	fmt.Printf("%d files looked at before under these folders; %d folders added to sidecars, %d files not in the data folder (not imported yet, or waiting for review)\n",
 		found, added, notInDataFolder)

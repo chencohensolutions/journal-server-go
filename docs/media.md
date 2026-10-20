@@ -238,6 +238,13 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
   `not-imported.tsv` lists each with its reason, where it was found and where it is now. Only files that can't
   be moved stay where they are (`left-where-they-are.tsv`). Running again continues where it stopped (also after
   Ctrl+C); neither folder is ever searched.
+- **Several imports may run at once** on one data folder (different source folders, a cloud import, `--review`).
+  Reading and hashing run side by side; everything that writes to the data folder (deciding on a file and placing
+  it, adding folders to a sidecar, the review list) takes turns, holding the exclusive lock on
+  `.cache/import.lock`. Whoever takes a turn first reads what the others placed since from
+  `.cache/import-journal.tsv` (`<sha256>\t<path>` per file placed or sidecar changed), so a file another import
+  just placed is a duplicate, not a second copy, and two files of the same name never overwrite each other. Each
+  run claims its own run folder (`…-2` when two start in the same second). The server must still be stopped.
 - **Files are read several at a time, then decided one at a time, largest first**, so the original of a photo
   goes in before its smaller copies (which wait as near-duplicates), whatever order they were read in. An
   identical copy of a waiting near-duplicate is moved to the imported folder as its duplicate; its folder is
@@ -268,6 +275,31 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
   the imported folder like a duplicate; decisions are logged in that run folder's `review-decisions.tsv`; `review.json` stays at the top of `--imported`, across runs). The dHash of every photo
   in the data folder is kept in `.cache/dhash.tsv` (by sha256), and the sha256 of every file looked at in
   `.cache/source-hashes.tsv` (by path, size and modified time), so later runs don't redo them. Videos have no dHash.
+
+### Importing from Google Drive and OneDrive
+
+```
+go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" --cloud gdrive,onedrive --temp D:\CloudTemp [--dry-run] [--batch-gb 20]
+```
+
+Through **rclone** (a separate program: `winget install Rclone.Rclone`, `brew install rclone`). The first time for
+each service, rclone opens the browser to sign in, with **read-only** access (remotes `journal-gdrive` and
+`journal-onedrive` in rclone's own config); nothing in the cloud is ever changed. Then:
+
+- Every photo and video is listed (`rclone lsjson --hash`). Files handled by earlier runs are skipped
+  (`.cache/cloud-seen.tsv`, by cloud path, size and modified time, which only tells whether a file changed). On
+  **Google Drive**, which reports each file's sha256, a file the data folder already has is **not downloaded**:
+  its folder is added to the copy there.
+- The rest are downloaded to `--temp` in batches of about `--batch-gb`, largest first, and imported like files on
+  disk (same dates, duplicates, near-duplicates, folders: `Google Drive/Photos/2019 Italy`). `importedFrom` is the
+  cloud path (`Google Drive:Photos/2019 Italy/x.jpg`). Each file is then **deleted from `--temp`**; one not
+  imported is moved to `--not-imported` as usual.
+- **Every file's outcome is appended to `<imported>/cloud-log.tsv`**: time, result (imported, duplicate, not
+  imported, near-duplicate waiting for review, download failed), cloud path, sha256, its path in the data folder.
+  Failed downloads are tried again next run.
+- `--dry-run` only lists: how many would be downloaded, and how many Google Drive files are already in the data
+  folder. Ctrl+C stops; files already downloaded stay in `--temp` and the next run imports them.
+- Google Photos can't be read by programs since March 2025: use Google Takeout, then import its folders.
 
 ## Timeouts
 

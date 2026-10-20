@@ -122,6 +122,29 @@ func (s *Store) SetNudity(sha string, detection Detection) error {
 	return nil
 }
 
+// Reload reads one original's sidecar from disk again and indexes it: a file another process placed,
+// or a sidecar it changed, since this store was opened (path relative to the data folder, as Item.Path).
+func (s *Store) Reload(path string) error {
+	data, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(path)) + ".json")
+	if err != nil {
+		return err
+	}
+	var sidecar Sidecar
+	if err := json.Unmarshal(data, &sidecar); err != nil {
+		return fmt.Errorf("%s.json: %w", path, err)
+	}
+	if !IsSha256(sidecar.Sha256) {
+		return fmt.Errorf("%s.json has no sha256", path)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.items[sidecar.Sha256]; ok && existing.Path != path {
+		return nil // a second copy; the first stays, as when the store is opened
+	}
+	s.items[sidecar.Sha256] = &Item{Path: path, Sidecar: sidecar}
+	return nil
+}
+
 // ClearImports deletes copies left behind by an import that was stopped halfway.
 func (s *Store) ClearImports() error { return os.RemoveAll(s.importDir()) }
 
