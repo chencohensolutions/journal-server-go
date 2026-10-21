@@ -158,6 +158,7 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
   "client_ca": "certs/ca.pem",
   "client_ca_key": "certs/ca-key.pem",          // required: signs enrolled devices
   "public_url": "https://192.168.50.2:56398",    // optional: printed by enroll-code
+  "port": "56398",                              // optional (default); a test server uses another
   "devices_file": "devices.json",               // optional (default)
   "admin_addr": "127.0.0.1:8081",               // optional (default), must be loopback
   "admin_token_file": "admin.token",            // optional (default)

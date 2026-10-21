@@ -23,8 +23,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-const defaultPort = "56398"
-
 // GraphQL requests are small; uploads and video streams have their own handlers without these limits.
 const (
 	queryReadTimeout  = 30 * time.Second
@@ -48,7 +46,7 @@ func serve(config auth.AppConfig) {
 	go serveAdmin(config, enrollment)
 
 	server := &http.Server{
-		Addr:      ":" + defaultPort,
+		Addr:      ":" + config.Port,
 		Handler:   newMux(config, enrollment, library, newPreviews(config)),
 		TLSConfig: tlsConfig,
 		// No overall read or write timeout: uploads and video streams take as long as they take.
@@ -60,7 +58,7 @@ func serve(config auth.AppConfig) {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	log.Printf("Listening on https://0.0.0.0:%s", defaultPort)
+	log.Printf("Listening on https://0.0.0.0:%s", config.Port)
 	log.Fatal(server.Serve(tls.NewListener(&loggingListener{Listener: ln}, tlsConfig)))
 }
 

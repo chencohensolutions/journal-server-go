@@ -26,6 +26,8 @@ type AppConfig struct {
 	ClientCAKey string `json:"client_ca_key"`
 	// Address devices use to reach the server (e.g. https://192.168.50.2:56398); printed by enroll-code.
 	PublicURL string `json:"public_url"`
+	// Port devices connect to (default 56398); a test server beside the real one uses another.
+	Port string `json:"port"`
 	// Registry of enrolled devices (default devices.json).
 	DevicesFile string `json:"devices_file"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8081).
@@ -42,6 +44,7 @@ type AppConfig struct {
 }
 
 const (
+	DefaultPort           = "56398"
 	DefaultDevicesFile    = "devices.json"
 	DefaultAdminAddr      = "127.0.0.1:8081"
 	DefaultAdminTokenFile = "admin.token"
@@ -63,6 +66,9 @@ func LoadConfig(path string) (AppConfig, error) {
 
 // WithDefaults fills in the optional settings.
 func (c AppConfig) WithDefaults() AppConfig {
+	if c.Port == "" {
+		c.Port = DefaultPort
+	}
 	if c.DevicesFile == "" {
 		c.DevicesFile = DefaultDevicesFile
 	}
