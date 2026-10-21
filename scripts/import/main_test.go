@@ -110,17 +110,6 @@ func TestFoldersAndPaths(t *testing.T) {
 	if !within(dir, dir) || !within(filepath.Join(dir, "x"), dir) || within(filepath.Join("a", "database"), dir) || within("a", dir) {
 		t.Error("within")
 	}
-	for path, want := range map[string]string{
-		"/b/Phone/DCIM/Camera/x.jpg":             "camera",
-		"/b/Phone/DCIM/Screenshots/x.png":        "screenshots",
-		"/b/WhatsApp/Media/WhatsApp Video/x.mp4": "whatsapp",
-		"/b/Pictures/x.jpg":                      "other",
-		"/Hen/phone DCIM/Camera/x.jpg":           "camera",
-	} {
-		if got := sourceOfPath(filepath.FromSlash(path)); got != want {
-			t.Errorf("%s: %s, want %s", path, got, want)
-		}
-	}
 }
 
 func TestNameFirst(t *testing.T) {

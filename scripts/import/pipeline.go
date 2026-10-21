@@ -329,7 +329,7 @@ func folderOf(root, path string) string {
 
 // importInto copies the file into the data folder with the facts read from it.
 func (im *importer) importInto(path, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
-	source := sourceOfPath(path)
+	source := media.SourceOfPath(path)
 	from := path
 	if im.cloud != nil {
 		from = im.cloud.origin(path)

@@ -354,3 +354,37 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 		t.Fatalf("reopened: %+v", got.Sidecar)
 	}
 }
+
+func TestSetSourceComesAgainInTheFeed(t *testing.T) {
+	f := newFixture(t)
+	f.now = f.now.Add(time.Second)
+	item := f.upload([]byte("photo"), "IMG-20230115-WA0012.jpg")
+	_, cursor, _, _ := f.store.Changes("", 10)
+
+	f.now = f.now.Add(time.Hour)
+	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || !changed {
+		t.Fatal(changed, err)
+	}
+	items, cursor, _, _ := f.store.Changes(cursor, 10)
+	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceWhatsApp {
+		t.Fatalf("after the correction: %v", items)
+	}
+
+	// The same source again changes nothing, and the feed has nothing new.
+	f.now = f.now.Add(time.Hour)
+	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || changed {
+		t.Fatal(changed, err)
+	}
+	if items, _, _, _ := f.store.Changes(cursor, 10); len(items) != 0 {
+		t.Fatalf("unchanged: %v", items)
+	}
+
+	again, err := OpenStore(f.store.Root(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := again.Get(item.Sha256())
+	if c := got.Sidecar.Facts.CorrectedAt; c == nil || *got.Sidecar.Facts.Source != SourceWhatsApp || got.Sidecar.Facts.FileName != "IMG-20230115-WA0012.jpg" {
+		t.Fatalf("reopened: %+v", got.Sidecar.Facts)
+	}
+}

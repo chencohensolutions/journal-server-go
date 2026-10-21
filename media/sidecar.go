@@ -50,6 +50,8 @@ type Facts struct {
 	// Every folder scripts/import found this file in, from the searched folder down ("phone DCIM/Flowers"):
 	// the albums it was kept in, as clues. Copies found later add theirs.
 	Folders []string `json:"folders,omitempty"`
+	// When the server last corrected a fact clients show (SetSource), so the file comes again in the change feed.
+	CorrectedAt *time.Time `json:"correctedAt,omitempty"`
 }
 
 // Sidecar is the <file>.json next to an original.
@@ -77,11 +79,14 @@ type Detection struct {
 	ScannedAt time.Time `json:"scannedAt"`
 }
 
-// ChangedAt is the last time the sidecar changed in a way clients see: its upload, or a later scan.
+// ChangedAt is the last time the sidecar changed in a way clients see: its upload, a later scan or a correction.
 func (s Sidecar) ChangedAt() time.Time {
 	changed := s.Facts.UploadedAt
 	if s.Detected != nil && s.Detected.Nudity != nil && s.Detected.Nudity.ScannedAt.After(changed) {
 		changed = s.Detected.Nudity.ScannedAt
+	}
+	if c := s.Facts.CorrectedAt; c != nil && c.After(changed) {
+		changed = *c
 	}
 	return changed
 }
@@ -182,4 +187,28 @@ func (s *Store) setNudity(sha string, detection Detection) error {
 	detected.Nudity = &detection
 	sidecar.Detected = &detected
 	return s.rewriteSidecar(item, sidecar)
+}
+
+// SetSource corrects where the file came from (one of the Source constants) in its sidecar. Only the sidecar is
+// rewritten; the original is never touched. Like SetNudity, the file comes again in the change feed: CorrectedAt
+// is set to now, during the turn. A file that already has that source is left as it is.
+func (s *Store) SetSource(sha, source string) (changed bool, err error) {
+	err = s.Turn(func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		item, ok := s.items[sha]
+		if !ok {
+			return fmt.Errorf("%s isn't in the data folder", sha)
+		}
+		if old := item.Sidecar.Facts.Source; old != nil && *old == source {
+			return nil
+		}
+		sidecar := item.Sidecar
+		now := s.now().UTC()
+		sidecar.Facts.Source = &source
+		sidecar.Facts.CorrectedAt = &now
+		changed = true
+		return s.rewriteSidecar(item, sidecar)
+	})
+	return changed, err
 }

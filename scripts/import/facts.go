@@ -306,19 +306,3 @@ func parseISO6709(value string) *media.GeoPoint {
 	}
 	return &media.GeoPoint{Lat: lat, Lon: lon}
 }
-
-// sourceOfPath is where the file came from, by its folder, as the Android app names it
-// (sourceOfFolder in journal-client-kmp).
-func sourceOfPath(path string) string {
-	p := strings.ToLower(filepath.ToSlash(path))
-	switch {
-	case strings.Contains(p, "screenshot") || strings.Contains(p, "screenrecord") || strings.Contains(p, "screen record"):
-		return "screenshots"
-	case strings.Contains(p, "whatsapp"):
-		return "whatsapp"
-	case strings.Contains(p, "dcim"):
-		return "camera"
-	default:
-		return "other"
-	}
-}

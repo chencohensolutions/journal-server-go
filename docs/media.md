@@ -66,7 +66,8 @@ The device sends the facts (it already read them from MediaStore/PhotoKit); the 
 (same device id, new content). `pairedWith` is set on a Live Photo's video (it names the photo) and on
 a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
-by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at.
+by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
+is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)).
 
 ## Uploading a file
 
@@ -184,7 +185,8 @@ All of these need a client certificate, like everything except enrollment
 deleted, media }`, oldest change first, with a `cursor` and `hasMore`. A new device starts without `since` and calls
 again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed
 since (an empty page returns the same cursor). A file changes when it is uploaded, and again when a scan writes its
-answer into the sidecar (see [Nudity scan](#nudity-scan)): it then comes again, whole. The cursor is opaque (today
+answer into the sidecar (see [Nudity scan](#nudity-scan)) or its source is corrected
+(see [Fixing sources](#fixing-sources)): it then comes again, whole. The cursor is opaque (today
 the time of the last change and sha256 of the last original in the page), so stories and notes can join the feed later
 without changing clients. Pages are at most 5000; responses to `/query` are gzipped when the client accepts it.
 
@@ -209,6 +211,19 @@ and writes the answer into the sidecar:
   `--rescan` scans everything again. The server may keep running (see "Several processes on one data folder").
 - For now it is run by hand after uploads or imports; later it will run on each new file.
 
+## Fixing sources
+
+`go run ./scripts/fix-sources --user hen [--dry-run]` corrects, once, the `source` of files WhatsApp named
+(`IMG-20230115-WA0012.jpg`, `VID-…-WA…`; also `AUD`, `PTT`, `STK`, `DOC`) that came in as `camera` or `other`, so
+the apps hide them with the rest of WhatsApp. Imports used to tell the source from the folder only, so a WhatsApp
+file copied elsewhere before it was imported lost it; they now look at the name too.
+
+- Only `facts.source` and `facts.correctedAt` change in the sidecar (inside a turn); originals are never touched.
+  `correctedAt` makes the file come again in the change feed, so phones that already have it learn the new source.
+- It prints how many it corrected, their sources before, and where they were found (the first folders of
+  `importedFrom`), to tell why they had the wrong source. Files whose folders mention WhatsApp but whose name
+  doesn't are listed and left as they are. Running it again changes nothing.
+
 ## Importing files already on the server's disk
 
 `scripts/import` copies photos and videos from folders on the server's disk (old phone backups) into a user's
@@ -226,7 +241,8 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
 - Each file is hashed; one whose sha256 the data folder already has (an earlier run, a device, or another copy
   found in this run) is a **duplicate** and isn't copied. A new file is copied to `.cache/import/`, hashed again,
   and placed like an upload (month folder, safe name, sidecar), with `source` from its folder like the Android
-  app (`camera`, `screenshots`, `whatsapp`, `other`).
+  app (`camera`, `screenshots`, `whatsapp`, `other`), or `whatsapp` when WhatsApp named it
+  (`IMG-20230115-WA0012.jpg`) wherever it was found (`media.SourceOfPath`).
 - **Every source file that is done, copied or duplicate, is moved to a folder of this run inside `--imported`**,
   named by when the run started, keeping its path from the searched folder down
   (`D:\Archive\phone DCIM\Camera\x.jpg` → `D:\Imported\2026-10-20-19-15-42\phone DCIM\Camera\x.jpg`), so runs
@@ -300,9 +316,9 @@ each service, rclone opens the browser to sign in, with **read-only** access (re
 
 ## Several processes on one data folder
 
-The server, `scripts/import` (one or more at once) and `scripts/scan-nudity` may all have the same data folder
+The server, `scripts/import` (one or more at once), `scripts/scan-nudity` and `scripts/fix-sources` may all have the same data folder
 open. Each keeps the index in memory, so they **take turns** at the few steps that change it (`media/turns.go`):
-placing a file (a finished upload, an import), and rewriting a sidecar (folders, a scan's answer).
+placing a file (a finished upload, an import), and rewriting a sidecar (folders, a scan's answer, a corrected source).
 
 - A turn holds the exclusive lock on `.cache/write.lock` (the operating system's file lock, dropped if the process
   dies). It first catches up with what the others did, from `.cache/write-journal.tsv` (`<sha256>\t<path>` per file

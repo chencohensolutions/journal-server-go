@@ -41,6 +41,7 @@ go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; server must be running
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]
+go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named
 ```
 
 Lint is golangci-lint on save in VS Code (gofmt, govet, staticcheck, errcheck, gosimple); there is no
@@ -74,7 +75,9 @@ the truth: there is no database. Originals go under `media/<year>/<year-month>/`
 `<name>.json`, uploads in progress and previews live in `.cache/`. `names.go` makes file names safe on every
 platform; `files.go` has the atomic write and rename helpers. `store.go` is the index and lookups, `upload.go`
 the resumable upload, `feed.go` the change feed, `library.go` the per-user map, `sidecar.go` the sidecar format
-and the only code that rewrites one (`rewriteSidecar`: folders from imports, nudity scores). HTTP handlers for
+and the only code that rewrites one (`rewriteSidecar`: folders from imports, nudity scores, corrected sources;
+a rewrite clients must see sets a time that `Sidecar.ChangedAt` counts). `source.go` tells a file's source from
+its path and name, for imports and `scripts/fix-sources`. HTTP handlers for
 upload/original/preview/verify are in `media/http.go` and `verify.go`, mounted by `newMux` in `serve.go`;
 resolvers in `graph/resolver/media.resolvers.go` cover `missingMedia`, `startUpload`, the change feed and usage.
 The change feed (`Store.Changes`) orders items by when their sidecar last changed, with an opaque cursor, so a
