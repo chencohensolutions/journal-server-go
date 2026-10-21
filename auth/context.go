@@ -8,6 +8,7 @@ const (
 	userContextKey     contextKey = "user"
 	clientIPContextKey contextKey = "client_ip"
 	deviceContextKey   contextKey = "device"
+	withholdContextKey contextKey = "withhold_private"
 )
 
 // WithUser records the user the client certificate named.
@@ -39,4 +40,16 @@ func WithDeviceName(ctx context.Context, name string) context.Context {
 func DeviceNameFromContext(ctx context.Context) string {
 	name, _ := ctx.Value(deviceContextKey).(string)
 	return name
+}
+
+// WithWithholdPrivate records that the device is kept from the files the user marked private.
+func WithWithholdPrivate(ctx context.Context) context.Context {
+	return context.WithValue(ctx, withholdContextKey, true)
+}
+
+// WithholdPrivateFromContext reports whether the device is kept from private files; false for certificates issued
+// outside enrollment.
+func WithholdPrivateFromContext(ctx context.Context) bool {
+	withhold, _ := ctx.Value(withholdContextKey).(bool)
+	return withhold
 }

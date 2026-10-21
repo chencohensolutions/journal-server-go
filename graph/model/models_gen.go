@@ -25,8 +25,9 @@ type StartUploadResult interface {
 type Change struct {
 	Kind ChangeKind `json:"kind"`
 	// media/<sha256> for media.
-	Path    string `json:"path"`
-	Deleted bool   `json:"deleted"`
+	Path string `json:"path"`
+	// Gone from the server, or a private file the server keeps from this device.
+	Deleted bool `json:"deleted"`
 	// The new state; null when deleted.
 	Media *Media `json:"media,omitempty"`
 }
@@ -113,6 +114,9 @@ type Media struct {
 	// How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
 	// user's threshold, and fetch nothing of it.
 	Nudity *float64 `json:"nudity,omitempty"`
+	// The user marked it private (setPrivate). Clients hide it while "Show private media" is off, and fetch nothing of
+	// it. Devices the server keeps from private files never get it at all.
+	Private bool `json:"private"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
 }

@@ -297,7 +297,7 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	var seen []string
 	cursor := ""
 	for {
-		items, next, more, err := f.store.Changes(cursor, 2)
+		items, next, more, err := f.store.Changes(cursor, 2, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -314,15 +314,15 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	}
 
 	// Nothing new: the same cursor comes back. A new upload shows up after it.
-	if items, next, more, _ := f.store.Changes(cursor, 2); len(items) != 0 || next != cursor || more {
+	if items, next, more, _ := f.store.Changes(cursor, 2, false); len(items) != 0 || next != cursor || more {
 		t.Fatalf("after the end: %v %q %v", items, next, more)
 	}
 	f.now = f.now.Add(time.Second)
 	latest := f.upload([]byte("new"), "IMG.jpg")
-	if items, _, _, _ := f.store.Changes(cursor, 10); len(items) != 1 || items[0].Sha256() != latest.Sha256() {
+	if items, _, _, _ := f.store.Changes(cursor, 10, false); len(items) != 1 || items[0].Sha256() != latest.Sha256() {
 		t.Fatalf("new upload: %v", items)
 	}
-	if _, _, _, err := f.store.Changes("garbage", 10); !errors.Is(err, ErrBadCursor) {
+	if _, _, _, err := f.store.Changes("garbage", 10, false); !errors.Is(err, ErrBadCursor) {
 		t.Fatalf("bad cursor: %v", err)
 	}
 }
@@ -331,7 +331,7 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 	f := newFixture(t)
 	f.now = f.now.Add(time.Second)
 	item := f.upload([]byte("photo"), "IMG.jpg")
-	_, cursor, _, _ := f.store.Changes("", 10)
+	_, cursor, _, _ := f.store.Changes("", 10, false)
 
 	// Scanned an hour later; the time is the store's, taken during the write's turn.
 	f.now = f.now.Add(time.Hour)
@@ -339,7 +339,7 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 	if err := f.store.SetNudity(item.Sha256(), Detection{Score: 0.93, Model: "nudenet-320n", ScannedAt: scanned.Add(-time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	items, _, _, _ := f.store.Changes(cursor, 10)
+	items, _, _, _ := f.store.Changes(cursor, 10, false)
 	if len(items) != 1 || items[0].Sidecar.Detected.Nudity.Score != 0.93 {
 		t.Fatalf("after the scan: %v", items)
 	}
@@ -359,13 +359,13 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 	f := newFixture(t)
 	f.now = f.now.Add(time.Second)
 	item := f.upload([]byte("photo"), "IMG-20230115-WA0012.jpg")
-	_, cursor, _, _ := f.store.Changes("", 10)
+	_, cursor, _, _ := f.store.Changes("", 10, false)
 
 	f.now = f.now.Add(time.Hour)
 	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || !changed {
 		t.Fatal(changed, err)
 	}
-	items, cursor, _, _ := f.store.Changes(cursor, 10)
+	items, cursor, _, _ := f.store.Changes(cursor, 10, false)
 	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceWhatsApp {
 		t.Fatalf("after the correction: %v", items)
 	}
@@ -375,7 +375,7 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || changed {
 		t.Fatal(changed, err)
 	}
-	if items, _, _, _ := f.store.Changes(cursor, 10); len(items) != 0 {
+	if items, _, _, _ := f.store.Changes(cursor, 10, false); len(items) != 0 {
 		t.Fatalf("unchanged: %v", items)
 	}
 

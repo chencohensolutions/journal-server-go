@@ -15,6 +15,8 @@ const usage = `usage:
   journal-server enroll-code <user>   create a one-time enrollment code
   journal-server devices [user]       list enrolled devices
   journal-server revoke <serial>      revoke an enrolled device
+  journal-server private <serial> withhold|allow
+                                      keep private files from a device, or send them to it again
 `
 
 func main() {

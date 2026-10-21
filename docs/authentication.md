@@ -89,14 +89,16 @@ Signed by `client_ca` with `client_ca_key` (`enroll/issuer.go`):
 
 Every enrolled certificate is appended to `devices_file` (default `devices.json`;
 `enroll/devices.go`, written atomically): serial, user, device name, key protection, registration
-and expiry dates, and the revocation date.
+and expiry dates, the revocation date, and whether private files are kept from the device
+(`withhold_private`, see [Private files](media.md#private-files)).
 
 ```
 $ journal-server devices hen
-USER   DEVICE        KEY              REGISTERED   EXPIRES      STATUS   SERIAL
-hen    Pixel 9 Pro   STRONGBOX        2026-10-17   2027-10-17   active   4fa107…
-hen    iPhone        SECURE_ENCLAVE   2026-09-02   2027-09-02   active   9c3e52…
+USER   DEVICE        KEY              REGISTERED   EXPIRES      STATUS   PRIVATE    SERIAL
+hen    Pixel 9 Pro   STRONGBOX        2026-10-17   2027-10-17   active   sent       4fa107…
+hen    iPad          SECURE_ENCLAVE   2026-09-02   2027-09-02   active   withheld   9c3e52…
 
+$ journal-server private 9c3e52… withhold     # or allow
 $ journal-server revoke 9c3e52…
 ```
 
@@ -113,7 +115,7 @@ server does not verify it (no key attestation), so treat it as informational.
 
 ## Admin API and commands
 
-`journal-server enroll-code | devices | revoke` are thin GraphQL clients of the running server's
+`journal-server enroll-code | devices | revoke | private` are thin GraphQL clients of the running server's
 admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphql`):
 
 - Served on `admin_addr` (default `127.0.0.1:8081`). The server refuses to start if that is not a
@@ -213,6 +215,8 @@ Renewing only the server certificate (same CA) needs none of this; just restart 
 - **Network attacker during enrollment:** the device pins the server CA (`SERVER_CA_PEM`), so it
   cannot be tricked into sending the code to another server.
 - **Lost or stolen phone:** `journal-server revoke <serial>`. The key cannot be extracted from the
-  phone's secure hardware.
+  phone's secure hardware. Revoking stops new access only: what the app already holds (cached previews,
+  downloaded originals, the media list) stays on the phone. A device kept from private files
+  (`journal-server private <serial> withhold`) never had those.
 - **Anonymous probing:** without a certificate, only the two enrollment fields respond, and they are
   rate limited. The schema cannot be introspected.

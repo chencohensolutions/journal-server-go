@@ -18,10 +18,11 @@ import (
 
 // StartUpload is the resolver for the startUpload field.
 func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error) {
-	store, err := r.store(ctx)
+	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
+	store := v.store
 	kind := media.KindPhoto
 	if input.Kind == model.MediaKindVideo {
 		kind = media.KindVideo
@@ -54,7 +55,8 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 	}
 	switch {
 	case result.Existing != nil:
-		return model.MediaExists{Media: toMedia(store, *result.Existing)}, nil
+		// Also a private file to a device kept from them: it has the file, so it learns nothing new.
+		return model.MediaExists{Media: v.toMedia(*result.Existing)}, nil
 	case result.Rejected != "":
 		return model.UploadRejected{Reason: model.UploadRejectedReason(result.Rejected)}, nil
 	default:
@@ -65,6 +67,31 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 			ExpiresAt: result.Upload.ExpiresAt,
 		}, nil
 	}
+}
+
+// SetPrivate is the resolver for the setPrivate field.
+func (r *mutationResolver) SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error) {
+	if len(sha256s) > maxHashesPerQuery {
+		return nil, fmt.Errorf("at most %d hashes per call", maxHashesPerQuery)
+	}
+	v, err := r.view(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if v.withholdPrivate && !private {
+		return nil, fmt.Errorf("this device can't see private files, so it can't unmark them")
+	}
+	changed, err := v.store.SetPrivate(sha256s, private, auth.DeviceNameFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	result := []*model.Media{}
+	for _, item := range changed {
+		if !v.hides(item) {
+			result = append(result, v.toMedia(item))
+		}
+	}
+	return result, nil
 }
 
 // MissingMedia is the resolver for the missingMedia field.
@@ -81,15 +108,15 @@ func (r *queryResolver) MissingMedia(ctx context.Context, hashes []string) ([]st
 
 // Media is the resolver for the media field.
 func (r *queryResolver) Media(ctx context.Context, sha256 string) (*model.Media, error) {
-	store, err := r.store(ctx)
+	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
-	item, ok := store.Get(sha256)
-	if !ok {
+	item, ok := v.store.Get(sha256)
+	if !ok || v.hides(item) {
 		return nil, nil
 	}
-	return toMedia(store, item), nil
+	return v.toMedia(item), nil
 }
 
 // StorageUsage is the resolver for the storageUsage field.
@@ -110,10 +137,11 @@ func (r *queryResolver) StorageUsage(ctx context.Context) (*model.StorageUsage, 
 
 // Changes is the resolver for the changes field.
 func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error) {
-	store, err := r.store(ctx)
+	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
+	store := v.store
 	n := 2000
 	if limit != nil {
 		n = *limit
@@ -125,17 +153,18 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 	if since != nil {
 		cursor = *since
 	}
-	items, next, hasMore, err := store.Changes(cursor, n)
+	items, next, hasMore, err := store.Changes(cursor, n, v.withholdPrivate)
 	if err != nil {
 		return nil, err
 	}
 	versions, paired := store.RelatedIndex()
 	changes := make([]*model.Change, len(items))
 	for i, item := range items {
-		changes[i] = &model.Change{
-			Kind:  model.ChangeKindMedia,
-			Path:  "media/" + item.Sha256(),
-			Media: toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()]),
+		changes[i] = &model.Change{Kind: model.ChangeKindMedia, Path: "media/" + item.Sha256()}
+		if v.hides(item) {
+			changes[i].Deleted = true
+		} else {
+			changes[i].Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
 		}
 	}
 	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: hasMore}, nil

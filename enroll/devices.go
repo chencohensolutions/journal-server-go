@@ -21,6 +21,9 @@ type Device struct {
 	RegisteredAt  time.Time  `json:"registered_at"`
 	ExpiresAt     time.Time  `json:"expires_at"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+	// The server keeps the files the user marked private from this device: they aren't in its change feed and
+	// can't be fetched. Off unless set with `journal-server private <serial> withhold`.
+	WithholdPrivate bool `json:"withhold_private,omitempty"`
 }
 
 var ErrDeviceNotFound = errors.New("device not found")
@@ -90,6 +93,26 @@ func (r *Registry) Revoke(serial string, at time.Time) (Device, error) {
 			r.devices[i].RevokedAt = &at
 			if err := r.save(); err != nil {
 				r.devices[i] = previous
+				return Device{}, err
+			}
+		}
+		return r.devices[i], nil
+	}
+	return Device{}, ErrDeviceNotFound
+}
+
+// SetWithholdPrivate turns withholding private files from a device on or off.
+func (r *Registry) SetWithholdPrivate(serial string, withhold bool) (Device, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.devices {
+		if r.devices[i].Serial != serial {
+			continue
+		}
+		if r.devices[i].WithholdPrivate != withhold {
+			r.devices[i].WithholdPrivate = withhold
+			if err := r.save(); err != nil {
+				r.devices[i].WithholdPrivate = !withhold
 				return Device{}, err
 			}
 		}

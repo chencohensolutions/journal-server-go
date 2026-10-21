@@ -52,6 +52,11 @@ type Media {
   user's threshold, and fetch nothing of it.
   """
   nudity: Float
+  """
+  The user marked it private (setPrivate). Clients hide it while "Show private media" is off, and fetch nothing of
+  it. Devices the server keeps from private files never get it at all.
+  """
+  private: Boolean!
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -126,6 +131,12 @@ enum UploadRejectedReason {
 extend type Mutation {
   "Declares a file before its bytes are sent, or continues an upload that stopped."
   startUpload(input: StartUploadInput!): StartUploadResult!
+  """
+  Marks files private, or no longer private, with every file that goes with them (edits, Live Photo videos, RAWs).
+  Returns the files that changed; they come again in the change feed. At most 1000 hashes per call. A device the
+  server keeps from private files may mark files private but not unmark them, and gets back none of them.
+  """
+  setPrivate(sha256s: [Sha256!]!, private: Boolean!): [Media!]!
 }
 
 # --- Change feed --------------------------------------------------------------
@@ -140,6 +151,7 @@ type Change {
   kind: ChangeKind!
   "media/<sha256> for media."
   path: String!
+  "Gone from the server, or a private file the server keeps from this device."
   deleted: Boolean!
   "The new state; null when deleted."
   media: Media

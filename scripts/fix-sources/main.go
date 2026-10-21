@@ -82,7 +82,7 @@ type report struct {
 
 // fix sets the source of every file WhatsApp named to whatsapp, unless dryRun.
 func fix(store *media.Store, dryRun bool) (report, error) {
-	items, _, _, err := store.Changes("", 1<<31-1)
+	items, _, _, err := store.Changes("", 1<<31-1, false)
 	if err != nil {
 		return report{}, err
 	}

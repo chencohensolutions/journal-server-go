@@ -15,7 +15,7 @@ import (
 	"github.com/skip2/go-qrcode"
 )
 
-// runAdminCommand implements the enroll-code, devices and revoke commands as GraphQL calls to the
+// runAdminCommand implements the enroll-code, devices, revoke and private commands as GraphQL calls to the
 // running server's admin API.
 func runAdminCommand(config auth.AppConfig, command string, args []string) error {
 	switch {
@@ -25,6 +25,8 @@ func runAdminCommand(config auth.AppConfig, command string, args []string) error
 		return devicesCommand(config, args)
 	case command == "revoke" && len(args) == 1:
 		return revokeCommand(config, args[0])
+	case command == "private" && len(args) == 2 && (args[1] == "withhold" || args[1] == "allow"):
+		return privateCommand(config, args[0], args[1] == "withhold")
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command or wrong arguments: %s", command)
@@ -32,16 +34,17 @@ func runAdminCommand(config auth.AppConfig, command string, args []string) error
 }
 
 type adminDevice struct {
-	Serial        string     `json:"serial"`
-	User          string     `json:"user"`
-	Name          string     `json:"name"`
-	KeyProtection string     `json:"keyProtection"`
-	RegisteredAt  time.Time  `json:"registeredAt"`
-	ExpiresAt     time.Time  `json:"expiresAt"`
-	RevokedAt     *time.Time `json:"revokedAt"`
+	Serial          string     `json:"serial"`
+	User            string     `json:"user"`
+	Name            string     `json:"name"`
+	KeyProtection   string     `json:"keyProtection"`
+	RegisteredAt    time.Time  `json:"registeredAt"`
+	ExpiresAt       time.Time  `json:"expiresAt"`
+	RevokedAt       *time.Time `json:"revokedAt"`
+	WithholdPrivate bool       `json:"withholdPrivate"`
 }
 
-const deviceFields = "serial user name keyProtection registeredAt expiresAt revokedAt"
+const deviceFields = "serial user name keyProtection registeredAt expiresAt revokedAt withholdPrivate"
 
 func enrollCodeCommand(config auth.AppConfig, user string) error {
 	var data struct {
@@ -114,7 +117,7 @@ func devicesCommand(config auth.AppConfig, args []string) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "USER\tDEVICE\tKEY\tREGISTERED\tEXPIRES\tSTATUS\tSERIAL")
+	fmt.Fprintln(w, "USER\tDEVICE\tKEY\tREGISTERED\tEXPIRES\tSTATUS\tPRIVATE\tSERIAL")
 	for _, d := range data.Devices {
 		status := "active"
 		if d.RevokedAt != nil {
@@ -122,8 +125,12 @@ func devicesCommand(config auth.AppConfig, args []string) error {
 		} else if time.Now().After(d.ExpiresAt) {
 			status = "expired"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.User, d.Name, d.KeyProtection,
-			d.RegisteredAt.Local().Format(time.DateOnly), d.ExpiresAt.Local().Format(time.DateOnly), status, d.Serial)
+		private := "sent"
+		if d.WithholdPrivate {
+			private = "withheld"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.User, d.Name, d.KeyProtection,
+			d.RegisteredAt.Local().Format(time.DateOnly), d.ExpiresAt.Local().Format(time.DateOnly), status, private, d.Serial)
 	}
 	return w.Flush()
 }
@@ -138,6 +145,25 @@ func revokeCommand(config auth.AppConfig, serial string) error {
 		return err
 	}
 	fmt.Printf("Revoked %q of user %s (serial %s)\n", data.RevokeDevice.Name, data.RevokeDevice.User, data.RevokeDevice.Serial)
+	return nil
+}
+
+func privateCommand(config auth.AppConfig, serial string, withhold bool) error {
+	var data struct {
+		SetWithholdPrivate adminDevice `json:"setWithholdPrivate"`
+	}
+	err := adminQuery(config, `mutation($serial: String!, $withhold: Boolean!) {
+		setWithholdPrivate(serial: $serial, withhold: $withhold) { `+deviceFields+` }
+	}`, map[string]any{"serial": serial, "withhold": withhold}, &data)
+	if err != nil {
+		return err
+	}
+	d := data.SetWithholdPrivate
+	if d.WithholdPrivate {
+		fmt.Printf("Private files are kept from %q of user %s; its next sync takes back those it has\n", d.Name, d.User)
+	} else {
+		fmt.Printf("Private files are sent to %q of user %s again (it hides them unless Show private media is on)\n", d.Name, d.User)
+	}
 	return nil
 }
 

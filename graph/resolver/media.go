@@ -27,9 +27,58 @@ func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
 	return store, nil
 }
 
-func toMedia(store *media.Store, item media.Item) *model.Media {
-	versions, paired := store.Related(item.Sha256())
-	return toMediaWith(item, versions, paired)
+// view is what the request's device may see of its user's store: everything, unless the server keeps it from
+// private files (`journal-server private <serial> withhold`).
+type view struct {
+	store           *media.Store
+	withholdPrivate bool
+}
+
+func (r *Resolver) view(ctx context.Context) (view, error) {
+	store, err := r.store(ctx)
+	if err != nil {
+		return view{}, err
+	}
+	return view{store, auth.WithholdPrivateFromContext(ctx)}, nil
+}
+
+// hides reports whether the device may not see item.
+func (v view) hides(item media.Item) bool { return v.withholdPrivate && item.Sidecar.IsPrivate() }
+
+func (v view) hidesSha(sha string) bool {
+	item, ok := v.store.Get(sha)
+	return ok && v.hides(item)
+}
+
+// visible leaves out of hashes the files the device may not see.
+func (v view) visible(hashes []string) []string {
+	if !v.withholdPrivate {
+		return hashes
+	}
+	var shown []string
+	for _, sha := range hashes {
+		if !v.hidesSha(sha) {
+			shown = append(shown, sha)
+		}
+	}
+	return shown
+}
+
+func (v view) toMedia(item media.Item) *model.Media {
+	versions, paired := v.store.Related(item.Sha256())
+	return v.toMediaWith(item, versions, paired)
+}
+
+// toMediaWith is item as the device may see it: edits and paired files it may not see are left out.
+func (v view) toMediaWith(item media.Item, versions, paired []string) *model.Media {
+	m := toMediaWith(item, v.visible(versions), v.visible(paired))
+	if m.VersionOf != nil && v.hidesSha(*m.VersionOf) {
+		m.VersionOf = nil
+	}
+	if m.PairedWith != nil && v.hidesSha(*m.PairedWith) {
+		m.PairedWith = nil
+	}
+	return m
 }
 
 func toMediaWith(item media.Item, versions, paired []string) *model.Media {
@@ -57,6 +106,7 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		Paired:     paired,
 		UploadedAt: facts.UploadedAt,
 		UploadedBy: facts.UploadedBy,
+		Private:    item.Sidecar.IsPrivate(),
 		URL:        "/media/" + item.Sha256(),
 	}
 	if facts.Kind == media.KindVideo {

@@ -20,7 +20,8 @@ and videos already on the server's disk into a data folder once each (by sha256)
 (`media/turns.go`, lock and journal in `.cache/`), so any new code that places files or rewrites sidecars must do
 it inside `Store.Turn` (the store's own write methods already do). `go run ./scripts/scan-nudity` scores files with
 NudeNet (Python, a separate program) into the sidecar's `detected.nudity` (never a tag; clients hide what is over
-the user's threshold); run by hand for now. The change
+the user's threshold); run by hand for now. Users mark files private with `setPrivate` (sidecar `privacy`,
+`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. The change
 feed for stories and notes, and the story trash, are not built yet.
 
 **The server targets macOS for now** (owner, Oct 20, 2026; libvips from Homebrew). Windows comes later, so keep it
@@ -39,6 +40,7 @@ go test ./media -run TestTurns             # one test
 go tool gqlgen generate                    # after editing graph/schema/*.graphql
 go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; server must be running
+go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]
 go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named

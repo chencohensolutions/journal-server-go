@@ -75,7 +75,8 @@ The device sends the facts (it already read them from MediaStore/PhotoKit); the 
 a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
-is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)).
+is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
+there once the user marked the file private (see [Private files](#private-files)).
 
 ## Uploading a file
 
@@ -193,8 +194,9 @@ All of these need a client certificate, like everything except enrollment
 deleted, media }`, oldest change first, with a `cursor` and `hasMore`. A new device starts without `since` and calls
 again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed
 since (an empty page returns the same cursor). A file changes when it is uploaded, and again when a scan writes its
-answer into the sidecar (see [Nudity scan](#nudity-scan)) or its source is corrected
-(see [Fixing sources](#fixing-sources)): it then comes again, whole. The cursor is opaque (today
+answer into the sidecar (see [Nudity scan](#nudity-scan)), its source is corrected
+(see [Fixing sources](#fixing-sources)) or it is marked private or unmarked (see [Private files](#private-files)): it
+then comes again, whole. To a device the server keeps from private files, a private file comes as `deleted`. The cursor is opaque (today
 the time of the last change and sha256 of the last original in the page), so stories and notes can join the feed later
 without changing clients. Pages are at most 5000; responses to `/query` are gzipped when the client accepts it.
 
@@ -218,6 +220,42 @@ and writes the answer into the sidecar:
   original. Files already scanned by the same `model` are skipped, so a stopped run continues where it stopped;
   `--rescan` scans everything again. The server may keep running (see "Several processes on one data folder").
 - For now it is run by hand after uploads or imports; later it will run on each new file.
+
+## Private files
+
+The user can mark files private from the apps: `mutation setPrivate(sha256s: [Sha256!]!, private: Boolean!)`, at
+most 1000 per call. It returns the files that changed. The mark goes in the sidecar, beside the facts:
+
+```json
+"privacy": { "private": true, "setAt": "2026-10-21T12:19:09Z", "setBy": "Pixel 9 Pro" }
+```
+
+- It is the user's choice, so it is never in `detected` (model output). Unmarking keeps the field with
+  `"private": false` and a new `setAt`, so the change comes again in the change feed like any other.
+- A file is marked with everything that goes with it, through `versionOf` and `pairedWith` either way: the photo and
+  its edits, a Live Photo's video, a RAW and its JPEG. An edit or paired file uploaded later of a private file is
+  private from the start (`setBy` is the device that uploaded it).
+- The API gives it as `Media.private`. **Clients hide private files the same way as nudity over the threshold**:
+  not shown while "Show private media" is off (the default), and nothing of them is fetched.
+
+**Keeping private files from a device.** By default every device gets private files, flagged. A device can be kept
+from them entirely, for example a tablet others use: `journal-server private <serial> withhold` (`allow` undoes it;
+`journal-server devices` shows which are withheld). This is `withhold_private` in `devices.json`. Such a device:
+
+- doesn't get private files in its change feed. A file marked private after the device had it comes as `deleted`, so
+  the app drops it. Changing the setting starts the device's feed again on its next sync (its cursor says which way it
+  was given), so it takes back, or gets again, the files it already had.
+- gets `null` from `media(sha256:)`, and `404` from `/media/{sha256}` and its `/preview`, as if the server didn't
+  have the file. Edits and paired files it can't see are left out of `versions`, `paired`, `versionOf` and
+  `pairedWith`.
+- may mark files private but not unmark them (it can't see them).
+- still learns that the server has a private file it holds itself: `missingMedia` doesn't list it, `startUpload`
+  answers `MediaExists`, and `/verify` checks it, so it isn't uploaded again and its own copy can be freed. It learns
+  nothing it didn't have. Its own copies of private files on the phone are not hidden by the server.
+- Certificates made outside enrollment are not in `devices.json` and always get private files.
+
+Withholding protects what a lost device holds better than the apps' hiding, since nothing private reaches it. Revoke a
+lost device in any case (see [authentication.md](authentication.md)).
 
 ## Fixing sources
 

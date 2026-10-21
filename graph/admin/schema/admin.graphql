@@ -1,5 +1,5 @@
 # Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# `journal-server enroll-code | devices | revoke` commands. See docs/authentication.md.
+# `journal-server enroll-code | devices | revoke | private` commands. See docs/authentication.md.
 
 scalar Time
 
@@ -13,6 +13,8 @@ type Mutation {
   createEnrollmentCode(user: String!): EnrollmentCode!
   "Revokes an enrolled device's certificate; the server rejects it from then on."
   revokeDevice(serial: String!): Device!
+  "Keeps the files the user marked private from a device (withhold), or sends them to it again."
+  setWithholdPrivate(serial: String!, withhold: Boolean!): Device!
 }
 
 type EnrollmentCode {
@@ -31,4 +33,6 @@ type Device {
   registeredAt: Time!
   expiresAt: Time!
   revokedAt: Time
+  "The server keeps the files the user marked private from this device."
+  withholdPrivate: Boolean!
 }

@@ -20,7 +20,7 @@ func (im *importer) hashDataFolder(ctx context.Context, jobs int) {
 	for cursor, more := "", true; more; {
 		var page []media.Item
 		var err error
-		page, cursor, more, err = im.store.Changes(cursor, 5000)
+		page, cursor, more, err = im.store.Changes(cursor, 5000, false)
 		check(err)
 		for _, item := range page {
 			if item.Sidecar.Facts.Kind == media.KindPhoto {

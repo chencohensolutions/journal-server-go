@@ -343,6 +343,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			ImportedFrom: req.ImportedFrom,
 			Folders:      req.Folders,
 		},
+		Privacy: s.inheritedPrivacy(req),
 	}
 	if err := writeSidecar(dest+".json", sidecar); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.

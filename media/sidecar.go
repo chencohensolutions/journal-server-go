@@ -59,6 +59,8 @@ type Sidecar struct {
 	Format int    `json:"format"`
 	Sha256 string `json:"sha256"`
 	Facts  Facts  `json:"facts"`
+	// The user's choice to keep the file private (SetPrivate); absent until it is first marked.
+	Privacy *Privacy `json:"privacy,omitempty"`
 	// Caption and tags, written through sync (not built yet). Kept as is when the facts are rewritten.
 	Note json.RawMessage `json:"note,omitempty"`
 	// What models found in the file (scripts/scan-nudity). Never the user's tags: clients decide what to hide.
@@ -79,7 +81,20 @@ type Detection struct {
 	ScannedAt time.Time `json:"scannedAt"`
 }
 
-// ChangedAt is the last time the sidecar changed in a way clients see: its upload, a later scan or a correction.
+// Privacy is whether the user marked a file private. It is kept when they unmark it, so that change has a time
+// too and comes in the change feed.
+type Privacy struct {
+	Private bool      `json:"private"`
+	SetAt   time.Time `json:"setAt"`
+	// The device that marked it, or the one that uploaded an edit or paired file of a private one.
+	SetBy string `json:"setBy,omitempty"`
+}
+
+// IsPrivate reports whether the user marked the file private.
+func (s Sidecar) IsPrivate() bool { return s.Privacy != nil && s.Privacy.Private }
+
+// ChangedAt is the last time the sidecar changed in a way clients see: its upload, a later scan, a correction or
+// a private mark.
 func (s Sidecar) ChangedAt() time.Time {
 	changed := s.Facts.UploadedAt
 	if s.Detected != nil && s.Detected.Nudity != nil && s.Detected.Nudity.ScannedAt.After(changed) {
@@ -87,6 +102,9 @@ func (s Sidecar) ChangedAt() time.Time {
 	}
 	if c := s.Facts.CorrectedAt; c != nil && c.After(changed) {
 		changed = *c
+	}
+	if p := s.Privacy; p != nil && p.SetAt.After(changed) {
+		changed = p.SetAt
 	}
 	return changed
 }

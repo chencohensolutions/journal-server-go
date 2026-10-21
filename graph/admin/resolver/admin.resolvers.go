@@ -37,6 +37,15 @@ func (r *mutationResolver) RevokeDevice(ctx context.Context, serial string) (*en
 	return &device, nil
 }
 
+// SetWithholdPrivate is the resolver for the setWithholdPrivate field.
+func (r *mutationResolver) SetWithholdPrivate(ctx context.Context, serial string, withhold bool) (*enroll.Device, error) {
+	device, err := r.Enrollment.Registry.SetWithholdPrivate(strings.ToLower(serial), withhold)
+	if err != nil {
+		return nil, err
+	}
+	return &device, nil
+}
+
 // Devices is the resolver for the devices field.
 func (r *queryResolver) Devices(ctx context.Context, user *string) ([]*enroll.Device, error) {
 	filter := ""

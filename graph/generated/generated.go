@@ -83,6 +83,7 @@ type ComplexityRoot struct {
 		Nudity     func(childComplexity int) int
 		Paired     func(childComplexity int) int
 		PairedWith func(childComplexity int) int
+		Private    func(childComplexity int) int
 		Sha256     func(childComplexity int) int
 		Size       func(childComplexity int) int
 		Source     func(childComplexity int) int
@@ -101,6 +102,7 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		EnrollDevice func(childComplexity int, input model.EnrollDeviceInput) int
+		SetPrivate   func(childComplexity int, sha256s []string, private bool) int
 		StartUpload  func(childComplexity int, input model.StartUploadInput) int
 	}
 
@@ -135,6 +137,7 @@ type ComplexityRoot struct {
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
 	StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error)
+	SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -320,6 +323,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.PairedWith(childComplexity), true
+	case "Media.private":
+		if e.ComplexityRoot.Media.Private == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Private(childComplexity), true
 	case "Media.sha256":
 		if e.ComplexityRoot.Media.Sha256 == nil {
 			break
@@ -399,6 +408,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.EnrollDevice(childComplexity, args["input"].(model.EnrollDeviceInput)), true
+	case "Mutation.setPrivate":
+		if e.ComplexityRoot.Mutation.SetPrivate == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setPrivate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetPrivate(childComplexity, args["sha256s"].([]string), args["private"].(bool)), true
 	case "Mutation.startUpload":
 		if e.ComplexityRoot.Mutation.StartUpload == nil {
 			break
@@ -666,6 +686,11 @@ type Media {
   user's threshold, and fetch nothing of it.
   """
   nudity: Float
+  """
+  The user marked it private (setPrivate). Clients hide it while "Show private media" is off, and fetch nothing of
+  it. Devices the server keeps from private files never get it at all.
+  """
+  private: Boolean!
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -740,6 +765,12 @@ enum UploadRejectedReason {
 extend type Mutation {
   "Declares a file before its bytes are sent, or continues an upload that stopped."
   startUpload(input: StartUploadInput!): StartUploadResult!
+  """
+  Marks files private, or no longer private, with every file that goes with them (edits, Live Photo videos, RAWs).
+  Returns the files that changed; they come again in the change feed. At most 1000 hashes per call. A device the
+  server keeps from private files may mark files private but not unmark them, and gets back none of them.
+  """
+  setPrivate(sha256s: [Sha256!]!, private: Boolean!): [Media!]!
 }
 
 # --- Change feed --------------------------------------------------------------
@@ -754,6 +785,7 @@ type Change {
   kind: ChangeKind!
   "media/<sha256> for media."
   path: String!
+  "Gone from the server, or a private file the server keeps from this device."
   deleted: Boolean!
   "The new state; null when deleted."
   media: Media
@@ -924,6 +956,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_uploadedBy(ctx, field)
 	case "nudity":
 		return ec.fieldContext_Media_nudity(ctx, field)
+	case "private":
+		return ec.fieldContext_Media_private(ctx, field)
 	case "url":
 		return ec.fieldContext_Media_url(ctx, field)
 	}
@@ -1073,6 +1107,28 @@ func (ec *executionContext) field_Mutation_enrollDevice_args(ctx context.Context
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setPrivate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "sha256s",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalNSha2562ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sha256s"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "private",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["private"] = arg1
 	return args, nil
 }
 
@@ -2064,6 +2120,29 @@ func (ec *executionContext) fieldContext_Media_nudity(_ context.Context, field g
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Float does not have child fields"))
 }
 
+func (ec *executionContext) _Media_private(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_private(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Private, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_private(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _Media_url(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -2214,6 +2293,50 @@ func (ec *executionContext) fieldContext_Mutation_startUpload(ctx context.Contex
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_startUpload_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setPrivate(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setPrivate(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetPrivate(ctx, fc.Args["sha256s"].([]string), fc.Args["private"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setPrivate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setPrivate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -4464,6 +4587,11 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "nudity":
 			out.Values[i] = ec._Media_nudity(ctx, field, obj)
+		case "private":
+			out.Values[i] = ec._Media_private(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "url":
 			out.Values[i] = ec._Media_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -4560,6 +4688,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "startUpload":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_startUpload(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "setPrivate":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setPrivate(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -5388,6 +5523,22 @@ func (ec *executionContext) unmarshalNKeyProtection2githubᚗcomᚋjournalᚋser
 
 func (ec *executionContext) marshalNKeyProtection2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx context.Context, sel ast.SelectionSet, v model.KeyProtection) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx context.Context, sel ast.SelectionSet, v *model.Media) graphql.Marshaler {

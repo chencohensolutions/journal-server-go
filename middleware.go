@@ -10,6 +10,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/enroll"
+	"github.com/journal/server-go/media"
 )
 
 // identify attaches the client IP and, when the client presented a certificate, its user and device.
@@ -49,9 +50,27 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 		}
 		if device, ok := registry.Find(serial); ok {
 			ctx = auth.WithDeviceName(ctx, device.Name)
+			if device.WithholdPrivate {
+				ctx = auth.WithWithholdPrivate(ctx)
+			}
 		}
 		log.Printf("Client connected: username=%s from %s (%s %s)", currentUser.Username, r.RemoteAddr, r.Method, r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(auth.WithUser(ctx, currentUser)))
+	})
+}
+
+// hidePrivate answers 404 for a private file to a device kept from them, as if the server didn't have it.
+func hidePrivate(lookup media.StoreLookup, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth.WithholdPrivateFromContext(r.Context()) {
+			if store := lookup(r); store != nil {
+				if item, ok := store.Get(r.PathValue("sha256")); ok && item.Sidecar.IsPrivate() {
+					http.NotFound(w, r)
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
