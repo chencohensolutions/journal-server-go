@@ -324,7 +324,7 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "no date in its file name or metadata", http.StatusUnprocessableEntity)
 			return
 		}
-		placed, _, err := im.importInto(item.Path, item.Sha256, info.Size(), facts, item.folders())
+		placed, _, err := im.importInto(item.Path, item.foundAt(), im.movedTo([]string{item.Root}, item.foundAt()), item.Sha256, info.Size(), facts, item.folders())
 		if err != nil {
 			http.Error(w, "not imported: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -332,7 +332,7 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 		message = "Imported as " + placed.Path
 		fallthrough
 	default:
-		if _, err := moveFile(item.Path, filepath.Join(im.runFolder, pathInside([]string{item.Root}, item.foundAt()))); err != nil {
+		if _, err := moveFile(item.Path, im.movedTo([]string{item.Root}, item.foundAt())); err != nil {
 			http.Error(w, message+"; not moved to the imported folder: "+err.Error(), http.StatusInternalServerError)
 			return
 		}

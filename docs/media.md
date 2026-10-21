@@ -66,7 +66,10 @@ The device sends the facts (it already read them from MediaStore/PhotoKit); the 
 (same device id, new content). `pairedWith` is set on a Live Photo's video (it names the photo) and on
 a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
-by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at.
+by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at, and
+`importedTo`, where the run moved that source, relative to the `--imported` folder and starting with the run's
+folder (`2026-10-21-09-30-00/Google Photos/Trip/x.jpg`), so an import can be undone. Files imported from a cloud
+have no `importedTo` (their download is deleted), nor do files imported before it was kept.
 
 ## Uploading a file
 
