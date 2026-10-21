@@ -32,7 +32,12 @@ func serveAdmin(config auth.AppConfig, enrollment *enroll.Service) {
 	}
 
 	log.Printf("Admin API listening on http://%s/admin/query", config.AdminAddr)
-	log.Fatal(http.ListenAndServe(config.AdminAddr, newAdminMux(config, enrollment, token)))
+	server := &http.Server{
+		Addr:              config.AdminAddr,
+		Handler:           newAdminMux(config, enrollment, token),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 func newAdminMux(config auth.AppConfig, enrollment *enroll.Service, token string) *http.ServeMux {

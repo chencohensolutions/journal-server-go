@@ -39,7 +39,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func newTestEnv(t *testing.T) *testEnv {
+// newTestEnv starts a server with one user, "hen", with an empty data folder; configure changes the config
+// before the server starts.
+func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	t.Helper()
 	now := time.Now()
 	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -66,16 +68,16 @@ func newTestEnv(t *testing.T) *testEnv {
 	}, caCert, &serverKey.PublicKey, caKey)
 
 	dir := t.TempDir()
-	imageFolder := filepath.Join(dir, "images")
-	os.Mkdir(imageFolder, 0o755)
-	os.WriteFile(filepath.Join(imageFolder, "beach.jpg"), []byte("jpeg"), 0o644)
 
 	config := auth.AppConfig{
 		PublicURL: "https://journal.test:8080",
 		Users: []auth.UserConfig{{
-			Username: "hen", CertCommonName: "hen", ImageFolder: imageFolder, DataFolder: filepath.Join(dir, "journal"),
+			Username: "hen", CertCommonName: "hen", DataFolder: filepath.Join(dir, "journal"),
 		}},
 	}.WithDefaults()
+	for _, change := range configure {
+		change(&config)
+	}
 	registry, err := enroll.OpenRegistry(filepath.Join(dir, "devices.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +149,19 @@ type enrollResult struct {
 	Reason      string
 }
 
+// deviceOf enrolls a new device for user and returns a client that presents its certificate.
+func (e *testEnv) deviceOf(t *testing.T, user string) *http.Client {
+	t.Helper()
+	code, _ := e.enrollment.Codes.Create(user)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	result := e.enroll(t, code, key)
+	if result.Typename != "EnrolledDevice" {
+		t.Fatalf("enroll %s = %+v", user, result)
+	}
+	certDER, _ := base64.StdEncoding.DecodeString(result.Certificate)
+	return e.client(&tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key})
+}
+
 func (e *testEnv) enroll(t *testing.T, code string, key *ecdsa.PrivateKey) enrollResult {
 	t.Helper()
 	csr, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "device"}}, key)
@@ -169,7 +184,7 @@ func TestAnonymousClientsReachOnlyPublicFields(t *testing.T) {
 	anonymous := env.client(nil)
 
 	for _, query := range []string{
-		`{ images { id } }`,
+		`{ storageUsage { photos } }`,
 		`{ __schema { queryType { name } } }`,
 		`{ __type(name: "Image") { name } }`,
 	} {
@@ -184,13 +199,13 @@ func TestAnonymousClientsReachOnlyPublicFields(t *testing.T) {
 		t.Fatalf("preview: %+v %s", resp.Errors, resp.Data["enrollmentPreview"])
 	}
 
-	imageResp, err := anonymous.Get(env.server.URL + "/images/beach.jpg")
+	mediaResp, err := anonymous.Get(env.server.URL + "/media/" + strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
-	imageResp.Body.Close()
-	if imageResp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("anonymous image download: %d", imageResp.StatusCode)
+	mediaResp.Body.Close()
+	if mediaResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous media download: %d", mediaResp.StatusCode)
 	}
 }
 
@@ -217,17 +232,9 @@ func TestEnrolledDeviceCanUseItsCertificateUntilRevoked(t *testing.T) {
 	certDER, _ := base64.StdEncoding.DecodeString(result.Certificate)
 	device := env.client(&tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key})
 
-	images := env.graphql(t, device, `{ images { id url } }`, nil)
-	if len(images.Errors) > 0 || !strings.Contains(string(images.Data["images"]), "beach.jpg") {
-		t.Fatalf("images = %s %+v", images.Data["images"], images.Errors)
-	}
-	imageResp, err := device.Get(env.server.URL + "/images/beach.jpg")
-	if err != nil {
-		t.Fatal(err)
-	}
-	imageResp.Body.Close()
-	if imageResp.StatusCode != http.StatusOK {
-		t.Fatalf("image download: %d", imageResp.StatusCode)
+	usage := env.graphql(t, device, `{ storageUsage { photos videos bytes } }`, nil)
+	if len(usage.Errors) > 0 || !strings.Contains(string(usage.Data["storageUsage"]), `"photos":0`) {
+		t.Fatalf("storageUsage = %s %+v", usage.Data["storageUsage"], usage.Errors)
 	}
 
 	if _, err := env.enrollment.Registry.Revoke(result.Serial, time.Now()); err != nil {
@@ -235,7 +242,7 @@ func TestEnrolledDeviceCanUseItsCertificateUntilRevoked(t *testing.T) {
 	}
 	// New connection, so the revoked certificate is checked again.
 	revoked := env.client(&tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key})
-	if resp := env.graphql(t, revoked, `{ images { id } }`, nil); resp.Status != http.StatusUnauthorized {
+	if resp := env.graphql(t, revoked, `{ storageUsage { photos } }`, nil); resp.Status != http.StatusUnauthorized {
 		t.Fatalf("revoked certificate: status %d", resp.Status)
 	}
 }

@@ -35,7 +35,7 @@ func (s *Store) Verify(ctx context.Context, sha string) (Verdict, error) {
 		return VerifyMissing, nil
 	}
 	original := filepath.Join(s.root, filepath.FromSlash(item.Path))
-	if _, err := os.Stat(original + ".json"); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(s.sidecarPath(&item)); errors.Is(err, fs.ErrNotExist) {
 		log.Printf("media: verify %s: the sidecar is gone", item.Path)
 		return VerifyMissing, nil
 	}
@@ -83,9 +83,8 @@ const parallelVerifies = 2
 func VerifyHandler(lookup StoreLookup) http.Handler {
 	slots := make(chan struct{}, parallelVerifies)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		store := lookup(r)
-		if store == nil {
-			http.Error(w, "no data folder is configured for this user", http.StatusNotFound)
+		store, ok := storeOf(w, r, lookup)
+		if !ok {
 			return
 		}
 		sha := r.PathValue("sha256")

@@ -5,6 +5,9 @@ package media
 
 import (
 	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -91,3 +94,92 @@ type Item struct {
 }
 
 func (i Item) Sha256() string { return i.Sidecar.Sha256 }
+
+// sidecarPath is where item's sidecar is on disk.
+func (s *Store) sidecarPath(item *Item) string {
+	return filepath.Join(s.root, filepath.FromSlash(item.Path)) + ".json"
+}
+
+// writeSidecar writes a sidecar to path, whole or not at all.
+func writeSidecar(path string, sidecar Sidecar) error {
+	data, err := json.MarshalIndent(sidecar, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, data)
+}
+
+// rewriteSidecar replaces an indexed original's sidecar, on disk and in the index, and notes it for the
+// other processes. Callers hold s.mu, during a turn.
+func (s *Store) rewriteSidecar(item *Item, sidecar Sidecar) error {
+	if err := writeSidecar(s.sidecarPath(item), sidecar); err != nil {
+		return err
+	}
+	item.Sidecar = sidecar
+	s.wrote(item)
+	return nil
+}
+
+// AddFolders adds folders the file was found in to its sidecar's facts (those it lists already, ignoring
+// case, are left out). Only the sidecar is rewritten; the original is never touched.
+func (s *Store) AddFolders(sha string, folders []string) (changed bool, err error) {
+	err = s.Turn(func() error {
+		var err error
+		changed, err = s.addFolders(sha, folders)
+		return err
+	})
+	return changed, err
+}
+
+func (s *Store) addFolders(sha string, folders []string) (changed bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[sha]
+	if !ok {
+		return false, fmt.Errorf("%s isn't in the data folder", sha)
+	}
+	sidecar := item.Sidecar
+	known := map[string]bool{}
+	for _, f := range sidecar.Facts.Folders {
+		known[strings.ToLower(f)] = true
+	}
+	merged := append([]string(nil), sidecar.Facts.Folders...)
+	for _, f := range folders {
+		if f != "" && !known[strings.ToLower(f)] {
+			known[strings.ToLower(f)] = true
+			merged = append(merged, f)
+		}
+	}
+	if len(merged) == len(sidecar.Facts.Folders) {
+		return false, nil
+	}
+	sidecar.Facts.Folders = merged
+	return true, s.rewriteSidecar(item, sidecar)
+}
+
+// SetNudity writes a nudity scan's answer into the file's sidecar, replacing an earlier one. Only the sidecar is
+// rewritten; the original is never touched. The file comes again in the change feed (see ChangedAt), so
+// ScannedAt is set to now, during the turn: a device's feed position can't have passed it.
+func (s *Store) SetNudity(sha string, detection Detection) error {
+	return s.Turn(func() error {
+		detection.ScannedAt = s.now().UTC()
+		return s.setNudity(sha, detection)
+	})
+}
+
+func (s *Store) setNudity(sha string, detection Detection) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.items[sha]
+	if !ok {
+		return fmt.Errorf("%s isn't in the data folder", sha)
+	}
+	sidecar := item.Sidecar
+	detected := Detected{}
+	if sidecar.Detected != nil {
+		detected = *sidecar.Detected
+	}
+	detected.Nudity = &detection
+	sidecar.Detected = &detected
+	return s.rewriteSidecar(item, sidecar)
+}

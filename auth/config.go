@@ -1,19 +1,16 @@
+// Package auth holds the server's configuration and the identity of a request: the user and device
+// that the client certificate named. See docs/authentication.md.
 package auth
 
-import "context"
-
-type ContextKey string
-
-const (
-	UserContextKey     ContextKey = "user"
-	ClientIPContextKey ContextKey = "client_ip"
-	DeviceContextKey   ContextKey = "device"
+import (
+	"encoding/json"
+	"fmt"
+	"os"
 )
 
 type UserConfig struct {
 	Username       string `json:"username"`
 	CertCommonName string `json:"cert_common_name"`
-	ImageFolder    string `json:"image_folder"`
 	// The user's journal: originals with their sidecars, stories, and the rebuildable .cache/.
 	DataFolder string `json:"data_folder"`
 	// Keep the previews made for this user's devices (and developed DNGs) in the data folder's .cache, so
@@ -51,6 +48,19 @@ const (
 	DefaultPreviewCacheGB = 50
 )
 
+// LoadConfig reads config.json (or another file) and fills in the defaults.
+func LoadConfig(path string) (AppConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("failed to open %s: %w", path, err)
+	}
+	var config AppConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return AppConfig{}, fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	return config.WithDefaults(), nil
+}
+
 // WithDefaults fills in the optional settings.
 func (c AppConfig) WithDefaults() AppConfig {
 	if c.DevicesFile == "" {
@@ -86,28 +96,14 @@ func (c AppConfig) FindUserByCommonName(commonName string) *UserConfig {
 	return nil
 }
 
-// FromContext returns the user authenticated by client certificate, or nil for an anonymous request.
-func FromContext(ctx context.Context) *UserConfig {
-	user, _ := ctx.Value(UserContextKey).(*UserConfig)
-	return user
-}
-
-func WithClientIP(ctx context.Context, ip string) context.Context {
-	return context.WithValue(ctx, ClientIPContextKey, ip)
-}
-
-func ClientIPFromContext(ctx context.Context) string {
-	ip, _ := ctx.Value(ClientIPContextKey).(string)
-	return ip
-}
-
-// WithDeviceName records which enrolled device sent the request.
-func WithDeviceName(ctx context.Context, name string) context.Context {
-	return context.WithValue(ctx, DeviceContextKey, name)
-}
-
-// DeviceNameFromContext is the enrolled device's name, or "" for certificates issued outside enrollment.
-func DeviceNameFromContext(ctx context.Context) string {
-	name, _ := ctx.Value(DeviceContextKey).(string)
-	return name
+// DataFolderOf is the data folder of username, for the scripts that work on one user's folder.
+func (c AppConfig) DataFolderOf(username string) (string, error) {
+	user := c.FindUser(username)
+	if user == nil {
+		return "", fmt.Errorf("user %q is not in config.json", username)
+	}
+	if user.DataFolder == "" {
+		return "", fmt.Errorf("user %q has no data_folder in config.json", username)
+	}
+	return user.DataFolder, nil
 }

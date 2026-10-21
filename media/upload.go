@@ -1,8 +1,6 @@
 package media
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -62,6 +60,8 @@ func (r UploadRequest) validate() error {
 		return &InvalidRequestError{"fileName is empty"}
 	case r.Kind != KindPhoto && r.Kind != KindVideo:
 		return &InvalidRequestError{"unknown kind " + string(r.Kind)}
+	case r.MimeType != "" && !isMimeType(r.MimeType):
+		return &InvalidRequestError{"mimeType must look like image/jpeg"}
 	}
 	for name, ref := range map[string]*string{"versionOf": r.VersionOf, "pairedWith": r.PairedWith} {
 		if ref != nil && (!IsSha256(*ref) || *ref == r.Sha256) {
@@ -272,7 +272,7 @@ func (s *Store) WriteChunk(sha string, start, total int64, body io.Reader, lengt
 // finish checks the received file, moves it to its month folder and writes its sidecar.
 func (s *Store) finish(req UploadRequest) (*Item, error) {
 	partialPath := s.partialPath(req.Sha256)
-	sum, err := hashFile(partialPath)
+	sum, err := HashFile(partialPath)
 	if err != nil {
 		return nil, err
 	}
@@ -344,11 +344,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			Folders:      req.Folders,
 		},
 	}
-	data, err := json.MarshalIndent(sidecar, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := writeFileAtomic(dest+".json", data); err != nil {
+	if err := writeSidecar(dest+".json", sidecar); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.
 		rename(dest, from)
 		return nil, err
@@ -358,19 +354,6 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 	s.wrote(item)
 	copied := *item
 	return &copied, nil
-}
-
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // PurgeExpiredUploads deletes unfinished uploads past their expiry, and pieces without a session.

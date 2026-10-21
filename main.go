@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -19,7 +18,7 @@ const usage = `usage:
 `
 
 func main() {
-	config, err := loadConfig(configPath)
+	config, err := auth.LoadConfig(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -32,18 +31,4 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-}
-
-func loadConfig(path string) (auth.AppConfig, error) {
-	configFile, err := os.Open(path)
-	if err != nil {
-		return auth.AppConfig{}, fmt.Errorf("failed to open %s: %w", path, err)
-	}
-	defer configFile.Close()
-
-	var config auth.AppConfig
-	if err := json.NewDecoder(configFile).Decode(&config); err != nil {
-		return auth.AppConfig{}, fmt.Errorf("failed to parse %s: %w", path, err)
-	}
-	return config.WithDefaults(), nil
 }

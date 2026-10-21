@@ -64,17 +64,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	config, err := loadConfig(*configPath)
+	config, err := auth.LoadConfig(*configPath)
 	check(err)
-	var dataFolder string
-	for _, u := range config.Users {
-		if u.Username == *user {
-			dataFolder = u.DataFolder
-		}
-	}
-	if dataFolder == "" {
-		log.Fatalf("%s: user %q has no data_folder", *configPath, *user)
-	}
+	dataFolder, err := config.DataFolderOf(*user)
+	check(err)
 	vips, vipsheader, err := media.FindVips(config.Vips)
 	if err != nil {
 		log.Fatalf("%v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
@@ -260,18 +253,6 @@ func defaultPython() string {
 		return "python"
 	}
 	return "python3"
-}
-
-func loadConfig(path string) (auth.AppConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return auth.AppConfig{}, fmt.Errorf("%w (run from the server folder, or pass --config)", err)
-	}
-	var config auth.AppConfig
-	if err := json.Unmarshal(data, &config); err != nil {
-		return auth.AppConfig{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return config.WithDefaults(), nil
 }
 
 func check(err error) {

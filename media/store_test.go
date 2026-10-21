@@ -221,11 +221,13 @@ func TestInvalidRequestsAndLimits(t *testing.T) {
 	f := newFixture(t)
 	data := []byte("x")
 	for name, change := range map[string]func(*UploadRequest){
-		"uppercase sha": func(r *UploadRequest) { r.Sha256 = "AB" + r.Sha256[2:] },
-		"empty name":    func(r *UploadRequest) { r.FileName = " " },
-		"no size":       func(r *UploadRequest) { r.Size = 0 },
-		"bad kind":      func(r *UploadRequest) { r.Kind = "audio" },
-		"self version":  func(r *UploadRequest) { r.VersionOf = &r.Sha256 },
+		"uppercase sha":  func(r *UploadRequest) { r.Sha256 = "AB" + r.Sha256[2:] },
+		"empty name":     func(r *UploadRequest) { r.FileName = " " },
+		"no size":        func(r *UploadRequest) { r.Size = 0 },
+		"bad kind":       func(r *UploadRequest) { r.Kind = "audio" },
+		"self version":   func(r *UploadRequest) { r.VersionOf = &r.Sha256 },
+		"header in mime": func(r *UploadRequest) { r.MimeType = "image/jpeg\r\nX-Injected: 1" },
+		"no subtype":     func(r *UploadRequest) { r.MimeType = "image" },
 	} {
 		req := photoRequest(data, "a.jpg")
 		change(&req)
@@ -277,6 +279,7 @@ func TestSafeFileName(t *testing.T) {
 		"שלום.jpg":               "שלום.jpg",
 		"tab\there.png":          "tab_here.png",
 		"many.dots.in.name.webp": "many.dots.in.name.webp",
+		"IMG[page=1].jpg":        "IMG_page=1_.jpg",
 	} {
 		if got := safeFileName(in); got != want {
 			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)

@@ -51,18 +51,20 @@ shows the shape.
 
 ## Architecture
 
-**Two GraphQL schemas, one binary.** `main.go` dispatches: no args serves, otherwise `admincli.go` runs an
-admin command as a GraphQL client of the running server. The public schema (`graph/schema/`, generated into
+**Two GraphQL schemas, one binary.** `main.go` loads `config.json` (`auth.LoadConfig`, also used by the
+scripts) and dispatches: no args serves, otherwise `admincli.go` runs an admin command as a GraphQL client of
+the running server. `serve.go` is startup and the routing table; the middleware (`identify`, gzip, deadlines)
+is in `middleware.go`, opening data folders and finding libvips/ffmpeg in `library.go`. The public schema (`graph/schema/`, generated into
 `graph/generated`, resolvers in `graph/resolver/`) is on `:56398` with mTLS. The admin schema
 (`graph/admin/`, `admin.go`) is plain HTTP on a loopback-only address with a bearer token the server rewrites
 into `admin.token` on every start. Admin operations never appear on `/query`. Both are regenerated separately
 (see commands); don't edit `*_gen.go` or `generated.go`.
 
 **Access is deny by default.** TLS uses `VerifyClientCertIfGiven` so enrolling devices can connect without a
-certificate. `identify` in `serve.go` maps the cert CN to a `config.json` user and rejects revoked serials
+certificate. `identify` in `middleware.go` maps the cert CN to a `config.json` user and rejects revoked serials
 (`enroll.Registry`, persisted in `devices.json`). `auth.RequireUserUnlessPublic` is a root-field middleware: an
 anonymous request can only reach root fields marked `@public` in the schema (the two enrollment fields), and
-introspection is blocked too. The media HTTP routes (`/upload`, `/media`, `/images`) always require a
+introspection is blocked too. The media HTTP routes (`/upload`, `/media`) always require a
 certificate. Resolvers get the user with `auth.FromContext(ctx)`; `Resolver.store(ctx)` returns that user's
 `media.Store`.
 
@@ -70,11 +72,15 @@ certificate. Resolvers get the user with `auth.FromContext(ctx)`; `Resolver.stor
 `Store` is one user's `data_folder`, indexed into memory from the sidecar JSON files at start (`scan`). Files are
 the truth: there is no database. Originals go under `media/<year>/<year-month>/`, sidecars sit beside them as
 `<name>.json`, uploads in progress and previews live in `.cache/`. `names.go` makes file names safe on every
-platform; `files.go` has the atomic write and rename helpers. HTTP handlers for upload/original/preview/verify
-are in `media/http.go` and are mounted by `newMux` in `serve.go`; resolvers in `graph/resolver/media.resolvers.go`
-cover `missingMedia`, `startUpload`, the change feed and usage. The change feed (`Store.Changes`) orders items by
-when their sidecar last changed, with an opaque cursor, so a rewritten sidecar (nudity score, import backfill)
-comes again and the cursor can later cover notes and stories.
+platform; `files.go` has the atomic write and rename helpers. `store.go` is the index and lookups, `upload.go`
+the resumable upload, `feed.go` the change feed, `library.go` the per-user map, `sidecar.go` the sidecar format
+and the only code that rewrites one (`rewriteSidecar`: folders from imports, nudity scores). HTTP handlers for
+upload/original/preview/verify are in `media/http.go` and `verify.go`, mounted by `newMux` in `serve.go`;
+resolvers in `graph/resolver/media.resolvers.go` cover `missingMedia`, `startUpload`, the change feed and usage.
+The change feed (`Store.Changes`) orders items by when their sidecar last changed, with an opaque cursor, so a
+rewritten sidecar comes again and the cursor can later cover notes and stories. Previews: `previewspec.go` parses
+and plans a request, `preview.go` runs libvips, `poster.go` ffmpeg, `dng.go`/`develop.go` develop Samsung's
+JPEG XL DNGs that libvips can't.
 
 **Multi-process writes go through turns** (`media/turns.go`). The server, one or more `scripts/import` runs and
 `scripts/scan-nudity` may share a data folder. Each holds an exclusive file lock on `.cache/write.lock` only
@@ -87,15 +93,18 @@ instead of cgo or build-tagged dependencies.
 **External tools are separate programs, found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH
 (and `vips/bin` first), or at `vips` / `ffmpeg` in `config.json`. Without them the server still runs and the
 affected endpoints answer 503. `scripts/scan-nudity` embeds a Python worker (`nudenet_worker.py`) and feeds it
-640 px previews, never originals. `scripts/import` also does near-duplicate detection with dHash and a browser
-review page (`review.html`), and can pull from Google Drive / OneDrive through rclone (`cloud.go`).
+640 px previews, never originals. `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go`
+(walk, examine, decide), `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates),
+`outcomes.go` (moving files, progress, reports), `review.go` (the browser review page), `cloud.go` (Google
+Drive / OneDrive through rclone).
 
 ## Conventions worth knowing
 
 - Doc comments and docs are written in plain prose for the owner; keep [docs/media.md](docs/media.md) and
   [docs/authentication.md](docs/authentication.md) in step with behaviour changes.
 - The sidecar `format` is versioned; a new field is additive, and `detected` is for model output only,
-  never user tags.
+  never user tags. File names from devices go through `safeFileName` (no path parts, reserved names, or
+  `[...]`, which libvips reads as options); `mimeType` is validated before it is echoed in Content-Type.
 - Tests use real temp data folders. `newTestEnv` in `serve_test.go` starts a full mTLS test server with a
   generated CA, enrolled device and `Library`; `media` tests drive a `Store` directly. Add tests that way
   rather than mocking the store.

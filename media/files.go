@@ -1,11 +1,29 @@
 package media
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"time"
 )
+
+// HashFile is the sha256 of the file's content, as 64 lowercase hex characters.
+func HashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, bufio.NewReaderSize(f, 1<<20)); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
 // writeFileAtomic writes through a temp file in the same folder and a rename, so a crash never
 // leaves a half-written file behind.

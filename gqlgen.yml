@@ -12,14 +12,6 @@ resolver:
   dir: graph/resolver
 
 models:
-  Todo:
-    fields:
-      id:
-        resolver: true
-      createdAt:
-        resolver: true
-      updatedAt:
-        resolver: true
   Sha256:
     model: github.com/journal/server-go/graph/model.Sha256
   Int64:

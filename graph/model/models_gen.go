@@ -84,15 +84,6 @@ type GeoPointInput struct {
 	Lon float64 `json:"lon"`
 }
 
-// A file in the user's image_folder. Kept while the app still uses `images` to check its connection;
-// journal media is `Media` (media.graphql).
-type Image struct {
-	ID          string  `json:"id"`
-	URL         string  `json:"url"`
-	Title       string  `json:"title"`
-	Description *string `json:"description,omitempty"`
-}
-
 type Media struct {
 	Sha256 string    `json:"sha256"`
 	Kind   MediaKind `json:"kind"`

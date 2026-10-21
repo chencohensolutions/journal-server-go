@@ -14,6 +14,15 @@ import (
 // StoreLookup finds the store of the request's user; nil when the user has no data folder.
 type StoreLookup func(r *http.Request) *Store
 
+// storeOf answers the request with 404 when its user has no data folder.
+func storeOf(w http.ResponseWriter, r *http.Request, lookup StoreLookup) (*Store, bool) {
+	store := lookup(r)
+	if store == nil {
+		http.Error(w, "no data folder is configured for this user", http.StatusNotFound)
+	}
+	return store, store != nil
+}
+
 // Bytes of one piece may arrive slowly on mobile data, but a stalled connection must not hold the
 // upload lock forever.
 const chunkReadTimeout = 10 * time.Minute
@@ -28,9 +37,8 @@ const chunkReadTimeout = 10 * time.Minute
 //	416 Upload-Offset: n       the piece doesn't start at n; continue from n
 func UploadHandler(lookup StoreLookup) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		store := lookup(r)
-		if store == nil {
-			http.Error(w, "no data folder is configured for this user", http.StatusNotFound)
+		store, ok := storeOf(w, r, lookup)
+		if !ok {
 			return
 		}
 		sha := r.PathValue("sha256")
@@ -120,9 +128,8 @@ func parseContentRange(value string) (start, end, total int64, err error) {
 // so videos stream and seek. The content never changes, so clients may cache it for good.
 func OriginalHandler(lookup StoreLookup) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		store := lookup(r)
-		if store == nil {
-			http.Error(w, "no data folder is configured for this user", http.StatusNotFound)
+		store, ok := storeOf(w, r, lookup)
+		if !ok {
 			return
 		}
 		sha := r.PathValue("sha256")
@@ -150,9 +157,8 @@ func OriginalHandler(lookup StoreLookup) http.Handler {
 // poster frame (see poster.go).
 func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		store := lookup(r)
-		if store == nil {
-			http.Error(w, "no data folder is configured for this user", http.StatusNotFound)
+		store, ok := storeOf(w, r, lookup)
+		if !ok {
 			return
 		}
 		sha := r.PathValue("sha256")

@@ -45,3 +45,6 @@ devices.json
 
 # Built by the "server: run" task
 /journal-server
+
+# Output of "go run . > server.log"
+/server.log

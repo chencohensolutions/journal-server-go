@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/journal/server-go/media"
 )
 
 // sourceHashes is the sha256 of every file looked at in the folders being imported, kept in the data
@@ -65,7 +67,7 @@ func (t *sourceHashes) sha256(path string, info os.FileInfo) (string, error) {
 	if ok && known.size == info.Size() && known.modified == modified {
 		return known.sha256, nil
 	}
-	sha, err := hashFile(path)
+	sha, err := media.HashFile(path)
 	if err != nil {
 		return "", err
 	}

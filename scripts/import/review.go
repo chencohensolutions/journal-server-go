@@ -281,6 +281,11 @@ func (r *reviewer) preview(w http.ResponseWriter, req *http.Request) {
 // decide imports the new photo too, or skips it; either way it moves to the imported folder and leaves
 // the list.
 func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
+	// Only the review page itself: a web page in another tab must not move files around.
+	if origin := req.Header.Get("Origin"); origin != "" && origin != "http://"+req.Host {
+		http.Error(w, "cross-site request", http.StatusForbidden)
+		return
+	}
 	r.mu.Lock() // one decision at a time
 	defer r.mu.Unlock()
 	// Imports running meanwhile may have added near-duplicates to the list.

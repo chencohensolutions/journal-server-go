@@ -1,11 +1,15 @@
-# Go GraphQL Server
+# Journal server
 
-A GraphQL API server built with Go using gqlgen.
+The server of a private photo journal: a GraphQL API (gqlgen) over mutual TLS, with resumable uploads of
+photos and videos into a plain folder of files. Devices are identified by client certificates they get by
+enrolling. See [docs/authentication.md](docs/authentication.md) and [docs/media.md](docs/media.md); the clients
+and the overall design are in `../journal-client-kmp`.
 
 ## Prerequisites
 
-- Go 1.21 or higher
-- gqlgen (install with `go get github.com/99designs/gqlgen`)
+- Go 1.26 or higher (gqlgen is a `go tool` of the module; nothing to install)
+- libvips (`brew install vips`) for previews and ffmpeg (`brew install ffmpeg`) for video posters. Without
+  them the server runs and those endpoints answer 503.
 
 ## Setup
 
@@ -49,7 +53,7 @@ go run . revoke <serial>       # lock a device out
 - `config.json` must include `tls_cert`, `tls_key`, `client_ca` and `client_ca_key` (signs enrolled devices)
 - `users` are mapped using `cert_common_name`
 - Without a client certificate, only the enrollment fields of the GraphQL API respond
-- The `/images/` route serves files only from the authenticated user's folder
+- The media routes (`/upload/`, `/media/`) serve only the authenticated user's data folder
 
 See [docs/authentication.md](docs/authentication.md) for the full design. A `config.example.json` is
 included with a sample user entry.
@@ -99,7 +103,7 @@ cannot enroll.
    {
      "username": "alice",
      "cert_common_name": "alice",
-     "image_folder": "images/alice"
+     "data_folder": "journal/alice"
    }
    ```
 
@@ -111,22 +115,28 @@ cannot enroll.
 
 ```
 .
-├── auth/                     # Config, request identity, @public access rule
-├── docs/authentication.md    # How devices authenticate and enroll
-├── enroll/                   # Enrollment codes, certificate issuing, device registry
-├── graph/
-│   ├── admin/                # Admin API (loopback only): schema, generated code, resolvers
-│   ├── schema/
-│   │   └── schema.graphql    # GraphQL schema definitions
-│   ├── generated/            # Auto-generated GraphQL code
-│   ├── model/                # Data models
-│   └── resolver/             # Resolver implementations
-├── main.go                   # Entry point and command dispatch
-├── serve.go                  # HTTPS server, TLS and identity middleware
+├── main.go                   # Entry point: serve, or run an admin command
+├── serve.go                  # HTTPS server, TLS config, routing table (newMux)
+├── middleware.go             # identify (certificate → user), gzip, request deadlines
+├── library.go                # Opens every user's data folder; finds libvips and ffmpeg
 ├── admin.go, admincli.go     # Admin API listener and the enroll-code/devices/revoke commands
-├── gqlgen.yml               # gqlgen configuration
-├── gqlgen.admin.yml         # gqlgen configuration for the admin API
-└── go.mod                   # Go module definition
+├── auth/                     # config.json (AppConfig, LoadConfig), request identity, @public rule
+├── enroll/                   # Enrollment codes, certificate issuing, device registry, rate limit
+├── media/                    # Data folder: store and index, uploads, previews, posters, DNG developing,
+│                             #   change feed, multi-process turns (see docs/media.md)
+├── graph/
+│   ├── schema/*.graphql      # Public GraphQL schema (enrollment, media, change feed)
+│   ├── generated/, model/    # gqlgen output (don't edit)
+│   ├── resolver/             # Resolvers
+│   └── admin/                # Admin API: its own schema, generated code and resolvers
+├── scripts/
+│   ├── import/               # go run ./scripts/import: photos already on disk or in a cloud → data folder
+│   ├── scan-nudity/          # go run ./scripts/scan-nudity: NudeNet scores into sidecars
+│   ├── bundle-vips/          # go run ./scripts/bundle-vips: portable libvips for Windows
+│   └── generate-*.sh/.ps1    # Local CA and certificates
+├── docs/                     # authentication.md, media.md
+├── gqlgen.yml                # gqlgen configuration
+└── gqlgen.admin.yml          # gqlgen configuration for the admin API
 ```
 
 ## Development
@@ -138,6 +148,12 @@ cannot enroll.
    - New root fields require a client certificate. Add `@public` only for fields a device must reach
      before it has one.
 3. Implement resolvers in `graph/resolver/`
+
+### Test
+
+```bash
+go test ./...                 # preview and poster tests skip without libvips/ffmpeg
+```
 
 ### Build for production:
 

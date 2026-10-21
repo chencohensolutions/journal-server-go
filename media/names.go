@@ -23,6 +23,20 @@ func IsSha256(s string) bool {
 	return true
 }
 
+// isMimeType reports whether s is a plain "type/subtype" media type, as it is sent back in Content-Type.
+func isMimeType(s string) bool {
+	kind, subtype, ok := strings.Cut(s, "/")
+	if !ok || kind == "" || subtype == "" || len(s) > 127 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("/.+-_", c)) {
+			return false
+		}
+	}
+	return true
+}
+
 // monthDir is media/YYYY/YYYY-MM for the photo's own local time (its offset is kept in takenAt),
 // so a photo is where you would look for it; files without a date go to media/undated.
 func monthDir(takenAt *time.Time) string {
@@ -46,12 +60,13 @@ const (
 
 // safeFileName turns the name the device sent into one that is valid on Windows, macOS and Linux:
 // no folders, no reserved characters or names, no trailing dots or spaces, and a bounded length.
+// Square brackets go too: libvips reads a trailing "[...]" in a file name as loading options.
 func safeFileName(name string) string {
 	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
 		name = name[i+1:]
 	}
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || strings.ContainsRune(`<>:"/\|?*`, r) || r == utf8.RuneError {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(`<>:"/\|?*[]`, r) || r == utf8.RuneError {
 			return '_'
 		}
 		return r

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"compress/gzip"
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -10,8 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -29,80 +25,108 @@ import (
 
 const defaultPort = "56398"
 
-type loggingListener struct {
-	net.Listener
-}
+// GraphQL requests are small; uploads and video streams have their own handlers without these limits.
+const (
+	queryReadTimeout  = 30 * time.Second
+	queryWriteTimeout = 2 * time.Minute
+)
 
-func (l *loggingListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
+func serve(config auth.AppConfig) {
+	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
-		return nil, err
+		log.Fatalf("failed to create TLS config: %v", err)
 	}
-	log.Printf("Client attempting to connect from %s", conn.RemoteAddr())
-	return conn, nil
+	enrollment, err := openEnrollment(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	library, err := openLibrary(config)
+	if err != nil {
+		log.Fatalf("failed to open data folders: %v", err)
+	}
+	go maintainLibrary(config, library)
+	go serveAdmin(config, enrollment)
+
+	server := &http.Server{
+		Addr:      ":" + defaultPort,
+		Handler:   newMux(config, enrollment, library, newPreviews(config)),
+		TLSConfig: tlsConfig,
+		// No overall read or write timeout: uploads and video streams take as long as they take.
+		// The handlers set their own deadlines.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	ln, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	log.Printf("Listening on https://0.0.0.0:%s", defaultPort)
+	log.Fatal(server.Serve(tls.NewListener(&loggingListener{Listener: ln}, tlsConfig)))
 }
 
-// identify attaches the client IP and, when the client presented a certificate, its user.
-// Requests without a certificate pass through anonymously only when allowAnonymous is set;
-// a certificate that is unknown or revoked is always rejected.
-func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous bool, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
-		ctx := auth.WithClientIP(r.Context(), ip)
-
-		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-			if !allowAnonymous {
-				log.Printf("Client connection rejected: no client certificate from %s", r.RemoteAddr)
-				http.Error(w, "client certificate required", http.StatusUnauthorized)
-				return
-			}
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-
-		clientCert := r.TLS.PeerCertificates[0]
-		commonName := clientCert.Subject.CommonName
-		currentUser := config.FindUserByCommonName(commonName)
-		if currentUser == nil {
-			log.Printf("Failed login: unknown client (cert CN '%s') from %s", commonName, r.RemoteAddr)
-			http.Error(w, "unauthorized client certificate", http.StatusUnauthorized)
-			return
-		}
-		if registry.IsRevoked(enroll.SerialString(clientCert.SerialNumber)) {
-			log.Printf("Failed login: revoked certificate %x (user %s) from %s", clientCert.SerialNumber, currentUser.Username, r.RemoteAddr)
-			http.Error(w, "client certificate revoked", http.StatusUnauthorized)
-			return
-		}
-
-		if device, ok := registry.Find(enroll.SerialString(clientCert.SerialNumber)); ok {
-			ctx = auth.WithDeviceName(ctx, device.Name)
-		}
-		log.Printf("Client connected: username=%s from %s (%s %s)", currentUser.Username, r.RemoteAddr, r.Method, r.URL.Path)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, auth.UserContextKey, currentUser)))
-	})
-}
-
+// createTLSConfig loads the server certificate and trusts the client CA for client certificates.
 func createTLSConfig(config auth.AppConfig) (*tls.Config, error) {
 	caBytes, err := os.ReadFile(config.ClientCA)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read client CA file: %w", err)
 	}
-
 	clientCAPool := x509.NewCertPool()
 	if !clientCAPool.AppendCertsFromPEM(caBytes) {
 		return nil, fmt.Errorf("failed to append client CA certificates")
 	}
-
+	serverCert, err := tls.LoadX509KeyPair(config.TLSCert, config.TLSKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load server TLS certificate: %w", err)
+	}
 	return &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
 		// Devices that are enrolling have no certificate yet. A certificate that is sent is still
 		// verified against the client CA; identify and auth.RequireUserUnlessPublic decide access.
 		ClientAuth: tls.VerifyClientCertIfGiven,
 		ClientCAs:  clientCAPool,
 		MinVersion: tls.VersionTLS12,
 	}, nil
+}
+
+// openEnrollment loads the client CA's key (which signs enrolled devices) and the device registry.
+func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
+	if config.ClientCAKey == "" {
+		return nil, fmt.Errorf("config.json: set client_ca_key to the private key of %s (signs enrolled devices)", config.ClientCA)
+	}
+	issuer, err := enroll.LoadIssuer(config.ClientCA, config.ClientCAKey, time.Now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load client CA for enrollment: %w", err)
+	}
+	registry, err := enroll.OpenRegistry(config.DevicesFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open device registry: %w", err)
+	}
+	return enroll.NewService(issuer, registry, time.Now), nil
+}
+
+// newMux is the routing table. Every route but the playground goes through identify; only /query lets
+// anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews) *http.ServeMux {
+	registry := enrollment.Registry
+	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
+	userStore := func(r *http.Request) *media.Store {
+		if user := auth.FromContext(r.Context()); user != nil {
+			return library.Store(user.Username)
+		}
+		return nil
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
+	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
+		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library)))))
+	upload := withUser(media.UploadHandler(userStore))
+	mux.Handle("PUT /upload/{sha256}", upload)
+	mux.Handle("HEAD /upload/{sha256}", upload)
+	mux.Handle("GET /media/{sha256}", withUser(media.OriginalHandler(userStore)))
+	mux.Handle("GET /media/{sha256}/preview", withUser(media.PreviewHandler(userStore, previews)))
+	mux.Handle("POST /media/{sha256}/verify", withUser(media.VerifyHandler(userStore)))
+	return mux
 }
 
 func newGraphQLServer(enrollment *enroll.Service, library *media.Library) *handler.Server {
@@ -120,192 +144,4 @@ func newGraphQLServer(enrollment *enroll.Service, library *media.Library) *handl
 	srv.Use(extension.AutomaticPersistedQuery{Cache: lru.New[string](100)})
 	srv.AroundRootFields(auth.RequireUserUnlessPublic)
 	return srv
-}
-
-// GraphQL requests are small; uploads and video streams have their own handlers without these limits.
-const (
-	queryReadTimeout  = 30 * time.Second
-	queryWriteTimeout = 2 * time.Minute
-)
-
-// gzipped compresses responses for clients that accept it: the change feed of a large library is mostly
-// repeated field names, and shrinks about fivefold.
-func gzipped(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Vary", "Accept-Encoding")
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			next.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("Content-Encoding", "gzip")
-		zw := gzip.NewWriter(w)
-		defer zw.Close()
-		next.ServeHTTP(gzipWriter{ResponseWriter: w, writer: zw}, r)
-	})
-}
-
-type gzipWriter struct {
-	http.ResponseWriter
-	writer *gzip.Writer
-}
-
-func (g gzipWriter) Write(b []byte) (int, error) { return g.writer.Write(b) }
-
-func (g gzipWriter) WriteHeader(status int) {
-	g.ResponseWriter.Header().Del("Content-Length")
-	g.ResponseWriter.WriteHeader(status)
-}
-
-func (g gzipWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
-
-// withDeadlines bounds how long one request may take to arrive and to be answered.
-func withDeadlines(read, write time.Duration, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rc := http.NewResponseController(w)
-		rc.SetReadDeadline(time.Now().Add(read))
-		rc.SetWriteDeadline(time.Now().Add(write))
-		next.ServeHTTP(w, r)
-	})
-}
-
-func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews) *http.ServeMux {
-	mux := http.NewServeMux()
-	playgroundHandler := playground.Handler("GraphQL playground", "/query")
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Request to / from %s: %s %s", r.RemoteAddr, r.Method, r.URL.Path)
-		playgroundHandler.ServeHTTP(w, r)
-	}))
-	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, enrollment.Registry, true, newGraphQLServer(enrollment, library)))))
-
-	userStore := func(r *http.Request) *media.Store {
-		if user := auth.FromContext(r.Context()); user != nil {
-			return library.Store(user.Username)
-		}
-		return nil
-	}
-	upload := identify(config, enrollment.Registry, false, media.UploadHandler(userStore))
-	mux.Handle("PUT /upload/{sha256}", upload)
-	mux.Handle("HEAD /upload/{sha256}", upload)
-	mux.Handle("GET /media/{sha256}", identify(config, enrollment.Registry, false, media.OriginalHandler(userStore)))
-	mux.Handle("GET /media/{sha256}/preview", identify(config, enrollment.Registry, false, media.PreviewHandler(userStore, previews)))
-	mux.Handle("POST /media/{sha256}/verify", identify(config, enrollment.Registry, false, media.VerifyHandler(userStore)))
-	mux.Handle("/images/", identify(config, enrollment.Registry, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user := auth.FromContext(r.Context())
-		if user == nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		filePath := strings.TrimPrefix(r.URL.Path, "/images/")
-		filePath = filepath.Clean(filePath)
-		if filePath == "." || filePath == ".." || strings.Contains(filePath, "..") {
-			http.Error(w, "invalid file path", http.StatusBadRequest)
-			return
-		}
-
-		fullPath := filepath.Join(user.ImageFolder, filePath)
-		http.ServeFile(w, r, fullPath)
-	})))
-	return mux
-}
-
-// openLibrary opens the data folder of every user that has one configured.
-func openLibrary(config auth.AppConfig) (*media.Library, error) {
-	folders := map[string]string{}
-	for _, user := range config.Users {
-		if user.DataFolder != "" {
-			folders[user.Username] = user.DataFolder
-		} else {
-			log.Printf("User %s has no data_folder in config.json; uploads are refused for them", user.Username)
-		}
-	}
-	library, err := media.OpenLibrary(folders, time.Now)
-	if err != nil {
-		return nil, err
-	}
-	for _, user := range config.Users {
-		if store := library.Store(user.Username); store != nil {
-			store.CachePreviews = user.PreviewCache
-		}
-	}
-	return library, nil
-}
-
-// newPreviews finds libvips; without it the server runs, but previews answer 503.
-func newPreviews(config auth.AppConfig) *media.Previews {
-	vips, vipsheader, err := media.FindVips(config.Vips)
-	if err != nil {
-		log.Printf("Previews are off: %v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
-	} else {
-		log.Printf("Previews made with %s", vips)
-	}
-	previews := media.NewPreviews(vips, vipsheader)
-	ffmpeg, ffprobe, err := media.FindFFmpeg(config.FFmpeg)
-	if err != nil {
-		log.Printf("Video posters are off: %v (brew install ffmpeg; on Windows winget install Gyan.FFmpeg; or set \"ffmpeg\" in config.json)", err)
-	} else {
-		log.Printf("Video posters made with %s", ffmpeg)
-		previews.WithFFmpeg(ffmpeg, ffprobe)
-	}
-	return previews
-}
-
-func serve(config auth.AppConfig) {
-	tlsConfig, err := createTLSConfig(config)
-	if err != nil {
-		log.Fatalf("failed to create TLS config: %v", err)
-	}
-
-	serverCert, err := tls.LoadX509KeyPair(config.TLSCert, config.TLSKey)
-	if err != nil {
-		log.Fatalf("failed to load server TLS certificate: %v", err)
-	}
-	tlsConfig.Certificates = []tls.Certificate{serverCert}
-
-	if config.ClientCAKey == "" {
-		log.Fatalf("config.json: set client_ca_key to the private key of %s (signs enrolled devices)", config.ClientCA)
-	}
-	issuer, err := enroll.LoadIssuer(config.ClientCA, config.ClientCAKey, time.Now)
-	if err != nil {
-		log.Fatalf("failed to load client CA for enrollment: %v", err)
-	}
-	registry, err := enroll.OpenRegistry(config.DevicesFile)
-	if err != nil {
-		log.Fatalf("failed to open device registry: %v", err)
-	}
-	enrollment := enroll.NewService(issuer, registry, time.Now)
-
-	library, err := openLibrary(config)
-	if err != nil {
-		log.Fatalf("failed to open data folders: %v", err)
-	}
-	previews := newPreviews(config)
-	go func() {
-		for ; ; time.Sleep(time.Hour) {
-			library.PurgeExpiredUploads()
-			library.TrimPreviews(int64(config.PreviewCacheMaxGB * (1 << 30)))
-		}
-	}()
-
-	go serveAdmin(config, enrollment)
-
-	server := &http.Server{
-		Addr:      ":" + defaultPort,
-		Handler:   newMux(config, enrollment, library, previews),
-		TLSConfig: tlsConfig,
-		// No overall read or write timeout: uploads and video streams take as long as they take.
-		// The handlers set their own deadlines.
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-	}
-
-	ln, err := net.Listen("tcp", server.Addr)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	ln = &loggingListener{Listener: ln}
-
-	log.Printf("Listening on https://0.0.0.0:%s", defaultPort)
-	log.Fatal(server.Serve(tls.NewListener(ln, tlsConfig)))
 }

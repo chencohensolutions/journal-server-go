@@ -1,9 +1,7 @@
 package media
 
 import (
-	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -196,105 +194,6 @@ func (s *Store) Open(item Item) (*os.File, error) {
 	return os.Open(filepath.Join(s.root, filepath.FromSlash(item.Path)))
 }
 
-// keyedMutex is a mutex per key, dropped again when nobody holds or waits for it.
-type keyedMutex struct {
-	mu    sync.Mutex
-	locks map[string]*keyedLock
-}
-
-type keyedLock struct {
-	sync.Mutex
-	refs int
-}
-
-func (k *keyedMutex) Lock(key string) (unlock func()) {
-	k.mu.Lock()
-	if k.locks == nil {
-		k.locks = map[string]*keyedLock{}
-	}
-	lock, ok := k.locks[key]
-	if !ok {
-		lock = &keyedLock{}
-		k.locks[key] = lock
-	}
-	lock.refs++
-	k.mu.Unlock()
-
-	lock.Lock()
-	return func() {
-		lock.Unlock()
-		k.mu.Lock()
-		if lock.refs--; lock.refs == 0 {
-			delete(k.locks, key)
-		}
-		k.mu.Unlock()
-	}
-}
-
-// Library is the stores of all users that have a data folder.
-type Library struct {
-	stores map[string]*Store // by username
-}
-
-// OpenLibrary opens a store for each username → data folder.
-func OpenLibrary(folders map[string]string, now func() time.Time) (*Library, error) {
-	library := &Library{stores: map[string]*Store{}}
-	for user, folder := range folders {
-		store, err := OpenStore(folder, now)
-		if err != nil {
-			return nil, fmt.Errorf("user %s: %w", user, err)
-		}
-		library.stores[user] = store
-	}
-	return library, nil
-}
-
-// Store is nil when the user has no data folder configured.
-func (l *Library) Store(user string) *Store {
-	if l == nil {
-		return nil
-	}
-	return l.stores[user]
-}
-
-// PurgeExpiredUploads deletes unfinished uploads that were not continued in time.
-func (l *Library) PurgeExpiredUploads() {
-	for user, store := range l.stores {
-		if err := store.PurgeExpiredUploads(); err != nil {
-			log.Printf("media: purging expired uploads of %s: %v", user, err)
-		}
-	}
-}
-
-// Changes returns up to limit originals changed after cursor ("" for all), oldest change first, with the cursor
-// to continue from. Originals never change, but their sidecars can get a scan's answer later (Sidecar.ChangedAt),
-// so a file comes again once scanned; the cursor is opaque to clients, so the feed can later count edits to notes
-// and stories too.
-func (s *Store) Changes(cursor string, limit int) (items []Item, next string, hasMore bool, err error) {
-	after, err := decodeCursor(cursor)
-	if err != nil {
-		return nil, "", false, err
-	}
-	s.CatchUp()
-	s.mu.RLock()
-	all := make([]Item, 0, len(s.items))
-	for _, item := range s.items {
-		if after.before(*item) {
-			all = append(all, *item)
-		}
-	}
-	s.mu.RUnlock()
-	sort.Slice(all, func(i, j int) bool { return position(all[i]).less(position(all[j])) })
-	if len(all) > limit {
-		all, hasMore = all[:limit], true
-	}
-	next = cursor
-	if len(all) > 0 {
-		next = position(all[len(all)-1]).encode()
-	}
-	return all, next, hasMore, nil
-}
-
 // Usage is what the originals take up: how many photos and videos, and their bytes. Sidecars, uploads in progress
 // and previews are left out; they are small, or rebuilt.
 type Usage struct {
@@ -341,44 +240,4 @@ func (s *Store) RelatedIndex() (versions, paired map[string][]string) {
 		paired[sha] = byUploadTime(items)
 	}
 	return versions, paired
-}
-
-// feedPosition orders the feed: the time of the last change (upload or scan), then sha256 for files changed in
-// the same instant.
-type feedPosition struct {
-	changedAt int64
-	sha       string
-}
-
-func position(item Item) feedPosition {
-	return feedPosition{item.Sidecar.ChangedAt().UnixNano(), item.Sidecar.Sha256}
-}
-
-func (p feedPosition) less(o feedPosition) bool {
-	return p.changedAt < o.changedAt || p.changedAt == o.changedAt && p.sha < o.sha
-}
-
-// before reports whether item comes after p; the zero position comes before everything.
-func (p *feedPosition) before(item Item) bool { return p == nil || p.less(position(item)) }
-
-func (p feedPosition) encode() string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("m1:%d:%s", p.changedAt, p.sha)))
-}
-
-// ErrBadCursor is a cursor this server didn't hand out.
-var ErrBadCursor = errors.New("unknown cursor; start again without one")
-
-func decodeCursor(cursor string) (*feedPosition, error) {
-	if cursor == "" {
-		return nil, nil
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(cursor)
-	if err != nil {
-		return nil, ErrBadCursor
-	}
-	var p feedPosition
-	if _, err := fmt.Sscanf(string(raw), "m1:%d:%s", &p.changedAt, &p.sha); err != nil || !IsSha256(p.sha) {
-		return nil, ErrBadCursor
-	}
-	return &p, nil
 }
