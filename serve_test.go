@@ -149,19 +149,6 @@ type enrollResult struct {
 	Reason      string
 }
 
-// deviceOf enrolls a new device for user and returns a client that presents its certificate.
-func (e *testEnv) deviceOf(t *testing.T, user string) *http.Client {
-	t.Helper()
-	code, _ := e.enrollment.Codes.Create(user)
-	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	result := e.enroll(t, code, key)
-	if result.Typename != "EnrolledDevice" {
-		t.Fatalf("enroll %s = %+v", user, result)
-	}
-	certDER, _ := base64.StdEncoding.DecodeString(result.Certificate)
-	return e.client(&tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key})
-}
-
 func (e *testEnv) enroll(t *testing.T, code string, key *ecdsa.PrivateKey) enrollResult {
 	t.Helper()
 	csr, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "device"}}, key)

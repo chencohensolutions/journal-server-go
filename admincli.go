@@ -81,7 +81,9 @@ func enrollCodeCommand(config auth.AppConfig, user string) error {
 func terminalQR(qr *qrcode.QRCode) string {
 	var b strings.Builder
 	for line := range strings.SplitSeq(strings.TrimRight(qr.ToSmallString(false), "\n"), "\n") {
-		b.WriteString("\x1b[97;40m" + line + "\x1b[0m\n")
+		b.WriteString("\x1b[97;40m")
+		b.WriteString(line)
+		b.WriteString("\x1b[0m\n")
 	}
 	return b.String()
 }

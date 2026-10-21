@@ -12,7 +12,7 @@ private key never leaves the device.
 Server (admin)                                   Device (Journal app)
 ──────────────                                   ────────────────────
 journal-server enroll-code hen
-  → prints address + code "K7QM-4XPD"   ─────▶   user types address + code
+  → prints address + code "K7QM-4XPD"   ─────▶   user types address + code (or scans the QR code)
                                         ◀─────   query enrollmentPreview(code)          (no client cert)
   code valid for "hen", 8 min left      ─────▶   "Register this device?"
                                                  create EC P-256 key in hardware
@@ -61,6 +61,11 @@ Created by `journal-server enroll-code <user>` (`enroll/codes.go`):
   and use it before the next restart.
 - The command talks to the running server, so run it from the server directory (it reads
   `config.json` and `admin.token` there), e.g. `go run . enroll-code hen` next to a debug session.
+- It also prints a **QR code** (Oct 21, 2026) holding `journal://enroll?code=K7QM-4XPD&server=<public_url>`
+  (no `server` when `public_url` isn't set). Scanned with the phone's camera, or with **Scan QR code** on the
+  Android app's code screen (Google's code scanner, no camera permission), it fills in both and checks the code,
+  landing on "Register this device?". It is drawn white on black whatever the
+  terminal's colors; Windows needs Windows Terminal (the old console doesn't draw the colors).
 - `enrollmentPreview` looks a code up without using it. `enrollDevice` uses it up atomically (lookup
   and delete under one lock), so two racing requests cannot both use it. A malformed certificate
   request is rejected *before* the code is used, so a client bug does not burn the code.

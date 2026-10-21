@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/99designs/gqlgen v0.17.90
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/vektah/gqlparser/v2 v2.5.33
 	golang.org/x/sys v0.49.0
 )
@@ -15,7 +16,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/urfave/cli/v3 v3.8.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
