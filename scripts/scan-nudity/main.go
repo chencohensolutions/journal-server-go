@@ -5,8 +5,9 @@
 //
 // NudeNet runs in Python, as a separate program (like libvips and ffmpeg): python3 -m pip install nudenet.
 // It is given a 640 px JPEG preview of each photo, and of each video's poster frame, made with libvips (and ffmpeg),
-// never the original. Files already scanned by the same model are skipped, so running again continues where it
-// stopped (Ctrl+C finishes the files in hand); --rescan scans everything again.
+// never the original (media.ModelPreview; NudeNet scales it to 320 px itself). Files already scanned by the same
+// model are skipped, so running again continues where it stopped (Ctrl+C finishes the files in hand); --rescan
+// scans everything again.
 //
 // The server may keep running: they take turns at writing to the data folder (media/turns.go), and devices
 // get the answers through the change feed. Run from the server folder:
@@ -44,9 +45,6 @@ const reportThreshold = 0.5
 
 //go:embed nudenet_worker.py
 var workerScript []byte
-
-// previewSpec is what NudeNet is given: small, since it scales to 320 px itself.
-var previewSpec = media.PreviewSpec{Width: 640, Height: 640, Fit: "contain", Format: "jpeg", Quality: "high"}
 
 func main() {
 	user := flag.String("user", "", "user whose data folder is scanned (from config.json)")
@@ -130,7 +128,7 @@ func main() {
 	for range *jobs {
 		wg.Go(func() {
 			for item := range queue {
-				path, release, err := previews.Get(ctx, store, item, previewSpec)
+				path, release, err := previews.Get(ctx, store, item, media.ModelPreview)
 				made <- ready{item, path, release, err}
 			}
 		})

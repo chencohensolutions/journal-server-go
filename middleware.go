@@ -104,6 +104,14 @@ func (g gzipWriter) WriteHeader(status int) {
 
 func (g gzipWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
 
+// then runs after once next has answered.
+func then(next http.Handler, after func()) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		after()
+	})
+}
+
 // withDeadlines bounds how long one request may take to arrive and to be answered.
 func withDeadlines(read, write time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

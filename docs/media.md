@@ -12,7 +12,8 @@ noticed: delete `.cache/index.json` and the next start reads everything. The ser
 so imports done while it runs don't slow its next start.
 
 Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, verifying an
-original before a device deletes its copy, and photo previews at the exact size the client asks for, video posters, and the change feed for media. **Not built
+original before a device deletes its copy, and photo previews at the exact size the client asks for, video posters, the change feed for media, and
+search by what photos show. **Not built
 yet:** stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
 (previews need libvips: `brew install vips`); Windows comes later. To run it on Windows now, run
 `go run ./scripts/bundle-vips` once in the server folder (from PowerShell or cmd: Git Bash's `tar` can't read its
@@ -256,6 +257,43 @@ from them entirely, for example a tablet others use: `journal-server private <se
 
 Withholding protects what a lost device holds better than the apps' hiding, since nothing private reaches it. Revoke a
 lost device in any case (see [authentication.md](authentication.md)).
+
+## Search
+
+Files can be found by what they show, from a few words: `searchMedia(query: "dog on the beach", limit: 50)` returns
+the best matches first, each with a `score`, and how many of the user's files have been read so far (`indexed` of
+`total`). A [SigLIP 2](https://huggingface.co/google/siglip2-base-patch16-384) model (Apache 2.0) gives each photo
+a vector, and each query: the photos whose vectors point most nearly the way the query's does come first. There is
+no threshold, so a search always returns its best `limit`; `score` (about -1 to 1) only orders one search's results.
+
+It is **off unless `config.json` turns it on**:
+
+```json
+"search": { "model": "google/siglip2-base-patch16-384", "python": "python3" }
+```
+
+Both are optional (`"search": {}` uses these defaults; `python` on Windows). That Python needs
+`python3 -m pip install torch transformers pillow`. The model is downloaded on the first start (about 1.5 GB for
+base, into the Hugging Face cache); `google/siglip2-so400m-patch16-384` (about 4.5 GB) is better, especially at
+languages other than English.
+
+- The model runs in Python as a separate program (`search/siglip_worker.py`, embedded in the server), started with
+  the server and kept running, so a query takes milliseconds. It uses Apple's or NVIDIA's GPU when there is one,
+  else half the processor. The server serves while it loads; `searchMedia` fails with "search is starting" until
+  then. A worker that stops is started again.
+- The server reads every file once, in the background, newest first: a photo from its 640 px JPEG preview (the one
+  the nudity scan reads, so with `preview_cache` it is made once for both), a video from its poster frame, never the
+  original. An upload is read as soon as it finishes, an import within 30 s. A file that can't be read (a video
+  without ffmpeg) is tried again at the next start.
+- The vectors are a cache, in `.cache/search/<model>.vectors`: one record per file (sha256, then the vector as int8
+  with a scale, about 800 bytes for base), appended as files are read. Deleting the file reads everything again;
+  changing `model` starts a new file. Only the server writes it, so it takes no turn. They are also kept in memory
+  (about 80 MB per 100,000 files for base), and a search compares the query with every one of them.
+- Hebrew works, less well than English with the base model: on a test set, "פרח אדום" (red flower) and
+  "סופת ברקים" (lightning storm) found the right pictures, "משהו מהים" (something from the sea) didn't.
+- A device kept from private files neither finds them nor counts them in `total`.
+- Not built yet: finding photos like a given one, date and place filters, and captions (a model on another
+  computer describing each photo).
 
 ## Fixing sources
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/journal/server-go/graph/generated"
 	"github.com/journal/server-go/graph/resolver"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/search"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -44,10 +46,15 @@ func serve(config auth.AppConfig) {
 	}
 	go maintainLibrary(config, library)
 	go serveAdmin(config, enrollment)
+	previews := newPreviews(config)
+	searcher := newSearch(config, library, previews)
+	if searcher != nil {
+		go searcher.Run(context.Background())
+	}
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
-		Handler:   newMux(config, enrollment, library, newPreviews(config)),
+		Handler:   newMux(config, enrollment, library, previews, searcher),
 		TLSConfig: tlsConfig,
 		// No overall read or write timeout: uploads and video streams take as long as they take.
 		// The handlers set their own deadlines.
@@ -103,8 +110,9 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 }
 
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
-// anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
-func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews) *http.ServeMux {
+// anonymous clients in (for the @public enrollment fields). The media routes need a certificate. searcher is nil
+// when search is off.
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, searcher *search.Engine) *http.ServeMux {
 	registry := enrollment.Registry
 	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
 	userStore := func(r *http.Request) *media.Store {
@@ -117,8 +125,11 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux := http.NewServeMux()
 	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library)))))
+		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, searcher)))))
 	upload := withUser(media.UploadHandler(userStore))
+	if searcher != nil {
+		upload = withUser(then(media.UploadHandler(userStore), searcher.Wake))
+	}
 	mux.Handle("PUT /upload/{sha256}", upload)
 	mux.Handle("HEAD /upload/{sha256}", upload)
 	mux.Handle("GET /media/{sha256}", withUser(hidePrivate(userStore, media.OriginalHandler(userStore))))
@@ -127,9 +138,9 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	return mux
 }
 
-func newGraphQLServer(enrollment *enroll.Service, library *media.Library) *handler.Server {
+func newGraphQLServer(enrollment *enroll.Service, library *media.Library, searcher *search.Engine) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers:  &resolver.Resolver{Enrollment: enrollment, Media: library},
+		Resolvers:  &resolver.Resolver{Enrollment: enrollment, Media: library, Search: searcher},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})

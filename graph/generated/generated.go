@@ -100,6 +100,17 @@ type ComplexityRoot struct {
 		Media func(childComplexity int) int
 	}
 
+	MediaSearchHit struct {
+		Media func(childComplexity int) int
+		Score func(childComplexity int) int
+	}
+
+	MediaSearchResult struct {
+		Hits    func(childComplexity int) int
+		Indexed func(childComplexity int) int
+		Total   func(childComplexity int) int
+	}
+
 	Mutation struct {
 		EnrollDevice func(childComplexity int, input model.EnrollDeviceInput) int
 		SetPrivate   func(childComplexity int, sha256s []string, private bool) int
@@ -111,6 +122,7 @@ type ComplexityRoot struct {
 		EnrollmentPreview func(childComplexity int, code string) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
+		SearchMedia       func(childComplexity int, query string, limit *int) int
 		StorageUsage      func(childComplexity int) int
 	}
 
@@ -145,6 +157,7 @@ type QueryResolver interface {
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
 	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
+	SearchMedia(ctx context.Context, query string, limit *int) (*model.MediaSearchResult, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -397,6 +410,38 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.MediaExists.Media(childComplexity), true
 
+	case "MediaSearchHit.media":
+		if e.ComplexityRoot.MediaSearchHit.Media == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MediaSearchHit.Media(childComplexity), true
+	case "MediaSearchHit.score":
+		if e.ComplexityRoot.MediaSearchHit.Score == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MediaSearchHit.Score(childComplexity), true
+
+	case "MediaSearchResult.hits":
+		if e.ComplexityRoot.MediaSearchResult.Hits == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MediaSearchResult.Hits(childComplexity), true
+	case "MediaSearchResult.indexed":
+		if e.ComplexityRoot.MediaSearchResult.Indexed == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MediaSearchResult.Indexed(childComplexity), true
+	case "MediaSearchResult.total":
+		if e.ComplexityRoot.MediaSearchResult.Total == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MediaSearchResult.Total(childComplexity), true
+
 	case "Mutation.enrollDevice":
 		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
 			break
@@ -476,6 +521,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.MissingMedia(childComplexity, args["hashes"].([]string)), true
+	case "Query.searchMedia":
+		if e.ComplexityRoot.Query.SearchMedia == nil {
+			break
+		}
+
+		args, err := ec.field_Query_searchMedia_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["query"].(string), args["limit"].(*int)), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -875,6 +931,33 @@ enum EnrollmentRejectedReason {
   RATE_LIMITED
 }
 `, BuiltIn: false},
+	{Name: "../schema/search.graphql", Input: `# --- Search -------------------------------------------------------------------
+# Finding photos and videos by what they show, from a few words in any language. Off unless the server's
+# config.json turns it on; see docs/media.md.
+
+type MediaSearchHit {
+  media: Media!
+  "How close the file is to the words, about -1 to 1. Only for ordering: compare scores within one search."
+  score: Float!
+}
+
+type MediaSearchResult {
+  "Best first."
+  hits: [MediaSearchHit!]!
+  "The files the server has read for search so far; the others can't be found yet."
+  indexed: Int!
+  "All the files searched: photos and videos."
+  total: Int!
+}
+
+extend type Query {
+  """
+  Photos and videos that show what the words describe ("dog on the beach"), best first. At most 500. Fails while
+  the server is still loading the model, and when search is off.
+  """
+  searchMedia(query: String!, limit: Int = 50): MediaSearchResult!
+}
+`, BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
@@ -962,6 +1045,28 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_url(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
+}
+
+func (ec *executionContext) childFields_MediaSearchHit(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "media":
+		return ec.fieldContext_MediaSearchHit_media(ctx, field)
+	case "score":
+		return ec.fieldContext_MediaSearchHit_score(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MediaSearchHit", field.Name)
+}
+
+func (ec *executionContext) childFields_MediaSearchResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "hits":
+		return ec.fieldContext_MediaSearchResult_hits(ctx, field)
+	case "indexed":
+		return ec.fieldContext_MediaSearchResult_indexed(ctx, field)
+	case "total":
+		return ec.fieldContext_MediaSearchResult_total(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MediaSearchResult", field.Name)
 }
 
 func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -1221,6 +1326,28 @@ func (ec *executionContext) field_Query_missingMedia_args(ctx context.Context, r
 		return nil, err
 	}
 	args["hashes"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_searchMedia_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "query",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["query"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg1
 	return args, nil
 }
 
@@ -2198,6 +2325,139 @@ func (ec *executionContext) fieldContext_MediaExists_media(_ context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _MediaSearchHit_media(ctx context.Context, field graphql.CollectedField, obj *model.MediaSearchHit) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MediaSearchHit_media(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Media, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MediaSearchHit_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaSearchHit",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaSearchHit_score(ctx context.Context, field graphql.CollectedField, obj *model.MediaSearchHit) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MediaSearchHit_score(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Score, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MediaSearchHit_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MediaSearchHit", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _MediaSearchResult_hits(ctx context.Context, field graphql.CollectedField, obj *model.MediaSearchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MediaSearchResult_hits(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Hits, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.MediaSearchHit) graphql.Marshaler {
+			return ec.marshalNMediaSearchHit2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchHitᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MediaSearchResult_hits(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MediaSearchResult",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MediaSearchHit(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MediaSearchResult_indexed(ctx context.Context, field graphql.CollectedField, obj *model.MediaSearchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MediaSearchResult_indexed(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Indexed, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MediaSearchResult_indexed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MediaSearchResult", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _MediaSearchResult_total(ctx context.Context, field graphql.CollectedField, obj *model.MediaSearchResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MediaSearchResult_total(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Total, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MediaSearchResult_total(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MediaSearchResult", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
 func (ec *executionContext) _Mutation_enrollDevice(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -2558,6 +2818,50 @@ func (ec *executionContext) fieldContext_Query_changes(ctx context.Context, fiel
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_changes_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_searchMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_searchMedia(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["query"].(string), fc.Args["limit"].(*int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.MediaSearchResult) graphql.Marshaler {
+			return ec.marshalNMediaSearchResult2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_searchMedia(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MediaSearchResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_searchMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -4659,6 +4963,99 @@ func (ec *executionContext) _MediaExists(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var mediaSearchHitImplementors = []string{"MediaSearchHit"}
+
+func (ec *executionContext) _MediaSearchHit(ctx context.Context, sel ast.SelectionSet, obj *model.MediaSearchHit) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mediaSearchHitImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MediaSearchHit")
+		case "media":
+			out.Values[i] = ec._MediaSearchHit_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "score":
+			out.Values[i] = ec._MediaSearchHit_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mediaSearchResultImplementors = []string{"MediaSearchResult"}
+
+func (ec *executionContext) _MediaSearchResult(ctx context.Context, sel ast.SelectionSet, obj *model.MediaSearchResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mediaSearchResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MediaSearchResult")
+		case "hits":
+			out.Values[i] = ec._MediaSearchResult_hits(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "indexed":
+			out.Values[i] = ec._MediaSearchResult_indexed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "total":
+			out.Values[i] = ec._MediaSearchResult_total(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var mutationImplementors = []string{"Mutation"}
 
 func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -4836,6 +5233,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_changes(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "searchMedia":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_searchMedia(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -5559,6 +5978,46 @@ func (ec *executionContext) unmarshalNMediaKind2githubᚗcomᚋjournalᚋserver�
 
 func (ec *executionContext) marshalNMediaKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaKind(ctx context.Context, sel ast.SelectionSet, v model.MediaKind) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) marshalNMediaSearchHit2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchHitᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.MediaSearchHit) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMediaSearchHit2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchHit(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMediaSearchHit2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchHit(ctx context.Context, sel ast.SelectionSet, v *model.MediaSearchHit) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MediaSearchHit(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMediaSearchResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchResult(ctx context.Context, sel ast.SelectionSet, v model.MediaSearchResult) graphql.Marshaler {
+	return ec._MediaSearchResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNMediaSearchResult2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaSearchResult(ctx context.Context, sel ast.SelectionSet, v *model.MediaSearchResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MediaSearchResult(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNSha2562string(ctx context.Context, v any) (string, error) {

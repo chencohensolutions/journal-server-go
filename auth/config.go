@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 )
 
 type UserConfig struct {
@@ -39,8 +40,19 @@ type AppConfig struct {
 	// Path of the ffmpeg program, used for video posters (ffprobe beside it); found on the PATH or in Homebrew when empty.
 	FFmpeg string `json:"ffmpeg"`
 	// Most space the previews of one user may take before the least recently used are deleted (default 50).
-	PreviewCacheMaxGB float64      `json:"preview_cache_max_gb"`
-	Users             []UserConfig `json:"users"`
+	PreviewCacheMaxGB float64 `json:"preview_cache_max_gb"`
+	// Search by what photos show (package search); off when absent.
+	Search *SearchConfig `json:"search"`
+	Users  []UserConfig  `json:"users"`
+}
+
+// SearchConfig turns on search: a Python worker reads every photo with the model, and each query's words.
+type SearchConfig struct {
+	// The Hugging Face model (default google/siglip2-base-patch16-384), downloaded on the first start. Changing it
+	// reads every photo again.
+	Model string `json:"model"`
+	// The Python that has PyTorch and transformers (default python3; python on Windows).
+	Python string `json:"python"`
 }
 
 const (
@@ -49,6 +61,7 @@ const (
 	DefaultAdminAddr      = "127.0.0.1:8081"
 	DefaultAdminTokenFile = "admin.token"
 	DefaultPreviewCacheGB = 50
+	DefaultSearchModel    = "google/siglip2-base-patch16-384"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -91,6 +104,19 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.PreviewCacheMaxGB <= 0 {
 		c.PreviewCacheMaxGB = DefaultPreviewCacheGB
+	}
+	if c.Search != nil {
+		search := *c.Search
+		if search.Model == "" {
+			search.Model = DefaultSearchModel
+		}
+		if search.Python == "" {
+			search.Python = "python3"
+			if runtime.GOOS == "windows" {
+				search.Python = "python"
+			}
+		}
+		c.Search = &search
 	}
 	return c
 }

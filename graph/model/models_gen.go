@@ -128,6 +128,21 @@ type MediaExists struct {
 
 func (MediaExists) IsStartUploadResult() {}
 
+type MediaSearchHit struct {
+	Media *Media `json:"media"`
+	// How close the file is to the words, about -1 to 1. Only for ordering: compare scores within one search.
+	Score float64 `json:"score"`
+}
+
+type MediaSearchResult struct {
+	// Best first.
+	Hits []*MediaSearchHit `json:"hits"`
+	// The files the server has read for search so far; the others can't be found yet.
+	Indexed int `json:"indexed"`
+	// All the files searched: photos and videos.
+	Total int `json:"total"`
+}
+
 type Mutation struct {
 }
 

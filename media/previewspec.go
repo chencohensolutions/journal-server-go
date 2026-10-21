@@ -12,6 +12,10 @@ import (
 // MaxPreviewSide is the largest width or height a preview may be asked for.
 const MaxPreviewSide = 4096
 
+// ModelPreview is the picture models read instead of an original (scripts/scan-nudity, search): small, and the
+// same for each of them, so one kept preview serves them all.
+var ModelPreview = PreviewSpec{Width: 640, Height: 640, Fit: "contain", Format: "jpeg", Quality: "high"}
+
 // PreviewSpec is the exact picture a client will draw: Width×Height physical pixels.
 type PreviewSpec struct {
 	Width, Height int

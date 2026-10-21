@@ -6,6 +6,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/search"
 )
 
 // openLibrary opens the data folder of every user that has one configured.
@@ -48,6 +49,21 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 		previews.WithFFmpeg(ffmpeg, ffprobe)
 	}
 	return previews
+}
+
+// newSearch is the search engine, when config.json turns search on; nil when off. Run starts it: the model loads
+// in the background, and the server serves meanwhile.
+func newSearch(config auth.AppConfig, library *media.Library, previews *media.Previews) *search.Engine {
+	if config.Search == nil {
+		log.Printf("Search is off (set \"search\" in config.json; see docs/media.md)")
+		return nil
+	}
+	command, err := search.PythonCommand(config.Search.Python, config.Search.Model)
+	if err != nil {
+		log.Printf("Search is off: %v", err)
+		return nil
+	}
+	return search.New(library, config.Search.Model, command, search.FromPreviews(previews))
 }
 
 // maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches, once an hour.

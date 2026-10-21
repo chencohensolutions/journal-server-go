@@ -1,0 +1,26 @@
+# --- Search -------------------------------------------------------------------
+# Finding photos and videos by what they show, from a few words in any language. Off unless the server's
+# config.json turns it on; see docs/media.md.
+
+type MediaSearchHit {
+  media: Media!
+  "How close the file is to the words, about -1 to 1. Only for ordering: compare scores within one search."
+  score: Float!
+}
+
+type MediaSearchResult {
+  "Best first."
+  hits: [MediaSearchHit!]!
+  "The files the server has read for search so far; the others can't be found yet."
+  indexed: Int!
+  "All the files searched: photos and videos."
+  total: Int!
+}
+
+extend type Query {
+  """
+  Photos and videos that show what the words describe ("dog on the beach"), best first. At most 500. Fails while
+  the server is still loading the model, and when search is off.
+  """
+  searchMedia(query: String!, limit: Int = 50): MediaSearchResult!
+}

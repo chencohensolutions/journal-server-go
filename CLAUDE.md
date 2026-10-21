@@ -21,7 +21,9 @@ and videos already on the server's disk into a data folder once each (by sha256)
 it inside `Store.Turn` (the store's own write methods already do). `go run ./scripts/scan-nudity` scores files with
 NudeNet (Python, a separate program) into the sidecar's `detected.nudity` (never a tag; clients hide what is over
 the user's threshold); run by hand for now. Users mark files private with `setPrivate` (sidecar `privacy`,
-`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. The change
+`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. Search by
+what photos show (package `search`, `searchMedia`) is on when `config.json` has `"search"`: a SigLIP 2 model in a
+Python worker kept running by the server reads every preview into `.cache/search/`. The change
 feed for stories and notes, and the story trash, are not built yet.
 
 **The server targets macOS for now** (owner, Oct 20, 2026; libvips from Homebrew). Windows comes later, so keep it
@@ -83,6 +85,10 @@ a rewrite clients must see sets a time that `Sidecar.ChangedAt` counts). `source
 its path and name, for imports and `scripts/fix-sources`. HTTP handlers for
 upload/original/preview/verify are in `media/http.go` and `verify.go`, mounted by `newMux` in `serve.go`;
 resolvers in `graph/resolver/media.resolvers.go` cover `missingMedia`, `startUpload`, the change feed and usage.
+Package `search` sits on top of `media`: `search.go` (the `Engine`: reading files in the background, `Search`),
+`worker.go` with `siglip_worker.py` (the Python process, a JSON line each way), `vectors.go` (the per-user int8
+vector file and the scan over it); tests run their own binary as a stand-in model (`search/searchtest`), so they
+need no Python.
 The change feed (`Store.Changes`) orders items by when their sidecar last changed, with an opaque cursor, so a
 rewritten sidecar comes again and the cursor can later cover notes and stories. Previews: `previewspec.go` parses
 and plans a request, `preview.go` runs libvips, `poster.go` ffmpeg, `dng.go`/`develop.go` develop Samsung's

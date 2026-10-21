@@ -3,6 +3,7 @@ package media
 import (
 	"fmt"
 	"log"
+	"slices"
 	"time"
 )
 
@@ -30,6 +31,16 @@ func (l *Library) Store(user string) *Store {
 		return nil
 	}
 	return l.stores[user]
+}
+
+// Users are the usernames that have a store, sorted.
+func (l *Library) Users() []string {
+	users := make([]string, 0, len(l.stores))
+	for user := range l.stores {
+		users = append(users, user)
+	}
+	slices.Sort(users)
+	return users
 }
 
 // PurgeExpiredUploads deletes unfinished uploads that were not continued in time.

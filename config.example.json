@@ -4,6 +4,9 @@
   "client_ca": "certs/ca.pem",
   "client_ca_key": "certs/ca-key.pem",
   "public_url": "https://192.168.50.2:56398",
+  "search": {
+    "model": "google/siglip2-base-patch16-384"
+  },
   "users": [
     {
       "username": "alice",

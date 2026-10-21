@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/enroll"
+	"github.com/journal/server-go/search/searchtest"
 )
 
 type testEnv struct {
@@ -35,6 +37,10 @@ type testEnv struct {
 }
 
 func TestMain(m *testing.M) {
+	if os.Getenv(searchtest.Env) == "1" {
+		searchtest.Serve() // this binary is the search model of a test (serve_search_test.go)
+		os.Exit(0)
+	}
 	log.SetOutput(io.Discard)
 	os.Exit(m.Run())
 }
@@ -90,7 +96,15 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, newPreviews(config)))
+	previews := newPreviews(config)
+	searcher := newSearch(config, library, previews)
+	if searcher != nil {
+		ctx, stop := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { searcher.Run(ctx); close(done) }()
+		t.Cleanup(func() { stop(); <-done })
+	}
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher))
 	server.TLS = &tls.Config{
 		ClientAuth:   tls.VerifyClientCertIfGiven,
 		ClientCAs:    pool,

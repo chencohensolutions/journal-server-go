@@ -66,6 +66,17 @@ func (s *Store) Get(sha256 string) (Item, bool) {
 	return *item, true
 }
 
+// Range calls fn with each original the store knows, in no order, after catching up with the other processes.
+// fn runs while the index is locked for reading, so it must not call the store.
+func (s *Store) Range(fn func(Item)) {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.items {
+		fn(*item)
+	}
+}
+
 // Missing returns the hashes the store does not have, in the order given, without repeats.
 func (s *Store) Missing(hashes []string) []string {
 	s.CatchUp()
