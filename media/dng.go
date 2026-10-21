@@ -128,7 +128,7 @@ func readLinearDNG(file string) (*linearDNG, error) {
 		}
 		tags := map[uint16]tiffValue{}
 		var subIFDs []uint32
-		for i := 0; i < n; i++ {
+		for i := range n {
 			e := entries[i*12:]
 			tag, typ, num := order.Uint16(e), order.Uint16(e[2:]), order.Uint32(e[4:])
 			size := map[uint16]uint32{1: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4}[typ]
@@ -244,7 +244,7 @@ func readLinearDNG(file string) (*linearDNG, error) {
 	if len(blacks) == 0 {
 		blacks = ifd0[tagBlackLevel].numbers
 	}
-	for c := 0; c < 3; c++ {
+	for c := range 3 {
 		d.white[c] = 65535
 		if len(whites) > 0 {
 			d.white[c] = whites[min(c, len(whites)-1)]

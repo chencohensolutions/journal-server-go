@@ -128,14 +128,12 @@ func main() {
 	}()
 	var wg sync.WaitGroup
 	for range *jobs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for item := range queue {
 				path, release, err := previews.Get(ctx, store, item, previewSpec)
 				made <- ready{item, path, release, err}
 			}
-		}()
+		})
 	}
 	go func() { wg.Wait(); close(made) }()
 

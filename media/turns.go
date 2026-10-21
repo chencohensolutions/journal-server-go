@@ -115,7 +115,7 @@ func (s *Store) CatchUp() {
 		return
 	}
 	s.turns.offset += int64(end + 1)
-	for _, line := range strings.Split(string(data[:end]), "\n") {
+	for line := range strings.SplitSeq(string(data[:end]), "\n") {
 		sha, path, ok := strings.Cut(line, "\t")
 		if !ok {
 			continue

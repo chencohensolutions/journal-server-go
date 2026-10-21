@@ -188,7 +188,7 @@ func (p *Previews) uprightSize(ctx context.Context, key, original string) (int, 
 		return 0, 0, err
 	}
 	fields := map[string]int{"orientation": 1}
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		name, value, ok := strings.Cut(line, ": ")
 		if !ok {
 			continue

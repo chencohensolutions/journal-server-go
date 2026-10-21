@@ -47,7 +47,7 @@ func moveFile(from, to string) (string, error) {
 		to = fmt.Sprintf("%s (%d)%s", stem, n, ext)
 	}
 	var err error
-	for attempt := 0; attempt < 5; attempt++ {
+	for attempt := range 5 {
 		// On Windows a virus scanner or the search indexer briefly holding the file makes a rename fail.
 		if err = os.Rename(from, to); err == nil {
 			return to, nil

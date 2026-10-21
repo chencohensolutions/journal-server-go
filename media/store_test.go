@@ -290,7 +290,7 @@ func TestSafeFileName(t *testing.T) {
 func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	f := newFixture(t)
 	var uploaded []string
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		f.now = f.now.Add(time.Second)
 		uploaded = append(uploaded, f.upload([]byte{byte(i), 'x'}, "IMG.jpg").Sha256())
 	}

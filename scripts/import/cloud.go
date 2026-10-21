@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -129,7 +130,7 @@ func (im *importer) importCloud(ctx context.Context, names []string, rclone, tem
 func (c *cloudImport) ensureRemote(ctx context.Context) {
 	out, err := exec.CommandContext(ctx, c.rclone, "listremotes").Output()
 	check(err)
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.TrimSpace(line) == c.service.remote+":" {
 			return
 		}
@@ -335,7 +336,7 @@ func removeEmptyFolders(root string) {
 		}
 		return nil
 	})
-	for i := len(dirs) - 1; i >= 0; i-- {
-		os.Remove(dirs[i]) // fails, as it should, while a folder still has files
+	for _, dir := range slices.Backward(dirs) {
+		os.Remove(dir) // fails, as it should, while a folder still has files
 	}
 }

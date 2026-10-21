@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/journal/server-go/auth"
+	"github.com/skip2/go-qrcode"
 )
 
 // runAdminCommand implements the enroll-code, devices and revoke commands as GraphQL calls to the
@@ -64,7 +67,33 @@ func enrollCodeCommand(config auth.AppConfig, user string) error {
 	}
 	fmt.Printf("  Code     %s\n", code.Code)
 	fmt.Printf("  Expires  %s (in %d min), single use\n", code.ExpiresAt.Local().Format("15:04"), int(time.Until(code.ExpiresAt).Round(time.Minute).Minutes()))
+	link := enrollmentLink(code.Code, code.ServerURL)
+	qr, err := qrcode.New(link, qrcode.Medium)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nScan with the phone's camera to open the app with this code:\n\n%s\n  %s\n", terminalQR(qr), link)
 	return nil
+}
+
+// terminalQR draws qr two rows to a line, white on black whatever the terminal's colors, so it is never inverted
+// (some cameras don't read an inverted code).
+func terminalQR(qr *qrcode.QRCode) string {
+	var b strings.Builder
+	for line := range strings.SplitSeq(strings.TrimRight(qr.ToSmallString(false), "\n"), "\n") {
+		b.WriteString("\x1b[97;40m" + line + "\x1b[0m\n")
+	}
+	return b.String()
+}
+
+// enrollmentLink is what the enrollment QR code holds: journal://enroll?code=…&server=…, which opens the
+// app's enrollment on that code. Without a server the app keeps the address it has.
+func enrollmentLink(code string, serverURL *string) string {
+	query := url.Values{"code": {code}}
+	if serverURL != nil {
+		query.Set("server", *serverURL)
+	}
+	return "journal://enroll?" + query.Encode()
 }
 
 func devicesCommand(config auth.AppConfig, args []string) error {

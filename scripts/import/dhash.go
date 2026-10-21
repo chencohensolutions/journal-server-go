@@ -43,8 +43,8 @@ func photoDHash(ctx context.Context, vips, workDir, path string) (dhash, error) 
 		return 0, err
 	}
 	var h dhash
-	for y := 0; y < 8; y++ {
-		for x := 0; x < 8; x++ {
+	for y := range 8 {
+		for x := range 8 {
 			h <<= 1
 			if grey[y*9+x] > grey[y*9+x+1] {
 				h |= 1

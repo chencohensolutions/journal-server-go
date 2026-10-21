@@ -47,7 +47,7 @@ func tiffExif(path string) (map[string]string, error) {
 			return nil, err
 		}
 		entries := map[uint16]entry{}
-		for i := 0; i < n; i++ {
+		for i := range n {
 			e := raw[i*12:]
 			tag, typ, num := order.Uint16(e), order.Uint16(e[2:]), order.Uint32(e[4:])
 			size := map[uint16]uint32{1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1}[typ]

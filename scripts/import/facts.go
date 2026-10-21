@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -45,7 +46,7 @@ func (im *importer) readFacts(ctx context.Context, path string) facts {
 func (im *importer) photoFacts(ctx context.Context, path string, f *facts) {
 	fields := map[string]string{}
 	if out, err := exec.CommandContext(ctx, im.vipsheader, "-a", path).Output(); err == nil {
-		for _, line := range strings.Split(string(out), "\n") {
+		for line := range strings.SplitSeq(string(out), "\n") {
 			name, value, ok := strings.Cut(strings.TrimRight(line, "\r"), ": ")
 			if !ok {
 				continue
@@ -57,9 +58,7 @@ func (im *importer) photoFacts(ctx context.Context, path string, f *facts) {
 	}
 	if strings.EqualFold(filepath.Ext(path), ".dng") {
 		if exif, err := tiffExif(path); err == nil {
-			for name, value := range exif {
-				fields[name] = value
-			}
+			maps.Copy(fields, exif)
 		}
 	}
 

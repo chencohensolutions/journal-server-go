@@ -79,8 +79,8 @@ func TestParsePreviewSpec(t *testing.T) {
 // shown upright it is 200×400 with red on top.
 func orientedJPEG(t *testing.T) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, 400, 200))
-	for x := 0; x < 400; x++ {
-		for y := 0; y < 200; y++ {
+	for x := range 400 {
+		for y := range 200 {
 			c := color.RGBA{220, 20, 20, 255}
 			if x >= 200 {
 				c = color.RGBA{20, 20, 220, 255}

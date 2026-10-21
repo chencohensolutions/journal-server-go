@@ -51,7 +51,7 @@ func writeFileAtomic(path string, data []byte) error {
 // open makes a rename fail.
 func rename(from, to string) error {
 	var err error
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := range 10 {
 		if err = os.Rename(from, to); err == nil || runtime.GOOS != "windows" {
 			return err
 		}

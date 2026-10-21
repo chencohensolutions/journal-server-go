@@ -226,8 +226,8 @@ func TestGainTableInterpolates(t *testing.T) {
 func linearPPM(width, height int, dark, bright [3]uint16) []byte {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "P6\n%d %d\n65535\n", width, height)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for range height {
+		for x := range width {
 			v := dark
 			if x >= width/2 {
 				v = bright

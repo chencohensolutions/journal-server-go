@@ -94,13 +94,11 @@ func (s *Store) scan() error {
 	next := make(chan int)
 	var wg sync.WaitGroup
 	for range scanReaders {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range next {
 				reads[i].data, reads[i].err = os.ReadFile(sidecars[i])
 			}
-		}()
+		})
 	}
 	for i := range sidecars {
 		next <- i

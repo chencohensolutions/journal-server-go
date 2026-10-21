@@ -54,7 +54,7 @@ func (s *Service) Preview(clientIP, code string) (Preview, Rejection) {
 		s.limiter.Fail(clientIP)
 		return Preview{}, RejectInvalidCode
 	}
-	return Preview{User: pending.User, ExpiresAt: pending.ExpiresAt}, ""
+	return Preview(pending), ""
 }
 
 type Request struct {

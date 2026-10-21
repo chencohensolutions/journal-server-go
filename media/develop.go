@@ -138,20 +138,18 @@ func developPPM(in, out string, d *linearDNG) error {
 	w, h := d.cropW, d.cropH
 	developed := make([]byte, w*h*3)
 	rows := make(chan int, h)
-	for y := 0; y < h; y++ {
+	for y := range h {
 		rows <- y
 	}
 	close(rows)
 	var wg sync.WaitGroup
 	for range runtime.NumCPU() {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for y := range rows {
 				src := pixels[((y+d.cropY)*width+d.cropX)*3:]
 				dst := developed[y*w*3:]
 				v := (float64(y) + 0.5) / float64(h)
-				for x := 0; x < w; x++ {
+				for x := range w {
 					var camera [3]float64
 					for c := range camera {
 						camera[c] = (float64(src[x*3+c]) - black[c]) * scale[c]
@@ -168,7 +166,7 @@ func developPPM(in, out string, d *linearDNG) error {
 					}
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -295,9 +293,9 @@ func (t curveTable) lookup(x float64) byte {
 type matrix3 [9]float64
 
 func (a matrix3) mul(b matrix3) (c matrix3) {
-	for i := 0; i < 3; i++ {
-		for j := 0; j < 3; j++ {
-			for k := 0; k < 3; k++ {
+	for i := range 3 {
+		for j := range 3 {
+			for k := range 3 {
 				c[i*3+j] += a[i*3+k] * b[k*3+j]
 			}
 		}
@@ -306,7 +304,7 @@ func (a matrix3) mul(b matrix3) (c matrix3) {
 }
 
 func (a matrix3) apply(v [3]float64) (r [3]float64) {
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		r[i] = a[i*3]*v[0] + a[i*3+1]*v[1] + a[i*3+2]*v[2]
 	}
 	return r

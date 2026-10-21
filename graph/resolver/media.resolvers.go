@@ -45,8 +45,7 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 		request.Location = &media.GeoPoint{Lat: input.Location.Lat, Lon: input.Location.Lon}
 	}
 	result, err := store.StartUpload(request)
-	var invalid *media.InvalidRequestError
-	if errors.As(err, &invalid) {
+	if _, ok := errors.AsType[*media.InvalidRequestError](err); ok {
 		return nil, err
 	}
 	if err != nil {

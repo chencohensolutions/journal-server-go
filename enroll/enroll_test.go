@@ -185,7 +185,7 @@ func TestWrongCodesAreRateLimitedPerIP(t *testing.T) {
 	svc := newTestService(t, c)
 	code, _ := svc.Codes.Create("hen")
 
-	for i := 0; i < maxFailures; i++ {
+	for i := range maxFailures {
 		if _, rejection := svc.Preview("1.2.3.4", "AAAA-AAAA"); rejection != RejectInvalidCode {
 			t.Fatalf("attempt %d: %q", i, rejection)
 		}
