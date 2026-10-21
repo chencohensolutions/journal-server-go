@@ -9,8 +9,8 @@ import (
 )
 
 type UserConfig struct {
-	Username       string `json:"username"`
-	CertCommonName string `json:"cert_common_name"`
+	// Also the common name (CN) of the user's client certificates: enrollment signs CN=<username>.
+	Username string `json:"username"`
 	// The user's journal: originals with their sidecars, stories, and the rebuildable .cache/.
 	DataFolder string `json:"data_folder"`
 	// Keep the previews made for this user's devices (and developed DNGs) in the data folder's .cache, so
@@ -61,6 +61,17 @@ func LoadConfig(path string) (AppConfig, error) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return AppConfig{}, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+	// The username is the identity in every client certificate, so it must name one user only.
+	seen := map[string]bool{}
+	for _, user := range config.Users {
+		if user.Username == "" {
+			return AppConfig{}, fmt.Errorf("%s: a user has no username", path)
+		}
+		if seen[user.Username] {
+			return AppConfig{}, fmt.Errorf("%s: user %q appears twice", path, user.Username)
+		}
+		seen[user.Username] = true
+	}
 	return config.WithDefaults(), nil
 }
 
@@ -87,15 +98,6 @@ func (c AppConfig) WithDefaults() AppConfig {
 func (c AppConfig) FindUser(username string) *UserConfig {
 	for i := range c.Users {
 		if c.Users[i].Username == username {
-			return &c.Users[i]
-		}
-	}
-	return nil
-}
-
-func (c AppConfig) FindUserByCommonName(commonName string) *UserConfig {
-	for i := range c.Users {
-		if c.Users[i].CertCommonName == commonName {
 			return &c.Users[i]
 		}
 	}

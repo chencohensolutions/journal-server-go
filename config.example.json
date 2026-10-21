@@ -7,7 +7,6 @@
   "users": [
     {
       "username": "alice",
-      "cert_common_name": "alice",
       "data_folder": "journal/alice"
     }
   ]

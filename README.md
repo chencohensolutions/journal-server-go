@@ -51,7 +51,7 @@ go run . revoke <serial>       # lock a device out
 ```
 
 - `config.json` must include `tls_cert`, `tls_key`, `client_ca` and `client_ca_key` (signs enrolled devices)
-- `users` are mapped using `cert_common_name`
+- A client certificate's Common Name is the `username` it belongs to
 - Without a client certificate, only the enrollment fields of the GraphQL API respond
 - The media routes (`/upload/`, `/media/`) serve only the authenticated user's data folder
 
@@ -98,11 +98,10 @@ cannot enroll.
      -OpenSSLConfig 'C:\Program Files\Common Files\SSL\openssl.cnf'
    ```
 
-4. Add the user to `config.json`, matching `cert_common_name` to the client cert Common Name:
+4. Add the user to `config.json`; the `username` must be the client cert's Common Name:
    ```json
    {
      "username": "alice",
-     "cert_common_name": "alice",
      "data_folder": "journal/alice"
    }
    ```

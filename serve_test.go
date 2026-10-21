@@ -72,7 +72,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	config := auth.AppConfig{
 		PublicURL: "https://journal.test:8080",
 		Users: []auth.UserConfig{{
-			Username: "hen", CertCommonName: "hen", DataFolder: filepath.Join(dir, "journal"),
+			Username: "hen", DataFolder: filepath.Join(dir, "journal"),
 		}},
 	}.WithDefaults()
 	for _, change := range configure {

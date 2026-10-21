@@ -35,7 +35,7 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 
 		clientCert := r.TLS.PeerCertificates[0]
 		commonName := clientCert.Subject.CommonName
-		currentUser := config.FindUserByCommonName(commonName)
+		currentUser := config.FindUser(commonName)
 		if currentUser == nil {
 			log.Printf("Failed login: unknown client (cert CN '%s') from %s", commonName, r.RemoteAddr)
 			http.Error(w, "unauthorized client certificate", http.StatusUnauthorized)

@@ -6,7 +6,6 @@
   "users": [
     {
       "username": "hen",
-      "cert_common_name": "hen",
       "data_folder": "D:\\Archive\\Hen\\journal"
     }
   ]

@@ -38,9 +38,10 @@ How it is enforced:
 1. **TLS** (`serve.go`, `createTLSConfig`): `tls.VerifyClientCertIfGiven`. A device that is enrolling
    connects without a certificate. A certificate that *is* sent must chain to `client_ca`, or the
    handshake fails.
-2. **HTTP** (`middleware.go`, `identify`): a certificate's subject CN must match a `cert_common_name` in
-   `config.json`, and its serial must not be revoked in `devices.json`; otherwise `401`. The user is
-   put in the request context. The media routes additionally reject requests without a certificate.
+2. **HTTP** (`middleware.go`, `identify`): a certificate's subject CN must be a `username` in
+   `config.json` (enrollment signs `CN=<username>`, taken from the code, never from the device), and
+   its serial must not be revoked in `devices.json`; otherwise `401`. The user is put in the request
+   context. The media routes additionally reject requests without a certificate.
 3. **GraphQL** (`auth/access.go`, `RequireUserUnlessPublic`): a root-field middleware. Anonymous
    requests may only reach fields whose schema definition carries `@public`. This is
    **deny by default**: a new query or mutation needs a certificate unless you mark it `@public`.
@@ -162,7 +163,7 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
   "devices_file": "devices.json",               // optional (default)
   "admin_addr": "127.0.0.1:8081",               // optional (default), must be loopback
   "admin_token_file": "admin.token",            // optional (default)
-  "users": [{ "username": "hen", "cert_common_name": "hen", "data_folder": "/path/to/journal" }]
+  "users": [{ "username": "hen", "data_folder": "/path/to/journal" }]
 }
 ```
 
