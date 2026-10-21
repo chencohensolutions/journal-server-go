@@ -310,6 +310,9 @@ func (c *cloudImport) openSeen() {
 			}
 		}
 		f.Close()
+		if err := scanner.Err(); err != nil {
+			log.Fatalf("reading %s: %v", p, err)
+		}
 	}
 	var err error
 	c.seenFile, err = os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)

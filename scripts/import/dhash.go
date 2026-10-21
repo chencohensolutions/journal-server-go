@@ -124,6 +124,9 @@ func openDHashTable(dataFolder string) (*dhashTable, error) {
 			}
 		}
 		f.Close()
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("reading %s: %w", path, err)
+		}
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {

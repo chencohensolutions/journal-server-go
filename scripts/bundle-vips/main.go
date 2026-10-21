@@ -142,6 +142,7 @@ func readDatabase(cache string) map[string]*pkg {
 			}
 		}
 		f.Close()
+		check(scanner.Err())
 		pkgs[p.name] = p
 	}
 	for _, p := range pkgs {

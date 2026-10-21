@@ -55,7 +55,7 @@ func (p feedPosition) less(o feedPosition) bool {
 func (p *feedPosition) before(item Item) bool { return p == nil || p.less(position(item)) }
 
 func (p feedPosition) encode() string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("m1:%d:%s", p.changedAt, p.sha)))
+	return base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "m1:%d:%s", p.changedAt, p.sha))
 }
 
 // ErrBadCursor is a cursor this server didn't hand out.
