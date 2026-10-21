@@ -4,6 +4,13 @@ Devices upload originals to the server, which keeps them byte for byte in the us
 as plain files. The files are the truth: the index in memory is rebuilt from the sidecars every
 time the server starts, so the folder alone is a complete copy, on Windows, macOS or Linux.
 
+Reading every sidecar takes minutes on a spinning disk (one seek each), so what was read is kept in
+`.cache/index.json`, folder by folder, with each folder's modified time. On start only folders whose time has
+changed are read again. Adding, removing or renaming a file changes its folder's time, and every write the server
+and scripts make ends in a rename, so nothing they do is missed. A sidecar edited **in place by hand** is not
+noticed: delete `.cache/index.json` and the next start reads everything. The server refreshes the cache hourly,
+so imports done while it runs don't slow its next start.
+
 Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, verifying an
 original before a device deletes its copy, and photo previews at the exact size the client asks for, video posters, and the change feed for media. **Not built
 yet:** stories and notes in the change feed, and the story trash. The server runs on **macOS** for now
@@ -25,6 +32,7 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   media/2026/2026-10/IMG_1234.HEIC.json     ← its sidecar
   media/2026/2026-10/IMG_1234 (2).HEIC      ← a different file with the same name
   media/undated/…                           ← files the device sent no date for
+  .cache/index.json                         ← what the last scan read, by folder (only a shortcut)
   .cache/uploads/<sha256>.partial           ← an upload in progress
   .cache/uploads/<sha256>.json              ← what the device declared for it
   .cache/previews/<sha[:2]>/<sha256>/1080x1440-cover.webp   ← previews made so far

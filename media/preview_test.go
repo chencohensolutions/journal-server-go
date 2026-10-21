@@ -225,8 +225,8 @@ func TestPreviewFormatsWithoutAServerCache(t *testing.T) {
 		t.Errorf("kept on the server without preview_cache: %v", entries)
 	}
 	for _, entry := range func() []os.DirEntry { e, _ := os.ReadDir(filepath.Join(f.root, ".cache")); return e }() {
-		// uploads/, and the lock and journal processes take turns with (turns.go)
-		if name := entry.Name(); name != "uploads" && name != "write.lock" && name != "write-journal.tsv" {
+		// uploads/, the lock and journal processes take turns with (turns.go), and the index cache (index.go)
+		if name := entry.Name(); name != "uploads" && name != "write.lock" && name != "write-journal.tsv" && name != "index.json" {
 			t.Errorf("temporary file left in .cache: %s", name)
 		}
 	}

@@ -72,7 +72,8 @@ certificate. Resolvers get the user with `auth.FromContext(ctx)`; `Resolver.stor
 **Package `media` is the data layer and owns the on-disk format.** `Library` maps usernames to `Store`s; a
 `Store` is one user's `data_folder`, indexed into memory from the sidecar JSON files at start (`scan`). Files are
 the truth: there is no database. Originals go under `media/<year>/<year-month>/`, sidecars sit beside them as
-`<name>.json`, uploads in progress and previews live in `.cache/`. `names.go` makes file names safe on every
+`<name>.json`, uploads in progress and previews live in `.cache/`. `index.go` is the start-up scan, which
+reads only folders whose modified time differs from `.cache/index.json`. `names.go` makes file names safe on every
 platform; `files.go` has the atomic write and rename helpers. `store.go` is the index and lookups, `upload.go`
 the resumable upload, `feed.go` the change feed, `library.go` the per-user map, `sidecar.go` the sidecar format
 and the only code that rewrites one (`rewriteSidecar`: folders from imports, nudity scores, corrected sources;

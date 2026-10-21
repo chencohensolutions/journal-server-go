@@ -50,10 +50,11 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	return previews
 }
 
-// maintainLibrary deletes expired uploads and trims the preview caches, once an hour.
+// maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches, once an hour.
 func maintainLibrary(config auth.AppConfig, library *media.Library) {
 	for ; ; time.Sleep(time.Hour) {
 		library.PurgeExpiredUploads()
 		library.TrimPreviews(int64(config.PreviewCacheMaxGB * (1 << 30)))
+		library.RefreshIndexCaches()
 	}
 }

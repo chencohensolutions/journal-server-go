@@ -49,3 +49,12 @@ func (l *Library) TrimPreviews(maxBytes int64) {
 		}
 	}
 }
+
+// RefreshIndexCaches brings every user's .cache/index.json up to date, so the next start is quick.
+func (l *Library) RefreshIndexCaches() {
+	for user, store := range l.stores {
+		if err := store.RefreshIndexCache(); err != nil {
+			log.Printf("media: refreshing the index cache of %s: %v", user, err)
+		}
+	}
+}
