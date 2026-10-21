@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Journal server (Go)
 
 GraphQL server (gqlgen) with mTLS for a private photo journal; users and devices are identified by client
@@ -24,3 +28,74 @@ easy: no cgo, Windows-safe file names (compared ignoring case), image/video tool
 on Windows meanwhile, `go run ./scripts/bundle-vips` puts a portable libvips that reads HEIC and JPEG XL (Samsung DNG 1.7) in `vips/` (gitignored).
 
 `.github/copilot-instructions.md` predates the KMP client (it still says "journal-client-android").
+
+## Commands
+
+```bash
+go run .                                   # serve https://0.0.0.0:56398 (needs config.json + certs/)
+go build -o journal-server .               # what the VS Code task "server: run" does
+go test ./...                              # ~8 s; previews/poster tests skip without libvips/ffmpeg
+go test ./media -run TestTurns             # one test
+go tool gqlgen generate                    # after editing graph/schema/*.graphql
+go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
+go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; server must be running
+go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
+go run ./scripts/scan-nudity --user <name> [--rescan]
+```
+
+Lint is golangci-lint on save in VS Code (gofmt, govet, staticcheck, errcheck, gosimple); there is no
+`.golangci` file, so `go vet ./...` is the command-line check. `certs/`, `admin.token` and `devices.json` are gitignored local
+state. `config.json` is committed and is the owner's real config (user names, data folders); `config.example.json`
+shows the shape.
+`scripts/generate-ca.sh` and `generate-server-cert.sh` make the local CA and server cert.
+
+## Architecture
+
+**Two GraphQL schemas, one binary.** `main.go` dispatches: no args serves, otherwise `admincli.go` runs an
+admin command as a GraphQL client of the running server. The public schema (`graph/schema/`, generated into
+`graph/generated`, resolvers in `graph/resolver/`) is on `:56398` with mTLS. The admin schema
+(`graph/admin/`, `admin.go`) is plain HTTP on a loopback-only address with a bearer token the server rewrites
+into `admin.token` on every start. Admin operations never appear on `/query`. Both are regenerated separately
+(see commands); don't edit `*_gen.go` or `generated.go`.
+
+**Access is deny by default.** TLS uses `VerifyClientCertIfGiven` so enrolling devices can connect without a
+certificate. `identify` in `serve.go` maps the cert CN to a `config.json` user and rejects revoked serials
+(`enroll.Registry`, persisted in `devices.json`). `auth.RequireUserUnlessPublic` is a root-field middleware: an
+anonymous request can only reach root fields marked `@public` in the schema (the two enrollment fields), and
+introspection is blocked too. The media HTTP routes (`/upload`, `/media`, `/images`) always require a
+certificate. Resolvers get the user with `auth.FromContext(ctx)`; `Resolver.store(ctx)` returns that user's
+`media.Store`.
+
+**Package `media` is the data layer and owns the on-disk format.** `Library` maps usernames to `Store`s; a
+`Store` is one user's `data_folder`, indexed into memory from the sidecar JSON files at start (`scan`). Files are
+the truth: there is no database. Originals go under `media/<year>/<year-month>/`, sidecars sit beside them as
+`<name>.json`, uploads in progress and previews live in `.cache/`. `names.go` makes file names safe on every
+platform; `files.go` has the atomic write and rename helpers. HTTP handlers for upload/original/preview/verify
+are in `media/http.go` and are mounted by `newMux` in `serve.go`; resolvers in `graph/resolver/media.resolvers.go`
+cover `missingMedia`, `startUpload`, the change feed and usage. The change feed (`Store.Changes`) orders items by
+when their sidecar last changed, with an opaque cursor, so a rewritten sidecar (nudity score, import backfill)
+comes again and the cursor can later cover notes and stories.
+
+**Multi-process writes go through turns** (`media/turns.go`). The server, one or more `scripts/import` runs and
+`scripts/scan-nudity` may share a data folder. Each holds an exclusive file lock on `.cache/write.lock` only
+for the milliseconds it takes to place a file or rewrite a sidecar, and appends to `.cache/write-journal.tsv`
+so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen before the turn. Anything
+that writes into the data folder from outside the store's own methods must run inside `Store.Turn`. The file
+lock and disk-free checks have per-OS files (`*_unix.go`, `*_windows.go`, `*_other.go`); keep that pattern
+instead of cgo or build-tagged dependencies.
+
+**External tools are separate programs, found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH
+(and `vips/bin` first), or at `vips` / `ffmpeg` in `config.json`. Without them the server still runs and the
+affected endpoints answer 503. `scripts/scan-nudity` embeds a Python worker (`nudenet_worker.py`) and feeds it
+640 px previews, never originals. `scripts/import` also does near-duplicate detection with dHash and a browser
+review page (`review.html`), and can pull from Google Drive / OneDrive through rclone (`cloud.go`).
+
+## Conventions worth knowing
+
+- Doc comments and docs are written in plain prose for the owner; keep [docs/media.md](docs/media.md) and
+  [docs/authentication.md](docs/authentication.md) in step with behaviour changes.
+- The sidecar `format` is versioned; a new field is additive, and `detected` is for model output only,
+  never user tags.
+- Tests use real temp data folders. `newTestEnv` in `serve_test.go` starts a full mTLS test server with a
+  generated CA, enrolled device and `Library`; `media` tests drive a `Store` directly. Add tests that way
+  rather than mocking the store.
