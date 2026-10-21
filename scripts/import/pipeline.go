@@ -285,7 +285,7 @@ func (im *importer) decide(e *examined) {
 		im.count(false, e.size)
 		return
 	}
-	_, existed, err := im.importInto(e.path, e.path, im.movedTo(im.roots, e.path), e.sha256, e.size, e.facts, folders)
+	_, existed, err := im.importInto(e.path, e.sha256, e.size, e.facts, folders)
 	if err != nil {
 		im.reject(e.path, notImportedFailed, err.Error())
 		im.mu.Lock()
@@ -327,18 +327,12 @@ func folderOf(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// importInto copies the file at path into the data folder with the facts read from it. foundAt is where it
-// was found (a near-duplicate imported from --review waited in the not-imported folder), and movedTo where
-// done moves it afterwards; both go in the sidecar, so the import can be undone.
-func (im *importer) importInto(path, foundAt, movedTo, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
-	source := sourceOfPath(foundAt)
-	from := foundAt
-	var to *string
+// importInto copies the file into the data folder with the facts read from it.
+func (im *importer) importInto(path, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
+	source := sourceOfPath(path)
+	from := path
 	if im.cloud != nil {
 		from = im.cloud.origin(path)
-	} else if rel, err := filepath.Rel(im.importedFolder, movedTo); err == nil {
-		rel = filepath.ToSlash(rel)
-		to = &rel
 	}
 	return im.store.Import(path, media.UploadRequest{
 		Sha256:       sha,
@@ -354,7 +348,6 @@ func (im *importer) importInto(path, foundAt, movedTo, sha string, size int64, f
 		Source:       &source,
 		UploadedBy:   "import",
 		ImportedFrom: &from,
-		ImportedTo:   to,
 		Folders:      folders,
 	})
 }

@@ -22,15 +22,10 @@ func (im *importer) done(path, sha, result string) {
 		im.cloud.finished(path, sha, result, "")
 		return
 	}
-	if _, err := moveFile(path, im.movedTo(im.roots, path)); err != nil {
+	if _, err := moveFile(path, filepath.Join(im.runFolder, pathInside(im.roots, path))); err != nil {
 		// It is in the data folder; only the move failed, so a later run finds it as a duplicate.
 		im.leave(path, "imported, but not moved: "+err.Error())
 	}
-}
-
-// movedTo is where a file found at foundAt, under one of roots, goes in this run's imported folder.
-func (im *importer) movedTo(roots []string, foundAt string) string {
-	return filepath.Join(im.runFolder, pathInside(roots, foundAt))
 }
 
 // What happened to a file, as the cloud log says it.

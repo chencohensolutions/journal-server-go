@@ -42,7 +42,6 @@ type UploadRequest struct {
 	UploadedBy string     `json:"uploadedBy"`
 	// Set only by Import.
 	ImportedFrom *string  `json:"importedFrom,omitempty"`
-	ImportedTo   *string  `json:"importedTo,omitempty"`
 	Folders      []string `json:"folders,omitempty"`
 }
 
@@ -342,7 +341,6 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			UploadedAt:   s.now().UTC(),
 			UploadedBy:   req.UploadedBy,
 			ImportedFrom: req.ImportedFrom,
-			ImportedTo:   req.ImportedTo,
 			Folders:      req.Folders,
 		},
 	}

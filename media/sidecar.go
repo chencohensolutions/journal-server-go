@@ -47,10 +47,6 @@ type Facts struct {
 	UploadedBy string    `json:"uploadedBy"`
 	// Where scripts/import found the file on the server's disk; absent on uploads from devices.
 	ImportedFrom *string `json:"importedFrom,omitempty"`
-	// Where scripts/import moved the file it copied, relative to its --imported folder and starting with the
-	// run's folder ("2026-10-21-09-30-00/Google Photos/Trip/x.jpg"), so a run can be undone. Absent on uploads,
-	// on files imported from the cloud (their download is deleted), and on imports before it was kept.
-	ImportedTo *string `json:"importedTo,omitempty"`
 	// Every folder scripts/import found this file in, from the searched folder down ("phone DCIM/Flowers"):
 	// the albums it was kept in, as clues. Copies found later add theirs.
 	Folders []string `json:"folders,omitempty"`
