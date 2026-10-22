@@ -1,6 +1,9 @@
 # --- Authentication -----------------------------------------------------------
 # Every root field requires a client certificate unless it is marked @public.
 # See docs/authentication.md.
+#
+# Errors a device acts on carry a code in extensions.code (docs/media.md, "Errors"): UNAUTHORIZED, NO_DATA_FOLDER,
+# INVALID_ARGUMENT, SEARCH_OFF, WITHHELD.
 
 scalar Time
 
@@ -10,6 +13,21 @@ directive @public on FIELD_DEFINITION
 type Query {
   "Which account an enrollment code belongs to. Does not use up the code."
   enrollmentPreview(code: String!): EnrollmentPreviewResult! @public
+  "What this server can do, so an app shows only what works."
+  serverInfo: ServerInfo!
+}
+
+type ServerInfo {
+  "The API's version: raised when a change needs newer apps."
+  api: Int!
+  "The server's build: its commit and time, or dev."
+  version: String!
+  "Text search (searchMedia) is on."
+  search: Boolean!
+  "Previews of photos can be made (libvips is installed)."
+  previews: Boolean!
+  "Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503."
+  posters: Boolean!
 }
 
 type Mutation {

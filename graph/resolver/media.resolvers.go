@@ -47,7 +47,7 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 	}
 	result, err := store.StartUpload(request)
 	if _, ok := errors.AsType[*media.InvalidRequestError](err); ok {
-		return nil, err
+		return nil, coded(CodeInvalidArgument, "%v", err)
 	}
 	if err != nil {
 		log.Printf("media: startUpload %s: %v", input.Sha256, err)
@@ -72,14 +72,14 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 // SetPrivate is the resolver for the setPrivate field.
 func (r *mutationResolver) SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error) {
 	if len(sha256s) > maxHashesPerQuery {
-		return nil, fmt.Errorf("at most %d hashes per call", maxHashesPerQuery)
+		return nil, coded(CodeInvalidArgument, "at most %d hashes per call", maxHashesPerQuery)
 	}
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if v.WithholdPrivate && !private {
-		return nil, fmt.Errorf("this device can't see private files, so it can't unmark them")
+		return nil, coded(CodeWithheld, "this device can't see private files, so it can't unmark them")
 	}
 	changed, err := v.store.SetPrivate(sha256s, private, auth.DeviceNameFromContext(ctx))
 	if err != nil {
@@ -97,7 +97,7 @@ func (r *mutationResolver) SetPrivate(ctx context.Context, sha256s []string, pri
 // MissingMedia is the resolver for the missingMedia field.
 func (r *queryResolver) MissingMedia(ctx context.Context, hashes []string) ([]string, error) {
 	if len(hashes) > maxHashesPerQuery {
-		return nil, fmt.Errorf("at most %d hashes per call", maxHashesPerQuery)
+		return nil, coded(CodeInvalidArgument, "at most %d hashes per call", maxHashesPerQuery)
 	}
 	store, err := r.store(ctx)
 	if err != nil {
@@ -141,31 +141,20 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 	if err != nil {
 		return nil, err
 	}
-	store := v.store
 	n := 2000
 	if limit != nil {
 		n = *limit
 	}
 	if n < 1 || n > maxChangesPerPage {
-		return nil, fmt.Errorf("limit must be 1–%d", maxChangesPerPage)
+		return nil, coded(CodeInvalidArgument, "limit must be 1–%d", maxChangesPerPage)
 	}
 	cursor := ""
 	if since != nil {
 		cursor = *since
 	}
-	items, next, remaining, err := store.Changes(cursor, n, v.View)
+	items, next, remaining, err := v.store.Changes(cursor, n, v.View)
 	if err != nil {
 		return nil, err
 	}
-	versions, paired := store.RelatedIndex()
-	changes := make([]*model.Change, len(items))
-	for i, item := range items {
-		changes[i] = &model.Change{Kind: model.ChangeKindMedia, Path: "media/" + item.Sha256()}
-		if v.hides(item) {
-			changes[i].Deleted = true
-		} else {
-			changes[i].Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
-		}
-	}
-	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: remaining > 0, Remaining: remaining}, nil
+	return v.changePage(items, next, remaining), nil
 }

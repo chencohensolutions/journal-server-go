@@ -57,6 +57,17 @@ func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (mod
 	return model.EnrollmentPreview{User: preview.User, ExpiresAt: preview.ExpiresAt}, nil
 }
 
+// ServerInfo is the resolver for the serverInfo field.
+func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, error) {
+	return &model.ServerInfo{
+		API:      APIVersion,
+		Version:  r.Version,
+		Search:   r.Search != nil,
+		Previews: r.Previews != nil && r.Previews.Available(),
+		Posters:  r.Previews != nil && r.Previews.PostersAvailable(),
+	}, nil
+}
+
 // Mutation returns generated.MutationResolver implementation.
 func (r *Resolver) Mutation() generated.MutationResolver { return &mutationResolver{r} }
 

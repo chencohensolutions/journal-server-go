@@ -32,6 +32,7 @@ const chunkReadTimeout = 10 * time.Minute
 //
 //	200 Upload-Offset: n       more pieces expected
 //	201 Upload-Offset: total   the file is stored (also when a piece is repeated afterwards)
+//	400 Upload-Offset: n       the piece ended early; what arrived is kept, go on from n (no header: a bad request)
 //	404                        no upload started (call startUpload), or it expired
 //	409                        the bytes don't match the sha256; the upload is gone, start over
 //	416 Upload-Offset: n       the piece doesn't start at n; continue from n
@@ -69,7 +70,7 @@ func UploadHandler(lookup StoreLookup) http.Handler {
 			http.Error(w, fmt.Sprintf("pieces may be at most %d bytes", MaxChunkSize), http.StatusRequestEntityTooLarge)
 			return
 		}
-		if r.ContentLength != length {
+		if r.ContentLength >= 0 && r.ContentLength != length {
 			http.Error(w, "Content-Length must match Content-Range", http.StatusBadRequest)
 			return
 		}
@@ -92,7 +93,11 @@ func UploadHandler(lookup StoreLookup) http.Handler {
 		case errors.Is(err, ErrHashMismatch):
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
-		case errors.Is(err, ErrSizeMismatch), errors.Is(err, ErrBadRange), errors.Is(err, ErrIncompleteChunk), errors.As(err, &invalid):
+		case errors.Is(err, ErrIncompleteChunk):
+			w.Header().Set("Upload-Offset", strconv.FormatInt(result.Offset, 10))
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		case errors.Is(err, ErrSizeMismatch), errors.Is(err, ErrBadRange), errors.As(err, &invalid):
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		default:

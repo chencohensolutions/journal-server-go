@@ -83,8 +83,8 @@ func (h Hidden) IsEmpty() bool {
 	return len(h.Sources) == 0 && len(h.ScreenshotApps) == 0 && !h.ScreenshotsWithoutApp
 }
 
-// Key is a short name for what is hidden ("" when nothing is), which the change feed's cursor carries: when it
-// changes, devices are sent everything again, so they drop what is now hidden and get back what is shown again.
+// Key is a short name for what is hidden ("" when nothing is), by which the change feed tells whether a cursor's
+// view is the one in force (View.key).
 func (h Hidden) Key() string {
 	h = h.normalized()
 	if h.IsEmpty() {
@@ -125,7 +125,7 @@ func (s *Store) Hidden() Hidden {
 }
 
 // SetHidden replaces what the user hides, in settings.json (inside a turn, written whole). Devices drop the files
-// now hidden and get back the ones shown again at their next sync (see Hidden.Key). Nothing in media/ changes.
+// now hidden and get back the ones shown again at their next sync (see Changes). Nothing in media/ changes.
 func (s *Store) SetHidden(h Hidden) error {
 	h = h.normalized()
 	return s.Turn(func() error {

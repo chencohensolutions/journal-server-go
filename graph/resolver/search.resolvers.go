@@ -7,8 +7,6 @@ package resolver
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -24,25 +22,25 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 		return nil, err
 	}
 	if r.Search == nil {
-		return nil, errors.New("text search is off on this server")
+		return nil, coded(CodeSearchOff, "text search is off on this server")
 	}
 	n := 100
 	if limit != nil {
 		n = *limit
 	}
 	if n < 1 || n > maxSearchHits {
-		return nil, fmt.Errorf("limit must be 1–%d", maxSearchHits)
+		return nil, coded(CodeInvalidArgument, "limit must be 1–%d", maxSearchHits)
 	}
 	skip := 0
 	if offset != nil {
 		skip = *offset
 	}
 	if skip < 0 || skip+n > maxSearchDepth {
-		return nil, fmt.Errorf("offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
+		return nil, coded(CodeInvalidArgument, "offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
 	}
 	text = strings.TrimSpace(text)
 	if text == "" || len(text) > maxSearchText {
-		return nil, fmt.Errorf("text must be 1–%d bytes", maxSearchText)
+		return nil, coded(CodeInvalidArgument, "text must be 1–%d bytes", maxSearchText)
 	}
 	filter, err := newSearchFilter(years, area)
 	if err != nil {

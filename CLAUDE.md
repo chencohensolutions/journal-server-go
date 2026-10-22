@@ -90,8 +90,9 @@ the truth: there is no database. Originals go under `media/<year>/<year-month>/`
 `<name>.json`, uploads in progress and previews live in `.cache/`. `index.go` is the start-up scan, which reads only
 folders whose modified time differs from `.cache/index.json`. `names.go` makes file names safe on every platform;
 `files.go` has the atomic write and rename helpers. `store.go` is the index and lookups, `upload.go` the resumable
-upload, `feed.go` the change feed (ordered by when a sidecar last changed, opaque cursor, so a rewritten sidecar
-comes again and the cursor can later cover notes and stories), `library.go` the per-user map, `sidecar.go` the
+upload, `feed.go` the change feed (ordered by when a sidecar last changed; the opaque cursor carries the position and
+the device's `View`, so a view change sends only the files whose visibility changed, an unreadable cursor restarts
+the feed, and notes and stories can join later), `library.go` the per-user map, `sidecar.go` the
 sidecar format and the only code that rewrites one (`rewriteSidecar`; a rewrite clients must see sets a time that
 `Sidecar.ChangedAt` counts). `source.go` tells a file's source from its path and name. HTTP handlers for
 upload/original/preview/verify are in `http.go` and `verify.go`. Previews: `previewspec.go` parses and plans a
@@ -129,8 +130,10 @@ progress, reports), `review.go` (the browser review page), `cloud.go` (Google Dr
   choices (`privacy` is the user's, so it sits beside `facts`). File names from devices go through `safeFileName`
   (no path parts, reserved names, or `[...]`, which libvips reads as options); `mimeType` is validated before it is
   echoed in Content-Type.
-- Results a device must act on are unions with a reason (`StartUploadResult`, `EnrollDeviceResult`), not errors;
-  limits and bugs are plain GraphQL errors.
+- Results a device must act on are unions with a reason (`StartUploadResult`, `EnrollDeviceResult`), not errors.
+  Errors a device acts on carry `extensions.code` (`graph/resolver/errors.go`, `coded(...)`; listed in
+  docs/media.md "Errors"); anything else is a plain error for the log. `serverInfo` tells apps what the server can
+  do (search, previews, posters, `api` version), so add to it rather than letting apps learn from errors.
 - Tests use real temp data folders. `newTestEnv` in `serve_test.go` starts a full mTLS test server with a generated
   CA, enrolled device and `Library`; the root `serve_*_test.go` files cover one area each (media, search, private,
   hidden) through that server, and `media` tests drive a `Store` directly. Add tests that way rather than mocking

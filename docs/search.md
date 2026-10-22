@@ -58,7 +58,7 @@ go run ./scripts/bundle-onnx --model large    # the larger model (see below)
 ```
 
 Both folders are gitignored. The server turns search on at start when the model folder exists; otherwise it logs
-why search is off and `searchMedia` answers an error. Settings in `config.json`:
+why search is off, `serverInfo.search` is false and `searchMedia` answers an error with code `SEARCH_OFF`. Settings in `config.json`:
 
 | Setting | Default | |
 |---|---|---|

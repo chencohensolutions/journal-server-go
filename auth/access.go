@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 // PublicDirective marks root fields that anonymous clients (no client certificate) may call.
@@ -20,7 +21,10 @@ func RequireUserUnlessPublic(ctx context.Context, next graphql.RootResolver) gra
 	if field.Definition != nil && field.Definition.Directives.ForName(PublicDirective) != nil {
 		return next(ctx)
 	}
-	graphql.AddErrorf(ctx, "client certificate required for %s", field.Name)
+	graphql.AddError(ctx, &gqlerror.Error{
+		Message:    "client certificate required for " + field.Name,
+		Extensions: map[string]any{"code": "UNAUTHORIZED"}, // resolver.CodeUnauthorized
+	})
 	return graphql.Null
 }
 

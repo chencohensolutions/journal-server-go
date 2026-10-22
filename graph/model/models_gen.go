@@ -198,6 +198,19 @@ type SearchHit struct {
 	Moment int `json:"moment"`
 }
 
+type ServerInfo struct {
+	// The API's version: raised when a change needs newer apps.
+	API int `json:"api"`
+	// The server's build: its commit and time, or dev.
+	Version string `json:"version"`
+	// Text search (searchMedia) is on.
+	Search bool `json:"search"`
+	// Previews of photos can be made (libvips is installed).
+	Previews bool `json:"previews"`
+	// Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503.
+	Posters bool `json:"posters"`
+}
+
 type StartUploadInput struct {
 	Sha256     string         `json:"sha256"`
 	Size       int64          `json:"size"`

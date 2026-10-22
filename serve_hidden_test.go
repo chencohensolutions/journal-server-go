@@ -42,9 +42,9 @@ func TestHiddenCollectionsAreHiddenOnEveryDevice(t *testing.T) {
 		t.Fatalf("hiddenCollections = %s", got)
 	}
 
-	// Every device is told to drop it, and can't reach it in any other way.
+	// Every device is told to drop it (and only it), and can't reach it in any other way.
 	changes, tabletCursor = feed(tablet, tabletCursor)
-	if len(changes) != 2 || !strings.Contains(mustJSON(changes), `"deleted":true,"media":null,"path":"media/`+bumble+`"`) {
+	if len(changes) != 1 || !strings.Contains(mustJSON(changes), `"deleted":true,"media":null,"path":"media/`+bumble+`"`) {
 		t.Fatalf("tablet's feed: %v", changes)
 	}
 	if changes, _ := feed(phone, ""); len(changes) != 1 || changes[0]["path"] != "media/"+photo {
@@ -70,7 +70,7 @@ func TestHiddenCollectionsAreHiddenOnEveryDevice(t *testing.T) {
 	env.graphql(t, phone, `mutation($i: HiddenCollectionsInput!) { setHiddenCollections(input: $i) { whatsapp { hidden } } }`,
 		map[string]any{"i": map[string]any{"whatsapp": false, "screenshotsWithoutApp": false, "screenshotApps": []string{}}})
 	changes, _ = feed(tablet, tabletCursor)
-	if len(changes) != 2 || strings.Contains(mustJSON(changes), `"deleted":true`) {
+	if len(changes) != 1 || changes[0]["path"] != "media/"+bumble || strings.Contains(mustJSON(changes), `"deleted":true`) {
 		t.Fatalf("shown again: %v", changes)
 	}
 }

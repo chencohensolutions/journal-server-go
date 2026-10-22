@@ -2,7 +2,6 @@ package resolver
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/graph/model"
@@ -21,11 +20,11 @@ const (
 func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
 	user := auth.FromContext(ctx)
 	if user == nil {
-		return nil, fmt.Errorf("unauthorized")
+		return nil, coded(CodeUnauthorized, "client certificate required")
 	}
 	store := r.Media.Store(user.Username)
 	if store == nil {
-		return nil, fmt.Errorf("no data_folder is configured for %s", user.Username)
+		return nil, coded(CodeNoDataFolder, "no data_folder is configured for %s", user.Username)
 	}
 	return store, nil
 }
@@ -66,6 +65,21 @@ func (v view) visible(hashes []string) []string {
 		}
 	}
 	return shown
+}
+
+// changePage is a page of the feed as the device may see it: files it may not see come as deleted.
+func (v view) changePage(items []media.Item, next string, remaining int) *model.ChangePage {
+	versions, paired := v.store.RelatedIndex()
+	changes := make([]*model.Change, len(items))
+	for i, item := range items {
+		changes[i] = &model.Change{Kind: model.ChangeKindMedia, Path: "media/" + item.Sha256()}
+		if v.hides(item) {
+			changes[i].Deleted = true
+		} else {
+			changes[i].Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
+		}
+	}
+	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: remaining > 0, Remaining: remaining}
 }
 
 func (v view) toMedia(item media.Item) *model.Media {
