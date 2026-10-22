@@ -23,6 +23,9 @@ import (
 // How often the users' stores are looked through for files that have no vector yet.
 const rescanEvery = 30 * time.Second
 
+// Reading many files logs its progress after each this many.
+const progressEvery = 1000
+
 // Service is text search over the users' photos and videos.
 type Service struct {
 	model    *Model
@@ -157,7 +160,7 @@ func (s *Service) readNew(ctx context.Context, user string, failed map[string]bo
 	go func() { wg.Wait(); close(made) }()
 
 	var read, unreadable int
-	started, lastProgress := time.Now(), time.Now()
+	started := time.Now()
 	for r := range made {
 		err := r.err
 		if err == nil {
@@ -178,10 +181,11 @@ func (s *Service) readNew(ctx context.Context, user string, failed map[string]bo
 				log.Printf("search: %s: %v", r.item.Path, err)
 			}
 		}
-		if time.Since(lastProgress) > time.Minute {
-			lastProgress = time.Now()
-			log.Printf("search: %d of %d files of %s read (%.1f/s)", read+unreadable, len(todo), user,
-				float64(read+unreadable)/time.Since(started).Seconds())
+		if done := read + unreadable; done%progressEvery == 0 {
+			rate := float64(done) / time.Since(started).Seconds()
+			left := time.Duration(float64(len(todo)-done)/rate) * time.Second
+			log.Printf("search: %d of %d files of %s read (%.1f/s, about %s left)", done, len(todo), user, rate,
+				left.Round(time.Minute))
 		}
 	}
 	if len(todo) > 1 || unreadable > 0 {
