@@ -49,14 +49,6 @@ func plain(c color.Color) image.Image {
 	return img
 }
 
-func dot(a, b []float32) float32 {
-	var sum float32
-	for i := range a {
-		sum += a[i] * b[i]
-	}
-	return sum
-}
-
 func TestModelMatchesTextToPictures(t *testing.T) {
 	m := loadTestModel(t)
 	red, err := m.ImageVector(plain(color.RGBA{220, 20, 20, 255}))

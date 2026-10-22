@@ -158,6 +158,12 @@ type SearchHit struct {
 	// How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
 	// a good match is often 0.1 to 0.2.
 	Score float64 `json:"score"`
+	// Hits with the same set are almost identical photos (a burst, a pose taken again): very alike and taken within ten
+	// minutes of the set's best. Numbered from 0 in the order of each set's best hit. Apps show a set as one photo you swipe.
+	Set int `json:"set"`
+	// Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit.
+	// Apps keep a moment's sets together.
+	Moment int `json:"moment"`
 }
 
 type StartUploadInput struct {

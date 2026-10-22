@@ -123,8 +123,10 @@ type ComplexityRoot struct {
 	}
 
 	SearchHit struct {
-		Media func(childComplexity int) int
-		Score func(childComplexity int) int
+		Media  func(childComplexity int) int
+		Moment func(childComplexity int) int
+		Score  func(childComplexity int) int
+		Set    func(childComplexity int) int
 	}
 
 	StorageUsage struct {
@@ -539,12 +541,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.SearchHit.Media(childComplexity), true
+	case "SearchHit.moment":
+		if e.ComplexityRoot.SearchHit.Moment == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SearchHit.Moment(childComplexity), true
 	case "SearchHit.score":
 		if e.ComplexityRoot.SearchHit.Score == nil {
 			break
 		}
 
 		return e.ComplexityRoot.SearchHit.Score(childComplexity), true
+	case "SearchHit.set":
+		if e.ComplexityRoot.SearchHit.Set == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SearchHit.Set(childComplexity), true
 
 	case "StorageUsage.bytes":
 		if e.ComplexityRoot.StorageUsage.Bytes == nil {
@@ -949,6 +963,16 @@ type SearchHit {
   a good match is often 0.1 to 0.2.
   """
   score: Float!
+  """
+  Hits with the same set are almost identical photos (a burst, a pose taken again): very alike and taken within ten
+  minutes of the set's best. Numbered from 0 in the order of each set's best hit. Apps show a set as one photo you swipe.
+  """
+  set: Int!
+  """
+  Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit.
+  Apps keep a moment's sets together.
+  """
+  moment: Int!
 }
 
 type MediaSearch {
@@ -1092,6 +1116,10 @@ func (ec *executionContext) childFields_SearchHit(ctx context.Context, field gra
 		return ec.fieldContext_SearchHit_media(ctx, field)
 	case "score":
 		return ec.fieldContext_SearchHit_score(ctx, field)
+	case "set":
+		return ec.fieldContext_SearchHit_set(ctx, field)
+	case "moment":
+		return ec.fieldContext_SearchHit_moment(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type SearchHit", field.Name)
 }
@@ -3008,6 +3036,52 @@ func (ec *executionContext) _SearchHit_score(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_SearchHit_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("SearchHit", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _SearchHit_set(ctx context.Context, field graphql.CollectedField, obj *model.SearchHit) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SearchHit_set(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Set, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SearchHit_set(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SearchHit", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _SearchHit_moment(ctx context.Context, field graphql.CollectedField, obj *model.SearchHit) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SearchHit_moment(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Moment, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SearchHit_moment(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SearchHit", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _StorageUsage_photos(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
@@ -5394,6 +5468,16 @@ func (ec *executionContext) _SearchHit(ctx context.Context, sel ast.SelectionSet
 			}
 		case "score":
 			out.Values[i] = ec._SearchHit_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "set":
+			out.Values[i] = ec._SearchHit_set(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "moment":
+			out.Values[i] = ec._SearchHit_moment(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

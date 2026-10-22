@@ -20,7 +20,7 @@ import (
 	"github.com/journal/server-go/media"
 )
 
-const searchQuery = `query($t: String!) { searchMedia(text: $t, limit: 10) { indexed total model hits { score media { sha256 } } } }`
+const searchQuery = `query($t: String!) { searchMedia(text: $t, limit: 10) { indexed total model hits { score set moment media { sha256 } } } }`
 
 func TestSearchIsOffWithoutAModel(t *testing.T) {
 	env := newTestEnv(t)
@@ -61,8 +61,9 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 		Indexed, Total int
 		Model          string
 		Hits           []struct {
-			Score float64
-			Media struct{ Sha256 string }
+			Score       float64
+			Set, Moment int
+			Media       struct{ Sha256 string }
 		}
 	}
 	search := func(client *http.Client, text string) result {
@@ -80,6 +81,10 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 	}
 	if got.Hits[0].Media.Sha256 != red || got.Hits[0].Score <= got.Hits[1].Score {
 		t.Errorf("red picture: hits %+v, want %s first", got.Hits, red)
+	}
+	// Uploaded without a time, each is a set and a moment of its own, numbered by its best hit.
+	if got.Hits[0].Set != 0 || got.Hits[1].Set != 1 || got.Hits[0].Moment != 0 || got.Hits[1].Moment != 1 {
+		t.Errorf("sets and moments: %+v", got.Hits)
 	}
 	if got := search(phone, "A plain BLUE picture"); got.Hits[0].Media.Sha256 != blue {
 		t.Errorf("blue picture: hits %+v, want %s first", got.Hits, blue)

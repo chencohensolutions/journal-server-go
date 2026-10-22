@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/graph/model"
+	"github.com/journal/server-go/search"
 )
 
 // SearchMedia is the resolver for the searchMedia field.
@@ -47,12 +49,18 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 	if err != nil {
 		return nil, err
 	}
+	sets, moments := search.Groups(hits,
+		func(sha string) []float32 { return r.Search.Vector(user, sha) },
+		func(sha string) *time.Time {
+			item, _ := v.store.Get(sha)
+			return item.Sidecar.Facts.TakenAt
+		})
 	versions, paired := v.store.RelatedIndex()
 	result := &model.MediaSearch{Hits: make([]*model.SearchHit, 0, len(hits)), Model: r.Search.Model()}
-	for _, hit := range hits {
+	for i, hit := range hits {
 		if item, ok := v.store.Get(hit.Sha256); ok {
 			m := v.toMediaWith(item, versions[hit.Sha256], paired[hit.Sha256])
-			result.Hits = append(result.Hits, &model.SearchHit{Media: m, Score: float64(hit.Score)})
+			result.Hits = append(result.Hits, &model.SearchHit{Media: m, Score: float64(hit.Score), Set: sets[i], Moment: moments[i]})
 		}
 	}
 	result.Indexed, result.Total = r.Search.Counts(user, v.hides)

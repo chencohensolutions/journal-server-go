@@ -23,6 +23,13 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   uploaded when that isn't known, as the apps date it; files without a location never match an area. Files the device may not see (private files on a device set to withhold
   them) are left out. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
   that search is still catching up.
+- **Sets and moments.** Each hit says which `set` and `moment` it is in (`search.Groups`, `search/group.go`).
+  Almost identical photos (a burst, a pose taken again) are one set: a hit joins the first set whose best photo is
+  at least 0.93 alike (cosine of the vectors) and taken within 10 minutes. Sets taken within 2 hours of a moment's
+  first set share that moment. Both are numbered in the order of their best hit, so the apps keep each moment's sets
+  together and show a set as one photo you swipe. The thresholds were measured on the owner's photos: frames of a
+  burst score 0.93 to 0.99, a reframed shot seconds later 0.83 to 0.87, and the same table half an hour later still
+  0.95, which is why time counts too. Files without a time are a set and moment of their own.
 - **Scores** are SigLIP's cosine similarities, which are small: a good match is often 0.1 to 0.2. Only the order
   means much.
 

@@ -65,6 +65,14 @@ func (s *Service) Search(user, text string, limit int, keep func(sha string) boo
 	return index.Search(query, limit, keep), nil
 }
 
+// Vector is a copy of sha's vector in user's index, or nil when it hasn't been read.
+func (s *Service) Vector(user, sha string) []float32 {
+	if index := s.indexes[user]; index != nil {
+		return index.Vector(sha)
+	}
+	return nil
+}
+
 // Counts is how many of user's files have been read, and so can be found, of all of them; files hide reports true
 // for are left out of both.
 func (s *Service) Counts(user string, hide func(media.Item) bool) (indexed, total int) {

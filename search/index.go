@@ -126,6 +126,17 @@ func (x *Index) Has(sha string) bool {
 	return ok
 }
 
+// Vector is a copy of sha's vector (of length 1), or nil when it has none.
+func (x *Index) Vector(sha string) []float32 {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	i, ok := x.row[sha]
+	if !ok {
+		return nil
+	}
+	return slices.Clone(x.vectors[i*x.dim : (i+1)*x.dim])
+}
+
 // Len is how many files have a vector.
 func (x *Index) Len() int {
 	x.mu.RLock()
