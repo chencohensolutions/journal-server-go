@@ -82,6 +82,13 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 	if got.Hits[0].Media.Sha256 != red || got.Hits[0].Score <= got.Hits[1].Score {
 		t.Errorf("red picture: hits %+v, want %s first", got.Hits, red)
 	}
+	// The next page: the second hit, numbered as on the first page.
+	resp := env.graphql(t, phone, `query($t: String!) { searchMedia(text: $t, limit: 1, offset: 1) { hits { set moment media { sha256 } } } }`,
+		map[string]any{"t": "a plain red picture"})
+	var page result
+	if err := json.Unmarshal(resp.Data["searchMedia"], &page); err != nil || len(page.Hits) != 1 || page.Hits[0].Media.Sha256 != got.Hits[1].Media.Sha256 || page.Hits[0].Set != 1 {
+		t.Errorf("offset 1: %s %+v, want the second hit as set 1", resp.Data["searchMedia"], resp.Errors)
+	}
 	// Uploaded without a time, each is a set and a moment of its own, numbered by its best hit.
 	if got.Hits[0].Set != 0 || got.Hits[1].Set != 1 || got.Hits[0].Moment != 0 || got.Hits[1].Moment != 1 {
 		t.Errorf("sets and moments: %+v", got.Hits)

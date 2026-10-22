@@ -159,9 +159,11 @@ type SearchHit struct {
 	// a good match is often 0.1 to 0.2.
 	Score float64 `json:"score"`
 	// Hits with the same set are almost identical photos (a burst, a pose taken again): very alike and taken within ten
-	// minutes of the set's best. Numbered from 0 in the order of each set's best hit. Apps show a set as one photo you swipe.
+	// minutes of the set's best. Numbered from 0 in the order of each set's best hit, counting from the first hit (not the
+	// offset), so a page continues the numbers of the pages before it. Apps show a set as one photo you swipe.
 	Set int `json:"set"`
-	// Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit.
+	// Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit,
+	// counting from the first hit, as set is.
 	// Apps keep a moment's sets together.
 	Moment int `json:"moment"`
 }

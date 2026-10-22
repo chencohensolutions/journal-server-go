@@ -10,11 +10,13 @@ type SearchHit {
   score: Float!
   """
   Hits with the same set are almost identical photos (a burst, a pose taken again): very alike and taken within ten
-  minutes of the set's best. Numbered from 0 in the order of each set's best hit. Apps show a set as one photo you swipe.
+  minutes of the set's best. Numbered from 0 in the order of each set's best hit, counting from the first hit (not the
+  offset), so a page continues the numbers of the pages before it. Apps show a set as one photo you swipe.
   """
   set: Int!
   """
-  Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit.
+  Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit,
+  counting from the first hit, as set is.
   Apps keep a moment's sets together.
   """
   moment: Int!
@@ -43,11 +45,12 @@ input GeoAreaInput {
 
 extend type Query {
   """
-  The photos and videos that text describes best ("a dog on the beach at sunset"), best first. At most 1000.
+  The photos and videos that text describes best ("a dog on the beach at sunset"), best first: limit of them (at most
+  1000) after the first offset, for the next page; offset + limit at most 10000.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
   the best are picked, so a filtered search returns the best matches of that year or place. Fails when text search
   is off on the server.
   """
-  searchMedia(text: String!, limit: Int = 100, years: [Int!], area: GeoAreaInput): MediaSearch!
+  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput): MediaSearch!
 }

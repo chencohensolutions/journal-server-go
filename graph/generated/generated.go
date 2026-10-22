@@ -118,7 +118,7 @@ type ComplexityRoot struct {
 		EnrollmentPreview func(childComplexity int, code string) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
-		SearchMedia       func(childComplexity int, text string, limit *int, years []int, area *model.GeoAreaInput) int
+		SearchMedia       func(childComplexity int, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) int
 		StorageUsage      func(childComplexity int) int
 	}
 
@@ -160,7 +160,7 @@ type QueryResolver interface {
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
 	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
-	SearchMedia(ctx context.Context, text string, limit *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error)
+	SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -527,7 +527,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(string), args["limit"].(*int), args["years"].([]int), args["area"].(*model.GeoAreaInput)), true
+		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(string), args["limit"].(*int), args["offset"].(*int), args["years"].([]int), args["area"].(*model.GeoAreaInput)), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -965,11 +965,13 @@ type SearchHit {
   score: Float!
   """
   Hits with the same set are almost identical photos (a burst, a pose taken again): very alike and taken within ten
-  minutes of the set's best. Numbered from 0 in the order of each set's best hit. Apps show a set as one photo you swipe.
+  minutes of the set's best. Numbered from 0 in the order of each set's best hit, counting from the first hit (not the
+  offset), so a page continues the numbers of the pages before it. Apps show a set as one photo you swipe.
   """
   set: Int!
   """
-  Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit.
+  Sets taken within two hours of each other share a moment. Numbered from 0 in the order of each moment's best hit,
+  counting from the first hit, as set is.
   Apps keep a moment's sets together.
   """
   moment: Int!
@@ -998,13 +1000,14 @@ input GeoAreaInput {
 
 extend type Query {
   """
-  The photos and videos that text describes best ("a dog on the beach at sunset"), best first. At most 1000.
+  The photos and videos that text describes best ("a dog on the beach at sunset"), best first: limit of them (at most
+  1000) after the first offset, for the next page; offset + limit at most 10000.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
   the best are picked, so a filtered search returns the best matches of that year or place. Fails when text search
   is off on the server.
   """
-  searchMedia(text: String!, limit: Int = 100, years: [Int!], area: GeoAreaInput): MediaSearch!
+  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput): MediaSearch!
 }
 `, BuiltIn: false},
 }
@@ -1403,22 +1406,30 @@ func (ec *executionContext) field_Query_searchMedia_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["limit"] = arg1
-	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "years",
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "years",
 		func(ctx context.Context, v any) ([]int, error) {
 			return ec.unmarshalOInt2ᚕintᚄ(ctx, v)
 		})
 	if err != nil {
 		return nil, err
 	}
-	args["years"] = arg2
-	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "area",
+	args["years"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "area",
 		func(ctx context.Context, v any) (*model.GeoAreaInput, error) {
 			return ec.unmarshalOGeoAreaInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐGeoAreaInput(ctx, v)
 		})
 	if err != nil {
 		return nil, err
 	}
-	args["area"] = arg3
+	args["area"] = arg4
 	return args, nil
 }
 
@@ -2873,7 +2884,7 @@ func (ec *executionContext) _Query_searchMedia(ctx context.Context, field graphq
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["text"].(string), fc.Args["limit"].(*int), fc.Args["years"].([]int), fc.Args["area"].(*model.GeoAreaInput))
+			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["text"].(string), fc.Args["limit"].(*int), fc.Args["offset"].(*int), fc.Args["years"].([]int), fc.Args["area"].(*model.GeoAreaInput))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.MediaSearch) graphql.Marshaler {

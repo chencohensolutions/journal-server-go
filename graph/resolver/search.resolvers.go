@@ -18,7 +18,7 @@ import (
 )
 
 // SearchMedia is the resolver for the searchMedia field.
-func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error) {
+func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error) {
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
@@ -33,6 +33,13 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 	if n < 1 || n > maxSearchHits {
 		return nil, fmt.Errorf("limit must be 1–%d", maxSearchHits)
 	}
+	skip := 0
+	if offset != nil {
+		skip = *offset
+	}
+	if skip < 0 || skip+n > maxSearchDepth {
+		return nil, fmt.Errorf("offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
+	}
 	text = strings.TrimSpace(text)
 	if text == "" || len(text) > maxSearchText {
 		return nil, fmt.Errorf("text must be 1–%d bytes", maxSearchText)
@@ -42,7 +49,8 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 		return nil, err
 	}
 	user := auth.FromContext(ctx).Username
-	hits, err := r.Search.Search(user, text, n, func(sha string) bool {
+	// The hits before the offset are found too: the sets and moments are numbered from the first hit.
+	hits, err := r.Search.Search(user, text, skip+n, func(sha string) bool {
 		item, ok := v.store.Get(sha)
 		return ok && !v.hides(item) && filter.keeps(item)
 	})
@@ -58,6 +66,9 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 	versions, paired := v.store.RelatedIndex()
 	result := &model.MediaSearch{Hits: make([]*model.SearchHit, 0, len(hits)), Model: r.Search.Model()}
 	for i, hit := range hits {
+		if i < skip {
+			continue
+		}
 		if item, ok := v.store.Get(hit.Sha256); ok {
 			m := v.toMediaWith(item, versions[hit.Sha256], paired[hit.Sha256])
 			result.Hits = append(result.Hits, &model.SearchHit{Media: m, Score: float64(hit.Score), Set: sets[i], Moment: moments[i]})

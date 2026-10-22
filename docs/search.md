@@ -23,6 +23,9 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   uploaded when that isn't known, as the apps date it; files without a location never match an area. Files the device may not see (private files on a device set to withhold
   them) are left out. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
   that search is still catching up.
+- **Pages.** `offset` skips the first hits for the next page (offset + limit at most 10000). The hits before it are
+  still found, so a page's sets and moments carry on the numbers of the pages before it (a set split between pages
+  has one number).
 - **Sets and moments.** Each hit says which `set` and `moment` it is in (`search.Groups`, `search/group.go`).
   Almost identical photos (a burst, a pose taken again) are one set: a hit joins the first set whose best photo is
   at least 0.93 alike (cosine of the vectors) and taken within 10 minutes. Sets taken within 2 hours of a moment's
