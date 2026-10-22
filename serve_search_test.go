@@ -132,6 +132,16 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 	// A device kept from private files neither finds nor counts them.
 	env.graphql(t, phone, `mutation($h: [Sha256!]!) { setPrivate(sha256s: $h, private: true) { sha256 } }`,
 		map[string]any{"h": []string{red}})
+	// Private files are left out unless the app asks for them; they still count as read.
+	if got := search(phone, "a plain red picture"); got.Total != 3 || got.Indexed != 3 || len(got.Hits) != 2 || got.Hits[0].Media.Sha256 != darkRed {
+		t.Errorf("phone found %+v, want the dark red and blue pictures", got)
+	}
+	resp = env.graphql(t, phone, `query($t: String!) { searchMedia(text: $t, limit: 10, includePrivate: true) { hits { media { sha256 } } } }`,
+		map[string]any{"t": "a plain red picture"})
+	var withPrivate result
+	if err := json.Unmarshal(resp.Data["searchMedia"], &withPrivate); err != nil || len(withPrivate.Hits) != 3 || withPrivate.Hits[0].Media.Sha256 != red {
+		t.Errorf("includePrivate: %s %+v, want the red picture first", resp.Data["searchMedia"], resp.Errors)
+	}
 	if got := search(tablet, "a plain red picture"); got.Total != 2 || got.Indexed != 2 || len(got.Hits) != 2 || got.Hits[0].Media.Sha256 != darkRed {
 		t.Errorf("tablet found %+v, want the dark red and blue pictures", got)
 	}

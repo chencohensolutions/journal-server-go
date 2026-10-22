@@ -18,7 +18,7 @@ import (
 )
 
 // SearchMedia is the resolver for the searchMedia field.
-func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error) {
+func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error) {
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
@@ -48,11 +48,13 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 	if err != nil {
 		return nil, err
 	}
+	// Private files are left out unless the app shows private media: a search is no place to see them by surprise.
+	withPrivate := includePrivate != nil && *includePrivate
 	user := auth.FromContext(ctx).Username
 	// The hits before the offset are found too: the sets and moments are numbered from the first hit.
 	hits, err := r.Search.Search(user, text, skip+n, func(sha string) bool {
 		item, ok := v.store.Get(sha)
-		return ok && !v.hides(item) && filter.keeps(item)
+		return ok && !v.hides(item) && (withPrivate || !item.Sidecar.IsPrivate()) && filter.keeps(item)
 	})
 	if err != nil {
 		return nil, err

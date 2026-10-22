@@ -49,8 +49,9 @@ extend type Query {
   1000) after the first offset, for the next page; offset + limit at most 10000.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
-  the best are picked, so a filtered search returns the best matches of that year or place. Fails when text search
-  is off on the server.
+  the best are picked, so a filtered search returns the best matches of that year or place. Files the user marked
+  private (setPrivate) are left out too, unless includePrivate is true (an app showing private media); on a device
+  set to withhold them they are never found. Fails when text search is off on the server.
   """
-  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput): MediaSearch!
+  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
 }

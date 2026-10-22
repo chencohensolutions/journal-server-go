@@ -21,7 +21,8 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   box, are considered, before the best are picked; a filtered search returns the best of that year or place, not the
   overall best that happen to match. A file's year is where it was taken (its time's offset), or the year it was
   uploaded when that isn't known, as the apps date it; files without a location never match an area. Files the device may not see (private files on a device set to withhold
-  them) are left out. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
+  them) are left out. Files the user marked private are left out on every device too, unless the app asks with
+  `includePrivate: true` (it does while it shows private media); a device set to withhold them never finds them. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
   that search is still catching up.
 - **Pages.** `offset` skips the first hits for the next page (offset + limit at most 10000). The hits before it are
   still found, so a page's sets and moments carry on the numbers of the pages before it (a set split between pages

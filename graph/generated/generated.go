@@ -134,7 +134,7 @@ type ComplexityRoot struct {
 		HiddenCollections func(childComplexity int) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
-		SearchMedia       func(childComplexity int, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) int
+		SearchMedia       func(childComplexity int, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
 		StorageUsage      func(childComplexity int) int
 	}
 
@@ -178,7 +178,7 @@ type QueryResolver interface {
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
 	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
-	SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error)
+	SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -612,7 +612,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(string), args["limit"].(*int), args["offset"].(*int), args["years"].([]int), args["area"].(*model.GeoAreaInput)), true
+		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(string), args["limit"].(*int), args["offset"].(*int), args["years"].([]int), args["area"].(*model.GeoAreaInput), args["includePrivate"].(*bool)), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -1140,10 +1140,11 @@ extend type Query {
   1000) after the first offset, for the next page; offset + limit at most 10000.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
-  the best are picked, so a filtered search returns the best matches of that year or place. Fails when text search
-  is off on the server.
+  the best are picked, so a filtered search returns the best matches of that year or place. Files the user marked
+  private (setPrivate) are left out too, unless includePrivate is true (an app showing private media); on a device
+  set to withhold them they are never found. Fails when text search is off on the server.
   """
-  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput): MediaSearch!
+  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
 }
 `, BuiltIn: false},
 }
@@ -1608,6 +1609,14 @@ func (ec *executionContext) field_Query_searchMedia_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["area"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "includePrivate",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["includePrivate"] = arg5
 	return args, nil
 }
 
@@ -3349,7 +3358,7 @@ func (ec *executionContext) _Query_searchMedia(ctx context.Context, field graphq
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["text"].(string), fc.Args["limit"].(*int), fc.Args["offset"].(*int), fc.Args["years"].([]int), fc.Args["area"].(*model.GeoAreaInput))
+			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["text"].(string), fc.Args["limit"].(*int), fc.Args["offset"].(*int), fc.Args["years"].([]int), fc.Args["area"].(*model.GeoAreaInput), fc.Args["includePrivate"].(*bool))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.MediaSearch) graphql.Marshaler {
