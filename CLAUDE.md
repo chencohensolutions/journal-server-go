@@ -21,10 +21,10 @@ and videos already on the server's disk into a data folder once each (by sha256)
 it inside `Store.Turn` (the store's own write methods already do). `go run ./scripts/scan-nudity` scores files with
 NudeNet (Python, a separate program) into the sidecar's `detected.nudity` (never a tag; clients hide what is over
 the user's threshold); run by hand for now. Users mark files private with `setPrivate` (sidecar `privacy`,
-`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. Search by
-what photos show (package `search`, `searchMedia`) is on when `config.json` has `"search"`: a SigLIP 2 model in a
-Python worker kept running by the server reads every preview into `.cache/search/`. The change
-feed for stories and notes, and the story trash, are not built yet.
+`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. **Text
+search** (`searchMedia`, package `search`, [docs/search.md](docs/search.md)) runs SigLIP 2 with ONNX Runtime inside
+the server (loaded with purego, no cgo, no Python): files are read into vectors in the background, kept in
+`.cache/search/`. The change feed for stories and notes, and the story trash, are not built yet.
 
 **The server targets macOS for now** (owner, Oct 20, 2026; libvips from Homebrew). Windows comes later, so keep it
 easy: no cgo, Windows-safe file names (compared ignoring case), image/video tools run as separate programs. To run
@@ -37,7 +37,8 @@ on Windows meanwhile, `go run ./scripts/bundle-vips` puts a portable libvips tha
 ```bash
 go run .                                   # serve https://0.0.0.0:56398 (needs config.json + certs/)
 go build -o journal-server .               # what the VS Code task "server: run" does
-go test ./...                              # ~8 s; previews/poster tests skip without libvips/ffmpeg
+go test ./...                              # ~8 s; previews/poster/search tests skip without libvips/ffmpeg/model
+go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + search model (gitignored)
 go test ./media -run TestTurns             # one test
 go tool gqlgen generate                    # after editing graph/schema/*.graphql
 go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
@@ -85,10 +86,6 @@ a rewrite clients must see sets a time that `Sidecar.ChangedAt` counts). `source
 its path and name, for imports and `scripts/fix-sources`. HTTP handlers for
 upload/original/preview/verify are in `media/http.go` and `verify.go`, mounted by `newMux` in `serve.go`;
 resolvers in `graph/resolver/media.resolvers.go` cover `missingMedia`, `startUpload`, the change feed and usage.
-Package `search` sits on top of `media`: `search.go` (the `Engine`: reading files in the background, `Search`),
-`worker.go` with `siglip_worker.py` (the Python process, a JSON line each way), `vectors.go` (the per-user int8
-vector file and the scan over it); tests run their own binary as a stand-in model (`search/searchtest`), so they
-need no Python.
 The change feed (`Store.Changes`) orders items by when their sidecar last changed, with an opaque cursor, so a
 rewritten sidecar comes again and the cursor can later cover notes and stories. Previews: `previewspec.go` parses
 and plans a request, `preview.go` runs libvips, `poster.go` ffmpeg, `dng.go`/`develop.go` develop Samsung's
@@ -105,14 +102,18 @@ instead of cgo or build-tagged dependencies.
 **External tools are separate programs, found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH
 (and `vips/bin` first), or at `vips` / `ffmpeg` in `config.json`. Without them the server still runs and the
 affected endpoints answer 503. `scripts/scan-nudity` embeds a Python worker (`nudenet_worker.py`) and feeds it
-640 px previews, never originals. `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go`
+640 px previews, never originals. The one library loaded into the server is ONNX Runtime (text search):
+`search/ort.go` calls its C function table through purego by fixed places counted in `onnxruntime_c_api.h`, so
+add a function by its place there; `search.FindRuntime` looks in `onnxruntime/`, then Homebrew. Without it or the
+model, search is off and `searchMedia` answers an error. `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go`
 (walk, examine, decide), `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates),
 `outcomes.go` (moving files, progress, reports), `review.go` (the browser review page), `cloud.go` (Google
 Drive / OneDrive through rclone).
 
 ## Conventions worth knowing
 
-- Doc comments and docs are written in plain prose for the owner; keep [docs/media.md](docs/media.md) and
+- Doc comments and docs are written in plain prose for the owner; keep [docs/media.md](docs/media.md),
+  [docs/search.md](docs/search.md) and
   [docs/authentication.md](docs/authentication.md) in step with behaviour changes.
 - The sidecar `format` is versioned; a new field is additive, and `detected` is for model output only,
   never user tags. File names from devices go through `safeFileName` (no path parts, reserved names, or

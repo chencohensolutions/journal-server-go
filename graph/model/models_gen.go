@@ -128,25 +128,28 @@ type MediaExists struct {
 
 func (MediaExists) IsStartUploadResult() {}
 
-type MediaSearchHit struct {
-	Media *Media `json:"media"`
-	// How close the file is to the words, about -1 to 1. Only for ordering: compare scores within one search.
-	Score float64 `json:"score"`
-}
-
-type MediaSearchResult struct {
+type MediaSearch struct {
 	// Best first.
-	Hits []*MediaSearchHit `json:"hits"`
-	// The files the server has read for search so far; the others can't be found yet.
+	Hits []*SearchHit `json:"hits"`
+	// How many of the user's files the server has read so far; the others can't be found yet.
 	Indexed int `json:"indexed"`
-	// All the files searched: photos and videos.
+	// How many files the user has.
 	Total int `json:"total"`
+	// The model that searched, e.g. siglip2-base-patch16-256.
+	Model string `json:"model"`
 }
 
 type Mutation struct {
 }
 
 type Query struct {
+}
+
+type SearchHit struct {
+	Media *Media `json:"media"`
+	// How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
+	// a good match is often 0.1 to 0.2.
+	Score float64 `json:"score"`
 }
 
 type StartUploadInput struct {

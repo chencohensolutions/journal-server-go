@@ -1,26 +1,30 @@
-# --- Search -------------------------------------------------------------------
-# Finding photos and videos by what they show, from a few words in any language. Off unless the server's
-# config.json turns it on; see docs/media.md.
+# --- Text search ----------------------------------------------------------------
+# Photos and videos found by a description in words, with a SigLIP 2 model on the server; see docs/search.md.
 
-type MediaSearchHit {
+type SearchHit {
   media: Media!
-  "How close the file is to the words, about -1 to 1. Only for ordering: compare scores within one search."
+  """
+  How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
+  a good match is often 0.1 to 0.2.
+  """
   score: Float!
 }
 
-type MediaSearchResult {
+type MediaSearch {
   "Best first."
-  hits: [MediaSearchHit!]!
-  "The files the server has read for search so far; the others can't be found yet."
+  hits: [SearchHit!]!
+  "How many of the user's files the server has read so far; the others can't be found yet."
   indexed: Int!
-  "All the files searched: photos and videos."
+  "How many files the user has."
   total: Int!
+  "The model that searched, e.g. siglip2-base-patch16-256."
+  model: String!
 }
 
 extend type Query {
   """
-  Photos and videos that show what the words describe ("dog on the beach"), best first. At most 500. Fails while
-  the server is still loading the model, and when search is off.
+  The photos and videos that text describes best ("a dog on the beach at sunset"), best first. At most 1000.
+  Fails when text search is off on the server.
   """
-  searchMedia(query: String!, limit: Int = 50): MediaSearchResult!
+  searchMedia(text: String!, limit: Int = 100): MediaSearch!
 }

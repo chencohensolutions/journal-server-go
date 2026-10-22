@@ -14,6 +14,6 @@ import (
 type Resolver struct {
 	Enrollment *enroll.Service
 	Media      *media.Library
-	// Nil when search is off.
-	Search *search.Engine
+	// Text search; nil when it is off.
+	Search *search.Service
 }

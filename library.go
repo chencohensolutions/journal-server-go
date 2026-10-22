@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/journal/server-go/auth"
@@ -51,19 +52,37 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	return previews
 }
 
-// newSearch is the search engine, when config.json turns search on; nil when off. Run starts it: the model loads
-// in the background, and the server serves meanwhile.
-func newSearch(config auth.AppConfig, library *media.Library, previews *media.Previews) *search.Engine {
-	if config.Search == nil {
-		log.Printf("Search is off (set \"search\" in config.json; see docs/media.md)")
+// newSearch loads ONNX Runtime and the search model and opens each user's vectors; nil (search off) when either
+// is missing. Its Run reads the files that have no vector yet.
+func newSearch(config auth.AppConfig, library *media.Library, previews *media.Previews) *search.Service {
+	if _, err := os.Stat(config.SearchModel); err != nil {
+		log.Printf("Text search is off: no model in %s (go run ./scripts/bundle-onnx, or set \"search_model\" in config.json)", config.SearchModel)
 		return nil
 	}
-	command, err := search.PythonCommand(config.Search.Python, config.Search.Model)
+	path, err := search.FindRuntime(config.OnnxRuntime)
 	if err != nil {
-		log.Printf("Search is off: %v", err)
+		log.Printf("Text search is off: %v", err)
 		return nil
 	}
-	return search.New(library, config.Search.Model, command, search.FromPreviews(previews))
+	rt, err := search.LoadRuntime(path)
+	if err != nil {
+		log.Printf("Text search is off: %v", err)
+		return nil
+	}
+	started := time.Now()
+	model, err := search.LoadModel(rt, config.SearchModel, config.SearchThreads)
+	if err != nil {
+		log.Printf("Text search is off: %s: %v", config.SearchModel, err)
+		return nil
+	}
+	service, err := search.NewService(model, library, previews)
+	if err != nil {
+		log.Printf("Text search is off: %v", err)
+		return nil
+	}
+	log.Printf("Text search with %s on ONNX Runtime %s (%d threads), loaded in %s", model.Name, rt.Version,
+		config.SearchThreads, time.Since(started).Round(time.Millisecond))
+	return service
 }
 
 // maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches, once an hour.

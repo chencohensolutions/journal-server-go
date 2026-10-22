@@ -7,37 +7,50 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/graph/model"
 )
 
 // SearchMedia is the resolver for the searchMedia field.
-func (r *queryResolver) SearchMedia(ctx context.Context, query string, limit *int) (*model.MediaSearchResult, error) {
+func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int) (*model.MediaSearch, error) {
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if r.Search == nil {
-		return nil, fmt.Errorf("search is off on this server (\"search\" in config.json)")
+		return nil, errors.New("text search is off on this server")
 	}
-	n := 50
+	n := 100
 	if limit != nil {
 		n = *limit
 	}
 	if n < 1 || n > maxSearchHits {
 		return nil, fmt.Errorf("limit must be 1–%d", maxSearchHits)
 	}
-	found, err := r.Search.Search(auth.FromContext(ctx).Username, query, n, v.hides)
+	text = strings.TrimSpace(text)
+	if text == "" || len(text) > maxSearchText {
+		return nil, fmt.Errorf("text must be 1–%d bytes", maxSearchText)
+	}
+	user := auth.FromContext(ctx).Username
+	hits, err := r.Search.Search(user, text, n, func(sha string) bool {
+		item, ok := v.store.Get(sha)
+		return ok && !v.hides(item)
+	})
 	if err != nil {
 		return nil, err
 	}
 	versions, paired := v.store.RelatedIndex()
-	hits := make([]*model.MediaSearchHit, len(found.Hits))
-	for i, hit := range found.Hits {
-		sha := hit.Item.Sha256()
-		hits[i] = &model.MediaSearchHit{Media: v.toMediaWith(hit.Item, versions[sha], paired[sha]), Score: hit.Score}
+	result := &model.MediaSearch{Hits: make([]*model.SearchHit, 0, len(hits)), Model: r.Search.Model()}
+	for _, hit := range hits {
+		if item, ok := v.store.Get(hit.Sha256); ok {
+			m := v.toMediaWith(item, versions[hit.Sha256], paired[hit.Sha256])
+			result.Hits = append(result.Hits, &model.SearchHit{Media: m, Score: float64(hit.Score)})
+		}
 	}
-	return &model.MediaSearchResult{Hits: hits, Indexed: found.Indexed, Total: found.Total}, nil
+	result.Indexed, result.Total = r.Search.Counts(user, v.hides)
+	return result, nil
 }

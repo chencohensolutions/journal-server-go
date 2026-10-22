@@ -4,8 +4,11 @@ go 1.26.3
 
 require (
 	github.com/99designs/gqlgen v0.17.90
+	github.com/ebitengine/purego v0.11.2
+	github.com/eliben/go-sentencepiece v0.7.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/vektah/gqlparser/v2 v2.5.33
+	golang.org/x/image v0.47.0
 	golang.org/x/sys v0.49.0
 )
 
@@ -20,8 +23,9 @@ require (
 	github.com/urfave/cli/v3 v3.8.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 replace github.com/journal/server-go => .

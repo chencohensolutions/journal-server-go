@@ -43,6 +43,10 @@ devices.json
 # Portable libvips for Windows, made by scripts/bundle-vips
 /vips/
 
+# ONNX Runtime and the text search model, downloaded by scripts/bundle-onnx
+/onnxruntime/
+/models/
+
 # Built by the "server: run" task
 /journal-server
 

@@ -110,9 +110,8 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 }
 
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
-// anonymous clients in (for the @public enrollment fields). The media routes need a certificate. searcher is nil
-// when search is off.
-func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, searcher *search.Engine) *http.ServeMux {
+// anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, searcher *search.Service) *http.ServeMux {
 	registry := enrollment.Registry
 	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
 	userStore := func(r *http.Request) *media.Store {
@@ -128,6 +127,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, searcher)))))
 	upload := withUser(media.UploadHandler(userStore))
 	if searcher != nil {
+		// Search reads a finished upload right away.
 		upload = withUser(then(media.UploadHandler(userStore), searcher.Wake))
 	}
 	mux.Handle("PUT /upload/{sha256}", upload)
@@ -138,7 +138,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	return mux
 }
 
-func newGraphQLServer(enrollment *enroll.Service, library *media.Library, searcher *search.Engine) *handler.Server {
+func newGraphQLServer(enrollment *enroll.Service, library *media.Library, searcher *search.Service) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers:  &resolver.Resolver{Enrollment: enrollment, Media: library, Search: searcher},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},

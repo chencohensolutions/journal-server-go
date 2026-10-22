@@ -12,7 +12,8 @@ import (
 const (
 	maxHashesPerQuery = 1000
 	maxChangesPerPage = 5000
-	maxSearchHits     = 500
+	maxSearchHits     = 1000
+	maxSearchText     = 1000 // bytes; the model reads 64 tokens at most anyway
 )
 
 // store is the data folder of the request's user.

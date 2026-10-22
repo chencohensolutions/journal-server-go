@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -25,7 +24,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/enroll"
-	"github.com/journal/server-go/search/searchtest"
+	"github.com/journal/server-go/search"
 )
 
 type testEnv struct {
@@ -34,13 +33,10 @@ type testEnv struct {
 	enrollment *enroll.Service
 	roots      *x509.CertPool
 	config     auth.AppConfig
+	search     *search.Service
 }
 
 func TestMain(m *testing.M) {
-	if os.Getenv(searchtest.Env) == "1" {
-		searchtest.Serve() // this binary is the search model of a test (serve_search_test.go)
-		os.Exit(0)
-	}
 	log.SetOutput(io.Discard)
 	os.Exit(m.Run())
 }
@@ -97,12 +93,13 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		t.Fatal(err)
 	}
 	previews := newPreviews(config)
-	searcher := newSearch(config, library, previews)
-	if searcher != nil {
-		ctx, stop := context.WithCancel(context.Background())
-		done := make(chan struct{})
-		go func() { searcher.Run(ctx); close(done) }()
-		t.Cleanup(func() { stop(); <-done })
+	// Text search is off unless a test names a model folder: loading one takes seconds. The test runs its Run.
+	var searcher *search.Service
+	if config.SearchModel != auth.DefaultSearchModel {
+		if searcher = newSearch(config, library, previews); searcher == nil {
+			t.Fatalf("no text search with %s", config.SearchModel)
+		}
+		t.Cleanup(searcher.Close)
 	}
 	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher))
 	server.TLS = &tls.Config{
@@ -112,7 +109,8 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	}
 	server.StartTLS()
 	t.Cleanup(server.Close)
-	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool, config: config}
+	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
+		config: config, search: searcher}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {

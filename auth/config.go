@@ -41,18 +41,16 @@ type AppConfig struct {
 	FFmpeg string `json:"ffmpeg"`
 	// Most space the previews of one user may take before the least recently used are deleted (default 50).
 	PreviewCacheMaxGB float64 `json:"preview_cache_max_gb"`
-	// Search by what photos show (package search); off when absent.
-	Search *SearchConfig `json:"search"`
-	Users  []UserConfig  `json:"users"`
-}
-
-// SearchConfig turns on search: a Python worker reads every photo with the model, and each query's words.
-type SearchConfig struct {
-	// The Hugging Face model (default google/siglip2-base-patch16-384), downloaded on the first start. Changing it
-	// reads every photo again.
-	Model string `json:"model"`
-	// The Python that has PyTorch and transformers (default python3; python on Windows).
-	Python string `json:"python"`
+	// Folder of the SigLIP 2 model for text search, made by scripts/bundle-onnx; models/siglip2-base-patch16-256
+	// when empty. Search is off when the folder isn't there.
+	SearchModel string `json:"search_model"`
+	// Path of the ONNX Runtime library, which runs the search model; the one in ./onnxruntime (scripts/bundle-onnx)
+	// or Homebrew's when empty.
+	OnnxRuntime string `json:"onnxruntime"`
+	// CPU threads each half of the search model may use (default half the CPUs): reading new files takes this many
+	// while the server answers devices with the rest.
+	SearchThreads int          `json:"search_threads"`
+	Users         []UserConfig `json:"users"`
 }
 
 const (
@@ -61,7 +59,7 @@ const (
 	DefaultAdminAddr      = "127.0.0.1:8081"
 	DefaultAdminTokenFile = "admin.token"
 	DefaultPreviewCacheGB = 50
-	DefaultSearchModel    = "google/siglip2-base-patch16-384"
+	DefaultSearchModel    = "models/siglip2-base-patch16-256"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -105,18 +103,11 @@ func (c AppConfig) WithDefaults() AppConfig {
 	if c.PreviewCacheMaxGB <= 0 {
 		c.PreviewCacheMaxGB = DefaultPreviewCacheGB
 	}
-	if c.Search != nil {
-		search := *c.Search
-		if search.Model == "" {
-			search.Model = DefaultSearchModel
-		}
-		if search.Python == "" {
-			search.Python = "python3"
-			if runtime.GOOS == "windows" {
-				search.Python = "python"
-			}
-		}
-		c.Search = &search
+	if c.SearchModel == "" {
+		c.SearchModel = DefaultSearchModel
+	}
+	if c.SearchThreads <= 0 {
+		c.SearchThreads = max(1, runtime.NumCPU()/2)
 	}
 	return c
 }

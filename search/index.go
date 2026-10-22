@@ -1,0 +1,207 @@
+package search
+
+import (
+	"bufio"
+	"bytes"
+	"cmp"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"sync"
+)
+
+// Index is the vectors of one user's files for one model, kept in .cache/search/<model>.vectors in the data
+// folder. It is rebuilt when lost: the vectors come from the files.
+//
+// The file is a header ("journal-vectors 1\n" and the vector length as a 4-byte little-endian number) and then a
+// record per file, appended as files are read: the 32 bytes of its sha256, then its vector as 4-byte little-endian
+// floats. A record cut short (the server stopped while writing it) is dropped when the file is opened. Only the
+// server writes it.
+type Index struct {
+	path string
+	dim  int
+
+	mu      sync.RWMutex
+	file    *os.File
+	shas    []string
+	vectors []float32 // shas[i]'s vector is vectors[i*dim : (i+1)*dim]
+	row     map[string]int
+}
+
+const indexHeader = "journal-vectors 1\n"
+
+// OpenIndex opens (or starts) the vectors of model in the data folder root. A file of vectors of another length
+// is started over.
+func OpenIndex(root, model string, dim int) (*Index, error) {
+	path := filepath.Join(root, ".cache", "search", model+".vectors")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	x := &Index{path: path, dim: dim, row: map[string]int{}}
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	end, err := x.read(f)
+	if err != nil {
+		log.Printf("search: starting %s over: %v", path, err)
+		x.shas, x.vectors, x.row = nil, nil, map[string]int{}
+		end = 0
+	}
+	if end == 0 {
+		var header bytes.Buffer
+		header.WriteString(indexHeader)
+		binary.Write(&header, binary.LittleEndian, uint32(dim))
+		if _, err := f.WriteAt(header.Bytes(), 0); err != nil {
+			f.Close()
+			return nil, err
+		}
+		end = int64(header.Len())
+	}
+	// Drop a record cut short, and anything after a header that was started over.
+	if err := f.Truncate(end); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if _, err := f.Seek(end, io.SeekStart); err != nil {
+		f.Close()
+		return nil, err
+	}
+	x.file = f
+	return x, nil
+}
+
+// read loads the records of f and returns where the last whole one ends; 0 when f is empty.
+func (x *Index) read(f *os.File) (int64, error) {
+	r := bufio.NewReaderSize(f, 1<<20)
+	header := make([]byte, len(indexHeader)+4)
+	if _, err := io.ReadFull(r, header); err != nil {
+		if err == io.EOF {
+			return 0, nil
+		}
+		return 0, errors.New("no header")
+	}
+	if string(header[:len(indexHeader)]) != indexHeader {
+		return 0, errors.New("not a vectors file")
+	}
+	if dim := int(binary.LittleEndian.Uint32(header[len(indexHeader):])); dim != x.dim {
+		return 0, fmt.Errorf("vectors of %d numbers, the model makes %d", dim, x.dim)
+	}
+	end := int64(len(header))
+	record := make([]byte, x.recordSize())
+	for {
+		if _, err := io.ReadFull(r, record); err != nil {
+			return end, nil // the end, or a record cut short
+		}
+		x.put(hex.EncodeToString(record[:32]), decodeFloats(record[32:]))
+		end += int64(len(record))
+	}
+}
+
+func (x *Index) recordSize() int { return 32 + 4*x.dim }
+
+// put keeps vector in memory; a sha256 that comes again has its vector replaced.
+func (x *Index) put(sha string, vector []float32) {
+	if i, ok := x.row[sha]; ok {
+		copy(x.vectors[i*x.dim:], vector)
+		return
+	}
+	x.row[sha] = len(x.shas)
+	x.shas = append(x.shas, sha)
+	x.vectors = append(x.vectors, vector...)
+}
+
+// Has reports whether sha has a vector.
+func (x *Index) Has(sha string) bool {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	_, ok := x.row[sha]
+	return ok
+}
+
+// Len is how many files have a vector.
+func (x *Index) Len() int {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return len(x.shas)
+}
+
+// Add saves the vector of the file sha (of length 1, from the index's model).
+func (x *Index) Add(sha string, vector []float32) error {
+	if len(vector) != x.dim {
+		return fmt.Errorf("a vector of %d numbers, the index keeps %d", len(vector), x.dim)
+	}
+	raw, err := hex.DecodeString(sha)
+	if err != nil || len(raw) != 32 {
+		return fmt.Errorf("%q is not a sha256", sha)
+	}
+	record := make([]byte, 32, x.recordSize())
+	copy(record, raw)
+	for _, v := range vector {
+		record = binary.LittleEndian.AppendUint32(record, math.Float32bits(v))
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if _, err := x.file.Write(record); err != nil {
+		return err
+	}
+	x.put(sha, vector)
+	return nil
+}
+
+// Close closes the file; the index can't be added to after.
+func (x *Index) Close() error {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.file.Close()
+}
+
+// Hit is a file a search found, with how close its vector is to the text's: the cosine similarity, -1 to 1.
+// SigLIP's are small: a good match is often 0.1 to 0.2.
+type Hit struct {
+	Sha256 string
+	Score  float32
+}
+
+// Search returns the limit files closest to query (a vector of length 1), best first, of those keep accepts.
+func (x *Index) Search(query []float32, limit int, keep func(sha string) bool) []Hit {
+	if len(query) != x.dim || limit < 1 {
+		return nil
+	}
+	x.mu.RLock()
+	hits := make([]Hit, 0, len(x.shas))
+	for i, sha := range x.shas {
+		var score float32
+		for j, v := range x.vectors[i*x.dim : (i+1)*x.dim] {
+			score += v * query[j]
+		}
+		hits = append(hits, Hit{sha, score})
+	}
+	x.mu.RUnlock()
+	slices.SortFunc(hits, func(a, b Hit) int { return cmp.Compare(b.Score, a.Score) })
+	kept := hits[:0]
+	for _, h := range hits {
+		if len(kept) == limit {
+			break
+		}
+		if keep(h.Sha256) {
+			kept = append(kept, h)
+		}
+	}
+	return kept
+}
+
+func decodeFloats(b []byte) []float32 {
+	v := make([]float32, len(b)/4)
+	for i := range v {
+		v[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[4*i:]))
+	}
+	return v
+}
