@@ -424,3 +424,11 @@ placing a file (a finished upload, an import), and rewriting a sidecar (folders,
 The server has no overall read or write timeout, because a piece on mobile data or a long video
 stream takes as long as it takes. Instead: headers must arrive within 10 s; GraphQL requests get
 30 s to arrive and 2 min to be answered; each upload piece gets 10 min to arrive.
+
+## Connections
+
+The server offers **HTTP/2** and still speaks HTTP/1.1 (`tlsConfigFor` in `serve.go`). A device keeps one
+connection, with one mTLS handshake (a signature in its secure hardware), and fetches previews, pages of the feed
+and upload pieces side by side on it; OkHttp and URLSession choose it by themselves. An upload piece may have
+3 MB in flight before the server acknowledges it (HTTP/2 flow control; Go's default of 1 MB would cap a piece at
+about 20 MB/s over a 50 ms link). Idle connections are closed after 2 minutes.

@@ -14,7 +14,7 @@ const (
 	maxChangesPerPage = 5000
 	maxSearchHits     = 1000
 	maxSearchDepth    = 10000 // offset + limit: how far down the matches a page may reach
-	maxSearchText     = 1000 // bytes; the model reads 64 tokens at most anyway
+	maxSearchText     = 1000  // bytes; the model reads 64 tokens at most anyway
 )
 
 // store is the data folder of the request's user.

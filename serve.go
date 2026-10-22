@@ -31,6 +31,11 @@ const (
 	queryWriteTimeout = 2 * time.Minute
 )
 
+// h2ReceiveWindow is how much of a request body (an upload piece) may be in flight over HTTP/2 before the server
+// acknowledges it. Go's default of 1 MB caps a piece at one megabyte per round trip, about 20 MB/s on a 50 ms
+// link; the most allowed is just under 4 MB.
+const h2ReceiveWindow = 3 << 20
+
 func serve(config auth.AppConfig) {
 	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
@@ -56,6 +61,7 @@ func serve(config auth.AppConfig) {
 		Addr:      ":" + config.Port,
 		Handler:   newMux(config, enrollment, library, previews, searcher),
 		TLSConfig: tlsConfig,
+		HTTP2:     &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow},
 		// No overall read or write timeout: uploads and video streams take as long as they take.
 		// The handlers set their own deadlines.
 		ReadHeaderTimeout: 10 * time.Second,
@@ -83,14 +89,23 @@ func createTLSConfig(config auth.AppConfig) (*tls.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load server TLS certificate: %w", err)
 	}
+	return tlsConfigFor(serverCert, clientCAPool), nil
+}
+
+// tlsConfigFor is the server's TLS setup, shared with the tests.
+func tlsConfigFor(serverCert tls.Certificate, clientCAs *x509.CertPool) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
 		// Devices that are enrolling have no certificate yet. A certificate that is sent is still
 		// verified against the client CA; identify and auth.RequireUserUnlessPublic decide access.
 		ClientAuth: tls.VerifyClientCertIfGiven,
-		ClientCAs:  clientCAPool,
+		ClientCAs:  clientCAs,
 		MinVersion: tls.VersionTLS12,
-	}, nil
+		// Offer HTTP/2: a device then keeps one connection, with one mTLS handshake (a signature in its secure
+		// hardware), and fetches previews, feed pages and upload pieces side by side on it. http.Server sets h2 up
+		// only when it is named here, since the listener is made from this config (Serve, not ServeTLS).
+		NextProtos: []string{"h2", "http/1.1"},
+	}
 }
 
 // openEnrollment loads the client CA's key (which signs enrolled devices) and the device registry.

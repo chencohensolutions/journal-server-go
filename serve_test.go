@@ -102,11 +102,8 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		t.Cleanup(searcher.Close)
 	}
 	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher))
-	server.TLS = &tls.Config{
-		ClientAuth:   tls.VerifyClientCertIfGiven,
-		ClientCAs:    pool,
-		Certificates: []tls.Certificate{{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}},
-	}
+	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
+	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
@@ -118,7 +115,8 @@ func (e *testEnv) client(cert *tls.Certificate) *http.Client {
 	if cert != nil {
 		tlsConfig.Certificates = []tls.Certificate{*cert}
 	}
-	return &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig}}
+	// Over HTTP/2, as OkHttp and URLSession connect; a custom TLS config turns it off unless asked for.
+	return &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig, ForceAttemptHTTP2: true}}
 }
 
 type gqlResponse struct {
@@ -292,6 +290,29 @@ func TestAdminListenerMustBeLoopback(t *testing.T) {
 	} {
 		if err := requireLoopback(addr); (err == nil) != ok {
 			t.Errorf("requireLoopback(%q) = %v", addr, err)
+		}
+	}
+}
+
+func TestDevicesSpeakHTTP2AndHTTP1(t *testing.T) {
+	env := newTestEnv(t)
+	h2 := env.enrolledClient(t)
+	// Its own TLS config: the HTTP/2 transport writes "h2" into the one it is given.
+	h1Config := h2.Transport.(*http.Transport).TLSClientConfig.Clone()
+	h1Config.NextProtos = nil
+	h1 := &http.Client{Transport: &http.Transport{TLSClientConfig: h1Config}}
+	for _, c := range []struct {
+		client *http.Client
+		proto  string
+	}{{h2, "HTTP/2.0"}, {h1, "HTTP/1.1"}} {
+		body, _ := json.Marshal(map[string]any{"query": "{ storageUsage { bytes } }"})
+		resp, err := c.client.Post(env.server.URL+"/query", "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Proto != c.proto {
+			t.Fatalf("storageUsage over %s: %d %s", c.proto, resp.StatusCode, resp.Proto)
 		}
 	}
 }
