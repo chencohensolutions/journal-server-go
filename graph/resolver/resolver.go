@@ -19,4 +19,11 @@ type Resolver struct {
 	Search *search.Service
 	// Face search; nil when it is off.
 	Faces *faces.Service
+	// Previews and posters, for serverInfo to say whether they can be made.
+	Previews *media.Previews
+	// The server's build, shown by serverInfo.
+	Version string
 }
+
+// APIVersion is serverInfo.api: raised when a change needs newer apps.
+const APIVersion = 1

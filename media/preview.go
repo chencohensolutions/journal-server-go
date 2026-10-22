@@ -55,6 +55,12 @@ func NewPreviews(vips, vipsheader string) *Previews {
 	return &Previews{vips: vips, vipsheader: vipsheader, slots: make(chan struct{}, max(1, runtime.NumCPU()/2))}
 }
 
+// Available reports whether previews can be made (libvips was found).
+func (p *Previews) Available() bool { return p.vips != "" }
+
+// PostersAvailable reports whether video posters can be taken (ffmpeg was found).
+func (p *Previews) PostersAvailable() bool { return p.ffmpeg != "" }
+
 func (s *Store) previewDir(sha string) string {
 	return filepath.Join(s.root, ".cache", "previews", sha[:2], sha)
 }

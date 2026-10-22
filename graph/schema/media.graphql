@@ -143,7 +143,8 @@ extend type Mutation {
 
 # --- Change feed --------------------------------------------------------------
 # A device keeps the cursor of the last page it applied and asks for what changed since. Only media so far;
-# stories and notes will come as FILE changes.
+# stories and notes will come as FILE changes. A cursor is never wrong to send: one the server can't read starts
+# the feed again.
 
 enum ChangeKind {
   MEDIA

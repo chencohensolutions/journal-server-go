@@ -2,7 +2,6 @@ package resolver
 
 import (
 	"cmp"
-	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -19,13 +18,13 @@ func page(limit, offset *int) (n, skip int, err error) {
 		n = *limit
 	}
 	if n < 1 || n > maxSearchHits {
-		return 0, 0, fmt.Errorf("limit must be 1–%d", maxSearchHits)
+		return 0, 0, coded(CodeInvalidArgument, "limit must be 1–%d", maxSearchHits)
 	}
 	if offset != nil {
 		skip = *offset
 	}
 	if skip < 0 || skip+n > maxSearchDepth {
-		return 0, 0, fmt.Errorf("offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
+		return 0, 0, coded(CodeInvalidArgument, "offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
 	}
 	return n, skip, nil
 }
@@ -64,7 +63,7 @@ type searchFilter struct {
 func newSearchFilter(years []int, area *model.GeoAreaInput) (searchFilter, error) {
 	f := searchFilter{area: area}
 	if len(years) > 500 {
-		return f, fmt.Errorf("years: at most 500")
+		return f, coded(CodeInvalidArgument, "years: at most 500")
 	}
 	if len(years) > 0 {
 		f.years = map[int]bool{}
@@ -75,11 +74,11 @@ func newSearchFilter(years []int, area *model.GeoAreaInput) (searchFilter, error
 	if a := area; a != nil {
 		for _, v := range []float64{a.South, a.North, a.West, a.East} {
 			if math.IsNaN(v) {
-				return f, fmt.Errorf("area: not a number")
+				return f, coded(CodeInvalidArgument, "area: not a number")
 			}
 		}
 		if a.South < -90 || a.North > 90 || a.South > a.North || a.West < -180 || a.West > 180 || a.East < -180 || a.East > 180 {
-			return f, fmt.Errorf("area: south ≤ north within ±90, west and east within ±180")
+			return f, coded(CodeInvalidArgument, "area: south ≤ north within ±90, west and east within ±180")
 		}
 	}
 	return f, nil

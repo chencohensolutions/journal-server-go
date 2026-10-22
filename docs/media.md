@@ -112,7 +112,8 @@ PUT … the last piece                          ───▶   checks the sha256
 |---|---|---|
 | `200`, `Upload-Offset: n` | Piece stored, more expected | Send the piece starting at `n` |
 | `201`, `Upload-Offset: size` | The file is stored. Also returned when a piece is repeated after that (a lost response). | Done |
-| `400` | Bad `Content-Range`, `Content-Length` doesn't match it, or the piece ended early | Fix it, or resend the piece |
+| `400`, `Upload-Offset: n` | The piece ended early; what arrived is kept | Continue from `n` |
+| `400` without `Upload-Offset` | Bad `Content-Range`, or `Content-Length` doesn't match it | Fix it (a client bug) |
 | `404` | No upload started for this sha256, or it expired | `startUpload` again |
 | `409` | The bytes don't have the declared sha256; the upload is deleted | Hash the file again and start over (it may have been edited meanwhile) |
 | `413` | Piece larger than 64 MB | Send smaller pieces |
@@ -120,8 +121,9 @@ PUT … the last piece                          ───▶   checks the sha256
 
 - **Resuming:** `HEAD /upload/{sha256}` returns `Upload-Offset` (and `Upload-Complete`). `startUpload`
   again also returns the offset. Either works after a dropped connection or a server restart.
-- **Pieces:** the server asks for 16 MB (`chunkSize`) and accepts up to 64 MB. A piece that breaks off
-  is dropped whole, so the offset is always at the end of a whole piece.
+- **Pieces:** the server asks for 16 MB (`chunkSize`) and accepts up to 64 MB. The bytes of a piece that breaks
+  off are kept (they arrive in order, and the whole file is checked at the end), so the next piece starts where they
+  ended; pieces needn't line up with anything.
 - **Two devices, one file:** each sha256 is written by one request at a time, and the second device's
   `startUpload` reports `MediaExists` once the first has finished.
 - **Expiry:** an unfinished upload is deleted 7 days after its last `startUpload` (checked hourly).
@@ -199,17 +201,26 @@ All of these need a client certificate, like everything except enrollment
 
 ## Change feed
 
-`query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA, path: "media/<sha256>",
-deleted, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many changes come after the
-page, for a progress count). A new device starts without `since` and calls
-again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed
-since (an empty page returns the same cursor). A file changes when it is uploaded, and again when a scan writes its
-answer into the sidecar (see [Nudity scan](#nudity-scan)), its source is corrected
-(see [Fixing sources](#fixing-sources)) or it is marked private or unmarked (see [Private files](#private-files)): it
-then comes again, whole. To a device the server keeps from private files, a private file comes as `deleted`, and so does a file in one
-of the user's [hidden collections](#hidden-collections) to every device. The cursor is opaque (today
-the time of the last change and sha256 of the last original in the page), so stories and notes can join the feed later
-without changing clients. Pages are at most 5000; responses to `/query` are gzipped when the client accepts it.
+`query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA,
+path: "media/<sha256>", deleted, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many
+changes come after the page, for a progress count). A new device starts without `since` and calls again with each
+page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed since (an empty page
+returns the same cursor). A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
+(see [Nudity scan](#nudity-scan)), its source is corrected (see [Fixing sources](#fixing-sources)) or it is marked
+private or unmarked (see [Private files](#private-files)): it then comes again, whole. To a device the server keeps
+from private files, a private file comes as `deleted`, and so does a file in one of the user's
+[hidden collections](#hidden-collections) to every device. Pages are at most 5000; responses to `/query` are gzipped
+when the client accepts it.
+
+- **The cursor** is opaque. It carries where the device is in the feed (the time of the last change and sha256 of
+  the last original in the page) and the view it was given out for: whether private files were withheld, and what
+  was hidden. Stories and notes can join the feed later without changing clients. A cursor is never wrong to send:
+  one the server can't read (a format from another server, or damaged) starts the feed again from the beginning,
+  with hidden files as `deleted`, since what the device holds is unknown.
+- **When the view changes** (the device's private setting, or the user's hidden collections), the next sync gets
+  only the files whose visibility changed: the ones now hidden as `deleted`, the ones shown again whole, in pages
+  (`remaining` counts them), and then the feed goes on where it was. Everything else stays as the device has it. If
+  the view changes again before that change-over is read to the end, the feed starts again from the beginning.
 
 ## Nudity scan
 
@@ -254,8 +265,8 @@ from them entirely, for example a tablet others use: `journal-server private <se
 `journal-server devices` shows which are withheld). This is `withhold_private` in `devices.json`. Such a device:
 
 - doesn't get private files in its change feed. A file marked private after the device had it comes as `deleted`, so
-  the app drops it. Changing the setting starts the device's feed again on its next sync (its cursor says which way it
-  was given), so it takes back, or gets again, the files it already had.
+  the app drops it. Changing the setting makes the device's next sync take back, or get again, exactly the private
+  files it already had (its cursor says which way it was given; see [Change feed](#change-feed)).
 - gets `null` from `media(sha256:)`, and `404` from `/media/{sha256}` and its `/preview`, as if the server didn't
   have the file. Edits and paired files it can't see are left out of `versions`, `paired`, `versionOf` and
   `pairedWith`.
@@ -289,8 +300,8 @@ user's, not a device's, and is kept at the data folder's root, so it moves with 
   their cached previews and originals of it.
 - **Nothing is deleted or rewritten**: originals and sidecars stay as they are. Showing a collection again brings
   its files back.
-- Changing the choice starts every device's feed again on its next sync (the cursor carries a short key of what
-  was hidden, `Hidden.Key`), so they drop what is now hidden and get back what is shown again.
+- Changing the choice makes every device's next sync drop the files now hidden and get back those shown again, and
+  nothing else (the cursor carries what was hidden when it was given out; see [Change feed](#change-feed)).
 - `missingMedia`, `startUpload`, uploads and `/verify` still see hidden files, so a phone never uploads one again
   and can still free its own copy. The phone's own copies in its gallery are not hidden by the server.
 
@@ -435,6 +446,28 @@ placing a file (a finished upload, an import), and rewriting a sidecar (folders,
 The server has no overall read or write timeout, because a piece on mobile data or a long video
 stream takes as long as it takes. Instead: headers must arrive within 10 s; GraphQL requests get
 30 s to arrive and 2 min to be answered; each upload piece gets 10 min to arrive.
+
+## What the server can do
+
+`query serverInfo { api version search previews posters }` says what works on this server, so an app shows only
+that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed), the
+server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
+(1 today). An app asks once when it connects, rather than learning from errors.
+
+## Errors
+
+A GraphQL error a device should act on carries a code in `extensions.code`; the message is for people. Other errors
+(a client bug, a server problem) have no code, and an app shows them as a server problem.
+
+| Code | When | What the device does |
+|---|---|---|
+| `UNAUTHORIZED` | No client certificate for a field that needs one | Register again |
+| `NO_DATA_FOLDER` | The user has no `data_folder` in `config.json` | Tell the user; the server's owner must set it |
+| `INVALID_ARGUMENT` | An argument is over its limit (hashes, limit, offset, wait, years) or malformed | A client bug: fix the app |
+| `SEARCH_OFF` | Text search is off on this server (`serverInfo.search` says so beforehand) | Hide search |
+| `WITHHELD` | This device is kept from private files, so it can't unmark them | Tell the user |
+
+The media routes answer with HTTP status codes instead, listed with each route above.
 
 ## Connections
 

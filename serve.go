@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -80,6 +81,40 @@ func serve(config auth.AppConfig) {
 	log.Fatal(server.Serve(tls.NewListener(&loggingListener{Listener: ln}, tlsConfig)))
 }
 
+// serverVersion is the build's commit and time from the Go build info ("3f2a9c1 2026-10-23", "-dirty" with
+// uncommitted changes), or "dev" when built without version control (go run from a copy, for example).
+func serverVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	var revision, at string
+	dirty := false
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.time":
+			at = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if revision == "" {
+		return "dev"
+	}
+	if len(revision) > 7 {
+		revision = revision[:7]
+	}
+	if len(at) >= 10 {
+		revision += " " + at[:10]
+	}
+	if dirty {
+		revision += " dirty"
+	}
+	return revision
+}
+
 // createTLSConfig loads the server certificate and trusts the client CA for client certificates.
 func createTLSConfig(config auth.AppConfig) (*tls.Config, error) {
 	caBytes, err := os.ReadFile(config.ClientCA)
@@ -144,7 +179,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux := http.NewServeMux()
 	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, searcher, facer)))))
+		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, searcher, facer)))))
 	// Search and faces read a finished upload right away.
 	var wake []func()
 	if searcher != nil {
@@ -162,9 +197,9 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	return mux
 }
 
-func newGraphQLServer(enrollment *enroll.Service, library *media.Library, searcher *search.Service, facer *faces.Service) *handler.Server {
+func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previews *media.Previews, searcher *search.Service, facer *faces.Service) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers:  &resolver.Resolver{Enrollment: enrollment, Library: library, Search: searcher, Faces: facer},
+		Resolvers:  &resolver.Resolver{Enrollment: enrollment, Library: library, Search: searcher, Faces: facer, Previews: previews, Version: serverVersion()},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})

@@ -1,6 +1,7 @@
 package media
 
 import (
+	"encoding/base64"
 	"fmt"
 	"testing"
 	"time"
@@ -53,16 +54,20 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 	}
 	view := f.store.ViewFor(false)
 
-	// A device that had them gets everything again, to send the hidden ones as deleted (the edit with its photo).
-	items, _, _, _ := f.store.Changes(cursor, 10, view)
+	// A device that had them gets only the hidden ones again, to send as deleted (the edit with its photo).
+	items, hiddenCursor, _, _ := f.store.Changes(cursor, 10, view)
 	hidden := 0
 	for _, item := range items {
 		if f.store.Hides(view, item) {
 			hidden++
 		}
 	}
-	if len(items) != 3 || hidden != 2 {
+	if len(items) != 2 || hidden != 2 {
 		t.Fatalf("after hiding: %d items, %d hidden", len(items), hidden)
+	}
+	// And then goes on where it was.
+	if items, _, _, _ := f.store.Changes(hiddenCursor, 10, view); len(items) != 0 {
+		t.Fatalf("after the change-over: %v", items)
 	}
 	// A feed from the start leaves them out; counts too.
 	items, shownCursor, _, _ := f.store.Changes("", 10, view)
@@ -91,14 +96,70 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 		t.Fatalf("reopened: %+v", h)
 	}
 
-	// Shown again: the feed starts over, and they come back.
+	// Shown again: they come back, and only they.
 	if err := f.store.SetHidden(Hidden{}); err != nil {
 		t.Fatal(err)
 	}
 	view = f.store.ViewFor(false)
 	items, _, _, _ = f.store.Changes(shownCursor, 10, view)
-	if len(items) != 3 || f.store.Hides(view, items[0]) || f.store.Hides(view, items[1]) || f.store.Hides(view, items[2]) {
+	if len(items) != 2 || items[0].Sha256() != bumble.Sha256() || f.store.Hides(view, items[1]) {
 		t.Fatalf("shown again: %v", items)
+	}
+}
+
+// A change-over is read in pages, then the feed goes on where it was; a view that changes again meanwhile, or a
+// cursor from before views were carried, brings everything again.
+func TestViewChangeOverIsPagedAndGoesOn(t *testing.T) {
+	f := newFixture(t)
+	var shots []Item
+	for i := range 3 {
+		f.now = f.now.Add(time.Second)
+		shots = append(shots, f.upload([]byte(fmt.Sprint("shot", i)), fmt.Sprintf("Screenshot_2024030%d_030715_Bumble.jpg", i+1)))
+	}
+	f.now = f.now.Add(time.Second)
+	photo := f.upload([]byte("photo"), "20251101_110819.heic")
+	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false))
+
+	f.now = f.now.Add(time.Hour)
+	if err := f.store.SetHidden(Hidden{ScreenshotApps: []string{"Bumble"}}); err != nil {
+		t.Fatal(err)
+	}
+	view := f.store.ViewFor(false)
+	items, next, remaining, _ := f.store.Changes(cursor, 2, view)
+	if len(items) != 2 || remaining != 1 || items[0].Sha256() != shots[0].Sha256() || items[1].Sha256() != shots[1].Sha256() {
+		t.Fatalf("first page of the change-over: %v, %d remaining", items, remaining)
+	}
+	// Uploaded during the change-over: comes after it, in the feed's own order.
+	f.now = f.now.Add(time.Second)
+	later := f.upload([]byte("later"), "20251102_110819.heic")
+	items, next, remaining, _ = f.store.Changes(next, 2, view)
+	if len(items) != 2 || remaining != 0 || items[0].Sha256() != shots[2].Sha256() || items[1].Sha256() != later.Sha256() {
+		t.Fatalf("second page: %v, %d remaining", items, remaining)
+	}
+	if items, _, _, _ := f.store.Changes(next, 2, view); len(items) != 0 {
+		t.Fatalf("after the change-over: %v", items)
+	}
+
+	// The view changes again while a change-over is under way: everything again, since what the device has is unknown.
+	_, cursor, _, _ = f.store.Changes("", 10, f.store.ViewFor(false))
+	if err := f.store.SetHidden(Hidden{}); err != nil {
+		t.Fatal(err)
+	}
+	_, midway, _, _ := f.store.Changes(cursor, 1, f.store.ViewFor(false))
+	if err := f.store.SetHidden(Hidden{ScreenshotApps: []string{"Bumble"}, ScreenshotsWithoutApp: true}); err != nil {
+		t.Fatal(err)
+	}
+	if items, _, _, _ := f.store.Changes(midway, 10, f.store.ViewFor(false)); len(items) != 5 {
+		t.Fatalf("view changed twice: %d items", len(items))
+	}
+
+	// A cursor from before views were carried in it still works, and starts the feed again when the view differs.
+	old := base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "m1:%d:%s", position(photo).changedAt, photo.Sha256()))
+	if items, _, _, _ := f.store.Changes(old, 10, View{}); len(items) != 1 || items[0].Sha256() != later.Sha256() {
+		t.Fatalf("old cursor: %v", items)
+	}
+	if items, _, _, _ := f.store.Changes(old, 10, f.store.ViewFor(false)); len(items) != 5 {
+		t.Fatalf("old cursor for another view: %d items", len(items))
 	}
 }
 

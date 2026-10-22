@@ -143,7 +143,10 @@ func (e *testEnv) client(cert *tls.Certificate) *http.Client {
 type gqlResponse struct {
 	Status int
 	Data   map[string]json.RawMessage
-	Errors []struct{ Message string }
+	Errors []struct {
+		Message    string
+		Extensions map[string]any
+	}
 }
 
 func (e *testEnv) graphql(t *testing.T, client *http.Client, query string, variables map[string]any) gqlResponse {

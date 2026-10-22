@@ -151,15 +151,15 @@ func TestUploadResumesAfterRestartAndRejectsWrongOffset(t *testing.T) {
 	if offset, complete, err := f.store.Offset(shaOf(data)); err != nil || offset != 200 || complete {
 		t.Fatalf("offset = %d %v %v", offset, complete, err)
 	}
-	// A piece that ends early is dropped whole.
+	// A piece that ends early keeps what arrived.
 	short := bytes.NewReader(data[200:250])
-	if _, err := f.store.WriteChunk(shaOf(data), 200, int64(len(data)), short, 100); !errors.Is(err, ErrIncompleteChunk) {
-		t.Fatalf("short piece: %v", err)
+	if result, err := f.store.WriteChunk(shaOf(data), 200, int64(len(data)), short, 100); !errors.Is(err, ErrIncompleteChunk) || result.Offset != 250 {
+		t.Fatalf("short piece: %+v %v", result, err)
 	}
-	if offset, _, _ := f.store.Offset(shaOf(data)); offset != 200 {
+	if offset, _, _ := f.store.Offset(shaOf(data)); offset != 250 {
 		t.Fatalf("offset after short piece = %d", offset)
 	}
-	if result, err := f.chunk(data, 200, int64(len(data))); err != nil || result.Item == nil {
+	if result, err := f.chunk(data, 250, int64(len(data))); err != nil || result.Item == nil {
 		t.Fatalf("finish = %+v %v", result, err)
 	}
 }
@@ -325,8 +325,26 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 1 || items[0].Sha256() != latest.Sha256() {
 		t.Fatalf("new upload: %v", items)
 	}
-	if _, _, _, err := f.store.Changes("garbage", 10, View{}); !errors.Is(err, ErrBadCursor) {
-		t.Fatalf("bad cursor: %v", err)
+	// A cursor the server can't read starts the feed again: the device may hold anything.
+	if items, next, _, err := f.store.Changes("garbage", 10, View{}); err != nil || len(items) != 6 || next == "" {
+		t.Fatalf("bad cursor: %d items, %q, %v", len(items), next, err)
+	}
+}
+
+// A piece that ends early keeps what arrived, and the next piece goes on from there.
+func TestTornPieceKeepsWhatArrived(t *testing.T) {
+	f := newFixture(t)
+	data := []byte("0123456789")
+	f.start(photoRequest(data, "IMG.jpg"))
+	result, err := f.store.WriteChunk(shaOf(data), 0, 10, bytes.NewReader(data[:4]), 6)
+	if !errors.Is(err, ErrIncompleteChunk) || result.Offset != 4 {
+		t.Fatalf("torn piece: %+v %v", result, err)
+	}
+	if offset, complete, err := f.store.Offset(shaOf(data)); offset != 4 || complete || err != nil {
+		t.Fatalf("offset after a torn piece: %d %v %v", offset, complete, err)
+	}
+	if result, err := f.chunk(data, 4, 10); err != nil || result.Item == nil {
+		t.Fatalf("going on: %+v %v", result, err)
 	}
 }
 

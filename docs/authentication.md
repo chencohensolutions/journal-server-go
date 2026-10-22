@@ -28,7 +28,7 @@ journal-server enroll-code hen
 
 | Endpoint | Without client certificate | With a valid client certificate |
 |---|---|---|
-| `POST /query` (GraphQL) | Only root fields marked `@public` (`enrollmentPreview`, `enrollDevice`). Everything else, including introspection, returns `client certificate required for <field>`. | Every field |
+| `POST /query` (GraphQL) | Only root fields marked `@public` (`enrollmentPreview`, `enrollDevice`). Everything else, including introspection, returns `client certificate required for <field>` with `extensions.code` `UNAUTHORIZED`. | Every field |
 | `PUT /upload/…`, `GET /media/…` | `401` | That user's own data folder (see media.md) |
 | `GET /` (playground) | Allowed (it can only call `@public` fields without a certificate) | Allowed |
 | Admin API (`admin_addr`) | Loopback only, needs the admin token | n/a |

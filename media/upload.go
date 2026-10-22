@@ -209,7 +209,8 @@ func (s *Store) Offset(sha string) (offset int64, complete bool, err error) {
 
 // WriteChunk appends length bytes from body at start, which must be where the received bytes end.
 // After the last piece the whole file is checked against its sha256 and moved into media/.
-// Repeating a piece after the file is complete (a lost response) reports it complete again.
+// Repeating a piece after the file is complete (a lost response) reports it complete again. A piece that ends
+// early (ErrIncompleteChunk) keeps what arrived; the result's Offset says where the next piece starts.
 func (s *Store) WriteChunk(sha string, start, total int64, body io.Reader, length int64) (ChunkResult, error) {
 	unlock := s.uploadLocks.Lock(sha)
 	defer unlock()
@@ -245,11 +246,12 @@ func (s *Store) WriteChunk(sha string, start, total int64, body io.Reader, lengt
 		partial.Close()
 		return ChunkResult{}, err
 	}
-	if _, err := io.CopyN(partial, body, length); err != nil {
-		// Keep only whole pieces, so the next try starts at a known offset.
-		partial.Truncate(start)
+	if n, err := io.CopyN(partial, body, length); err != nil {
+		// The bytes that arrived are kept (they are in order, and the whole file is checked at the end), so a piece
+		// that breaks off on mobile data isn't sent again from its start; the result says where to go on from.
+		partial.Sync()
 		partial.Close()
-		return ChunkResult{}, fmt.Errorf("%w: %v", ErrIncompleteChunk, err)
+		return ChunkResult{Offset: start + n}, fmt.Errorf("%w: %v", ErrIncompleteChunk, err)
 	}
 	if err := partial.Sync(); err != nil {
 		partial.Close()
