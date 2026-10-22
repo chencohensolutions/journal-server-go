@@ -75,6 +75,14 @@ func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
 func (EnrollmentRejected) IsEnrollDeviceResult() {}
 
+// A box on the map, in degrees. When east is less than west the box crosses the 180° meridian.
+type GeoAreaInput struct {
+	South float64 `json:"south"`
+	West  float64 `json:"west"`
+	North float64 `json:"north"`
+	East  float64 `json:"east"`
+}
+
 type GeoPoint struct {
 	Lat float64 `json:"lat"`
 	Lon float64 `json:"lon"`

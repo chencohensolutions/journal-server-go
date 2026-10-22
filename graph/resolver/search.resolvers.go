@@ -16,7 +16,7 @@ import (
 )
 
 // SearchMedia is the resolver for the searchMedia field.
-func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int) (*model.MediaSearch, error) {
+func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error) {
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
@@ -35,10 +35,14 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 	if text == "" || len(text) > maxSearchText {
 		return nil, fmt.Errorf("text must be 1–%d bytes", maxSearchText)
 	}
+	filter, err := newSearchFilter(years, area)
+	if err != nil {
+		return nil, err
+	}
 	user := auth.FromContext(ctx).Username
 	hits, err := r.Search.Search(user, text, n, func(sha string) bool {
 		item, ok := v.store.Get(sha)
-		return ok && !v.hides(item)
+		return ok && !v.hides(item) && filter.keeps(item)
 	})
 	if err != nil {
 		return nil, err

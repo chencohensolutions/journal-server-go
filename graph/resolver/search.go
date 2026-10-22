@@ -1,0 +1,66 @@
+package resolver
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/journal/server-go/graph/model"
+	"github.com/journal/server-go/media"
+)
+
+// searchFilter is searchMedia's years and area: which files a search may return. Zero value: all.
+type searchFilter struct {
+	years map[int]bool
+	area  *model.GeoAreaInput
+}
+
+func newSearchFilter(years []int, area *model.GeoAreaInput) (searchFilter, error) {
+	f := searchFilter{area: area}
+	if len(years) > 500 {
+		return f, fmt.Errorf("years: at most 500")
+	}
+	if len(years) > 0 {
+		f.years = map[int]bool{}
+		for _, y := range years {
+			f.years[y] = true
+		}
+	}
+	if a := area; a != nil {
+		for _, v := range []float64{a.South, a.North, a.West, a.East} {
+			if math.IsNaN(v) {
+				return f, fmt.Errorf("area: not a number")
+			}
+		}
+		if a.South < -90 || a.North > 90 || a.South > a.North || a.West < -180 || a.West > 180 || a.East < -180 || a.East > 180 {
+			return f, fmt.Errorf("area: south ≤ north within ±90, west and east within ±180")
+		}
+	}
+	return f, nil
+}
+
+// keeps reports whether item passes the filter. Its year is where it was taken (the offset its time was sent with),
+// or the year it was uploaded when that isn't known, as the apps date it.
+func (f searchFilter) keeps(item media.Item) bool {
+	facts := item.Sidecar.Facts
+	if f.years != nil {
+		year := facts.UploadedAt.Year()
+		if facts.TakenAt != nil {
+			year = facts.TakenAt.Year()
+		}
+		if !f.years[year] {
+			return false
+		}
+	}
+	if a := f.area; a != nil {
+		at := facts.Location
+		if at == nil || at.Lat < a.South || at.Lat > a.North {
+			return false
+		}
+		if a.West <= a.East {
+			return at.Lon >= a.West && at.Lon <= a.East
+		}
+		// Across the 180° meridian.
+		return at.Lon >= a.West || at.Lon <= a.East
+	}
+	return true
+}

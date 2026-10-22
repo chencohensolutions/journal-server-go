@@ -118,7 +118,7 @@ type ComplexityRoot struct {
 		EnrollmentPreview func(childComplexity int, code string) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
-		SearchMedia       func(childComplexity int, text string, limit *int) int
+		SearchMedia       func(childComplexity int, text string, limit *int, years []int, area *model.GeoAreaInput) int
 		StorageUsage      func(childComplexity int) int
 	}
 
@@ -158,7 +158,7 @@ type QueryResolver interface {
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
 	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
-	SearchMedia(ctx context.Context, text string, limit *int) (*model.MediaSearch, error)
+	SearchMedia(ctx context.Context, text string, limit *int, years []int, area *model.GeoAreaInput) (*model.MediaSearch, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -525,7 +525,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(string), args["limit"].(*int)), true
+		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(string), args["limit"].(*int), args["years"].([]int), args["area"].(*model.GeoAreaInput)), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -618,6 +618,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputEnrollDeviceInput,
+		ec.unmarshalInputGeoAreaInput,
 		ec.unmarshalInputGeoPointInput,
 		ec.unmarshalInputStartUploadInput,
 	)
@@ -961,12 +962,25 @@ type MediaSearch {
   model: String!
 }
 
+"""
+A box on the map, in degrees. When east is less than west the box crosses the 180° meridian.
+"""
+input GeoAreaInput {
+  south: Float!
+  west: Float!
+  north: Float!
+  east: Float!
+}
+
 extend type Query {
   """
   The photos and videos that text describes best ("a dog on the beach at sunset"), best first. At most 1000.
-  Fails when text search is off on the server.
+  With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
+  uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
+  the best are picked, so a filtered search returns the best matches of that year or place. Fails when text search
+  is off on the server.
   """
-  searchMedia(text: String!, limit: Int = 100): MediaSearch!
+  searchMedia(text: String!, limit: Int = 100, years: [Int!], area: GeoAreaInput): MediaSearch!
 }
 `, BuiltIn: false},
 }
@@ -1361,6 +1375,22 @@ func (ec *executionContext) field_Query_searchMedia_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["limit"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "years",
+		func(ctx context.Context, v any) ([]int, error) {
+			return ec.unmarshalOInt2ᚕintᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["years"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "area",
+		func(ctx context.Context, v any) (*model.GeoAreaInput, error) {
+			return ec.unmarshalOGeoAreaInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐGeoAreaInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["area"] = arg3
 	return args, nil
 }
 
@@ -2815,7 +2845,7 @@ func (ec *executionContext) _Query_searchMedia(ctx context.Context, field graphq
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["text"].(string), fc.Args["limit"].(*int))
+			return ec.Resolvers.Query().SearchMedia(ctx, fc.Args["text"].(string), fc.Args["limit"].(*int), fc.Args["years"].([]int), fc.Args["area"].(*model.GeoAreaInput))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.MediaSearch) graphql.Marshaler {
@@ -4315,6 +4345,57 @@ func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context,
 				return it, err
 			}
 			it.KeyProtection = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputGeoAreaInput(ctx context.Context, obj any) (model.GeoAreaInput, error) {
+	var it model.GeoAreaInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"south", "west", "north", "east"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "south":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("south"))
+			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.South = data
+		case "west":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("west"))
+			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.West = data
+		case "north":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("north"))
+			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.North = data
+		case "east":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("east"))
+			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.East = data
 		}
 	}
 	return it, nil
@@ -6366,6 +6447,14 @@ func (ec *executionContext) marshalOFloat2ᚖfloat64(ctx context.Context, sel as
 	return graphql.WrapContextMarshaler(ctx, res)
 }
 
+func (ec *executionContext) unmarshalOGeoAreaInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐGeoAreaInput(ctx context.Context, v any) (*model.GeoAreaInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputGeoAreaInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalOGeoPoint2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐGeoPoint(ctx context.Context, sel ast.SelectionSet, v *model.GeoPoint) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -6379,6 +6468,42 @@ func (ec *executionContext) unmarshalOGeoPointInput2ᚖgithubᚗcomᚋjournalᚋ
 	}
 	res, err := ec.unmarshalInputGeoPointInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalOInt2ᚕintᚄ(ctx context.Context, v any) ([]int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]int, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNInt2int(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOInt2ᚕintᚄ(ctx context.Context, sel ast.SelectionSet, v []int) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNInt2int(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalOInt2ᚖint(ctx context.Context, v any) (*int, error) {

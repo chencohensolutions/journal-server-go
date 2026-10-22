@@ -16,7 +16,11 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   finishes, an import within 30 seconds. A file that can't be read is logged and tried again after the server restarts.
 - **Searching.** `searchMedia(text, limit)` lowercases the text, turns it into 64 tokens and runs the text half
   (about 50 ms), then compares it with every vector in memory (a few milliseconds for tens of thousands of files)
-  and returns the closest, best first. Files the device may not see (private files on a device set to withhold
+  and returns the closest, best first. With `years` and `area` (a box of latitudes and longitudes: the server has no
+  place names, so the app sends the box around a town's photos) only files of those years, or taken inside the
+  box, are considered, before the best are picked; a filtered search returns the best of that year or place, not the
+  overall best that happen to match. A file's year is where it was taken (its time's offset), or the year it was
+  uploaded when that isn't known, as the apps date it; files without a location never match an area. Files the device may not see (private files on a device set to withhold
   them) are left out. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
   that search is still catching up.
 - **Scores** are SigLIP's cosine similarities, which are small: a good match is often 0.1 to 0.2. Only the order

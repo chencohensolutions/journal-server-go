@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -12,16 +10,7 @@ import (
 // uploadPhoto uploads data in one piece from client and returns its sha256.
 func (e *testEnv) uploadPhoto(t *testing.T, client *http.Client, data []byte, name string) string {
 	t.Helper()
-	sum := sha256.Sum256(data)
-	sha := hex.EncodeToString(sum[:])
-	input := map[string]any{"sha256": sha, "size": len(data), "fileName": name, "mimeType": "image/jpeg", "kind": "PHOTO"}
-	if start := e.graphql(t, client, startUploadMutation, map[string]any{"input": input}); !strings.Contains(string(start.Data["startUpload"]), "UploadReady") {
-		t.Fatalf("startUpload = %s %+v", start.Data["startUpload"], start.Errors)
-	}
-	if resp := e.put(t, client, "/upload/"+sha, data, 0, len(data)); resp.StatusCode != http.StatusCreated {
-		t.Fatalf("upload %s: %d", name, resp.StatusCode)
-	}
-	return sha
+	return e.uploadPhotoWith(t, client, data, name, nil)
 }
 
 func TestPrivateFilesAreFlaggedOrWithheldPerDevice(t *testing.T) {
