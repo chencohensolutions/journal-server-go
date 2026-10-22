@@ -195,7 +195,8 @@ All of these need a client certificate, like everything except enrollment
 ## Change feed
 
 `query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA, path: "media/<sha256>",
-deleted, media }`, oldest change first, with a `cursor` and `hasMore`. A new device starts without `since` and calls
+deleted, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many changes come after the
+page, for a progress count). A new device starts without `since` and calls
 again with each page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed
 since (an empty page returns the same cursor). A file changes when it is uploaded, and again when a scan writes its
 answer into the sidecar (see [Nudity scan](#nudity-scan)), its source is corrected

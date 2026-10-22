@@ -153,7 +153,7 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 	if since != nil {
 		cursor = *since
 	}
-	items, next, hasMore, err := store.Changes(cursor, n, v.View)
+	items, next, remaining, err := store.Changes(cursor, n, v.View)
 	if err != nil {
 		return nil, err
 	}
@@ -167,5 +167,5 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 			changes[i].Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
 		}
 	}
-	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: hasMore}, nil
+	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: remaining > 0, Remaining: remaining}, nil
 }

@@ -46,9 +46,10 @@ type ComplexityRoot struct {
 	}
 
 	ChangePage struct {
-		Changes func(childComplexity int) int
-		Cursor  func(childComplexity int) int
-		HasMore func(childComplexity int) int
+		Changes   func(childComplexity int) int
+		Cursor    func(childComplexity int) int
+		HasMore   func(childComplexity int) int
+		Remaining func(childComplexity int) int
 	}
 
 	Collection struct {
@@ -237,6 +238,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ChangePage.HasMore(childComplexity), true
+	case "ChangePage.remaining":
+		if e.ComplexityRoot.ChangePage.Remaining == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ChangePage.Remaining(childComplexity), true
 
 	case "Collection.files":
 		if e.ComplexityRoot.Collection.Files == nil {
@@ -1001,6 +1008,8 @@ type ChangePage {
   "Pass to the next call. Store it only after applying this page."
   cursor: String!
   hasMore: Boolean!
+  "How many changes come after this page, so a device can show its progress through a long feed."
+  remaining: Int!
 }
 
 extend type Query {
@@ -1166,6 +1175,8 @@ func (ec *executionContext) childFields_ChangePage(ctx context.Context, field gr
 		return ec.fieldContext_ChangePage_cursor(ctx, field)
 	case "hasMore":
 		return ec.fieldContext_ChangePage_hasMore(ctx, field)
+	case "remaining":
+		return ec.fieldContext_ChangePage_remaining(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ChangePage", field.Name)
 }
@@ -1841,6 +1852,29 @@ func (ec *executionContext) _ChangePage_hasMore(ctx context.Context, field graph
 }
 func (ec *executionContext) fieldContext_ChangePage_hasMore(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ChangePage", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ChangePage_remaining(ctx context.Context, field graphql.CollectedField, obj *model.ChangePage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ChangePage_remaining(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Remaining, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ChangePage_remaining(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ChangePage", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _Collection_name(ctx context.Context, field graphql.CollectedField, obj *model.Collection) (ret graphql.Marshaler) {
@@ -5282,6 +5316,11 @@ func (ec *executionContext) _ChangePage(ctx context.Context, sel ast.SelectionSe
 			}
 		case "hasMore":
 			out.Values[i] = ec._ChangePage_hasMore(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "remaining":
+			out.Values[i] = ec._ChangePage_remaining(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

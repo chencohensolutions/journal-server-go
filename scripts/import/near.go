@@ -19,8 +19,10 @@ func (im *importer) hashDataFolder(ctx context.Context, jobs int) {
 	var all, missing []media.Item
 	for cursor, more := "", true; more; {
 		var page []media.Item
+		var remaining int
 		var err error
-		page, cursor, more, err = im.store.Changes(cursor, 5000, media.View{})
+		page, cursor, remaining, err = im.store.Changes(cursor, 5000, media.View{})
+		more = remaining > 0
 		check(err)
 		for _, item := range page {
 			if item.Sidecar.Facts.Kind == media.KindPhoto {

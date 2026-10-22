@@ -10,7 +10,7 @@ import (
 )
 
 // Changes returns up to limit originals changed after cursor ("" for all), oldest change first, with the cursor
-// to continue from. Originals never change, but their sidecars can get a scan's answer later (Sidecar.ChangedAt),
+// to continue from and how many changes come after this page (none: the feed is read to the end). Originals never change, but their sidecars can get a scan's answer later (Sidecar.ChangedAt),
 // so a file comes again once scanned; the cursor is opaque to clients, so the feed can later count edits to notes
 // and stories too.
 //
@@ -19,10 +19,10 @@ import (
 // has nothing to take back and leaves them out. The cursor remembers the view it was given out for (whether the
 // device was kept from private files, and what the user hid); one given out for another view starts the feed
 // again, so a device's files are sent or taken back when its setting or the user's hidden collections change.
-func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next string, hasMore bool, err error) {
+func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next string, remaining int, err error) {
 	after, key, err := decodeCursor(cursor)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", 0, err
 	}
 	if key != view.key() {
 		after = nil
@@ -39,7 +39,7 @@ func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next
 	s.mu.RUnlock()
 	sort.Slice(all, func(i, j int) bool { return position(all[i]).less(position(all[j])) })
 	if len(all) > limit {
-		all, hasMore = all[:limit], true
+		all, remaining = all[:limit], len(all)-limit
 	}
 	switch {
 	case len(all) > 0:
@@ -47,7 +47,7 @@ func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next
 	case after != nil:
 		next = after.encode(view.key())
 	}
-	return all, next, hasMore, nil
+	return all, next, remaining, nil
 }
 
 // feedPosition orders the feed: the time of the last change (upload or scan), then sha256 for files changed in

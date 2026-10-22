@@ -37,6 +37,8 @@ type ChangePage struct {
 	// Pass to the next call. Store it only after applying this page.
 	Cursor  string `json:"cursor"`
 	HasMore bool   `json:"hasMore"`
+	// How many changes come after this page, so a device can show its progress through a long feed.
+	Remaining int `json:"remaining"`
 }
 
 // One group of files: how many it has, hidden or not, and whether it is hidden.

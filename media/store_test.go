@@ -297,15 +297,18 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	var seen []string
 	cursor := ""
 	for {
-		items, next, more, err := f.store.Changes(cursor, 2, View{})
+		items, next, remaining, err := f.store.Changes(cursor, 2, View{})
 		if err != nil {
 			t.Fatal(err)
+		}
+		if want := len(uploaded) - len(seen) - len(items); remaining != want {
+			t.Fatalf("remaining %d, want %d", remaining, want)
 		}
 		for _, item := range items {
 			seen = append(seen, item.Sha256())
 		}
 		cursor = next
-		if !more {
+		if remaining == 0 {
 			break
 		}
 	}
@@ -314,8 +317,8 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	}
 
 	// Nothing new: the same cursor comes back. A new upload shows up after it.
-	if items, next, more, _ := f.store.Changes(cursor, 2, View{}); len(items) != 0 || next != cursor || more {
-		t.Fatalf("after the end: %v %q %v", items, next, more)
+	if items, next, remaining, _ := f.store.Changes(cursor, 2, View{}); len(items) != 0 || next != cursor || remaining != 0 {
+		t.Fatalf("after the end: %v %q %d", items, next, remaining)
 	}
 	f.now = f.now.Add(time.Second)
 	latest := f.upload([]byte("new"), "IMG.jpg")

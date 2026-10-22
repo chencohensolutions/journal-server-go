@@ -164,6 +164,8 @@ type ChangePage {
   "Pass to the next call. Store it only after applying this page."
   cursor: String!
   hasMore: Boolean!
+  "How many changes come after this page, so a device can show its progress through a long feed."
+  remaining: Int!
 }
 
 extend type Query {
