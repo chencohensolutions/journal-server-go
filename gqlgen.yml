@@ -16,3 +16,7 @@ models:
     model: github.com/journal/server-go/graph/model.Sha256
   Int64:
     model: github.com/99designs/gqlgen/graphql.Int64
+  Media:
+    fields:
+      faces:
+        resolver: true

@@ -1,6 +1,6 @@
 //go:build darwin || linux || freebsd || netbsd
 
-package search
+package onnx
 
 import (
 	"runtime"

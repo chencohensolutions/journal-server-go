@@ -44,11 +44,14 @@ type AppConfig struct {
 	// Folder of the SigLIP 2 model for text search, made by scripts/bundle-onnx; models/siglip2-base-patch16-256
 	// when empty. Search is off when the folder isn't there.
 	SearchModel string `json:"search_model"`
-	// Path of the ONNX Runtime library, which runs the search model; the one in ./onnxruntime (scripts/bundle-onnx)
+	// Folder of the face models (YuNet and SFace) for face search, made by scripts/bundle-onnx; models/yunet-sface
+	// when empty. Face search is off when the folder isn't there.
+	FaceModel string `json:"face_model"`
+	// Path of the ONNX Runtime library, which runs the search and face models; the one in ./onnxruntime (scripts/bundle-onnx)
 	// or Homebrew's when empty.
 	OnnxRuntime string `json:"onnxruntime"`
-	// CPU threads each half of the search model may use (default half the CPUs): reading new files takes this many
-	// while the server answers devices with the rest.
+	// CPU threads each half of the search model, and each face model, may use (default half the CPUs): reading new
+	// files takes this many while the server answers devices with the rest.
 	SearchThreads int          `json:"search_threads"`
 	Users         []UserConfig `json:"users"`
 }
@@ -60,6 +63,7 @@ const (
 	DefaultAdminTokenFile = "admin.token"
 	DefaultPreviewCacheGB = 50
 	DefaultSearchModel    = "models/siglip2-base-patch16-256"
+	DefaultFaceModel      = "models/yunet-sface"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -105,6 +109,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.SearchModel == "" {
 		c.SearchModel = DefaultSearchModel
+	}
+	if c.FaceModel == "" {
+		c.FaceModel = DefaultFaceModel
 	}
 	if c.SearchThreads <= 0 {
 		c.SearchThreads = max(1, runtime.NumCPU()/2)

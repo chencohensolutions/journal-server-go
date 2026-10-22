@@ -24,6 +24,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/enroll"
+	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/search"
 )
 
@@ -34,7 +35,12 @@ type testEnv struct {
 	roots      *x509.CertPool
 	config     auth.AppConfig
 	search     *search.Service
+	faces      *faces.Service
 }
+
+// fakeFaceModel as config.FaceModel gives a test env face search without the models: the test writes the faces
+// into the data folder's .cache/faces/fake.faces itself, before the env starts, and Run is never called.
+const fakeFaceModel = "fake"
 
 func TestMain(m *testing.M) {
 	log.SetOutput(io.Discard)
@@ -101,13 +107,28 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		}
 		t.Cleanup(searcher.Close)
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher))
+	// Face search likewise, with the models a test names, or none (fakeFaceModel).
+	var facer *faces.Service
+	switch config.FaceModel {
+	case auth.DefaultFaceModel:
+	case fakeFaceModel:
+		if facer, err = faces.NewService(&faces.Model{Name: fakeFaceModel}, library, previews); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(facer.Close)
+	default:
+		if facer = newFaces(config, library, previews); facer == nil {
+			t.Fatalf("no face search with %s", config.FaceModel)
+		}
+		t.Cleanup(facer.Close)
+	}
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher, facer))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
-		config: config, search: searcher}
+		config: config, search: searcher, faces: facer}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {

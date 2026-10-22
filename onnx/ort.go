@@ -1,4 +1,10 @@
-package search
+// Package onnx runs ONNX models on the CPU with ONNX Runtime: the search model (package search) and the face
+// models (package faces).
+//
+// ONNX Runtime is a C library, loaded at start and called through its table of functions (OrtApi in
+// onnxruntime_c_api.h) with purego, so the server still builds without cgo. Only the few functions needed to run
+// a model on the CPU are used; their places in the table never change (new ones are only ever added at the end).
+package onnx
 
 import (
 	"errors"
@@ -6,14 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
 )
-
-// ONNX Runtime is a C library, loaded at start and called through its table of functions (OrtApi in
-// onnxruntime_c_api.h) with purego, so the server still builds without cgo. Only the few functions needed to run
-// a model on the CPU are used; their places in the table never change (new ones are only ever added at the end).
 
 // The API version asked for: everything used here exists since ONNX Runtime 1.16.
 const ortAPIVersion = 16
@@ -34,6 +37,7 @@ const (
 	ortSessionGetOutputName             = 37
 	ortCreateTensorWithDataAsOrtValue   = 49
 	ortGetTensorMutableData             = 51
+	ortGetTensorElementType             = 60
 	ortGetDimensionsCount               = 61
 	ortGetDimensions                    = 62
 	ortGetTensorTypeAndShape            = 65
@@ -82,6 +86,9 @@ func FindRuntime(configured string) (string, error) {
 	}
 	return "", errors.New("ONNX Runtime not found (go run ./scripts/bundle-onnx, or set \"onnxruntime\" in config.json)")
 }
+
+// RuntimeLibrary is the file name of the ONNX Runtime library on this system.
+func RuntimeLibrary() string { return runtimeLibrary }
 
 // LoadRuntime loads the ONNX Runtime library at path.
 func LoadRuntime(path string) (*Runtime, error) {
@@ -138,16 +145,16 @@ func (r *Runtime) release(index int, object uintptr) {
 	}
 }
 
-// session is one ONNX model, ready to run. Running it from several goroutines at once is safe.
-type session struct {
-	rt                    *Runtime
-	handle                uintptr
-	inputs, outputs       []string
-	inputName, outputName []byte // the ones run, as C strings
+// Session is one ONNX model, ready to run. Running it from several goroutines at once is safe.
+type Session struct {
+	rt              *Runtime
+	handle          uintptr
+	Inputs, Outputs []string // the names of the model's inputs and outputs
+	input, output   string   // the ones Run gives and takes (Use)
 }
 
-// newSession loads the model at path, run with up to threads CPU threads.
-func (r *Runtime) newSession(path string, threads int) (*session, error) {
+// NewSession loads the model at path, run with up to threads CPU threads.
+func (r *Runtime) NewSession(path string, threads int) (*Session, error) {
 	var options uintptr
 	if err := r.call(ortCreateSessionOptions, uintptr(unsafe.Pointer(&options))); err != nil {
 		return nil, err
@@ -167,22 +174,22 @@ func (r *Runtime) newSession(path string, threads int) (*session, error) {
 		return nil, err
 	}
 	chars := pathChars(modelPath)
-	s := &session{rt: r}
+	s := &Session{rt: r}
 	err = r.call(ortCreateSession, r.env, uintptr(chars), options, uintptr(unsafe.Pointer(&s.handle)))
 	runtime.KeepAlive(chars)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if s.inputs, err = s.names(ortSessionGetInputCount, ortSessionGetInputName); err != nil {
+	if s.Inputs, err = s.names(ortSessionGetInputCount, ortSessionGetInputName); err != nil {
 		return nil, err
 	}
-	if s.outputs, err = s.names(ortSessionGetOutputCount, ortSessionGetOutputName); err != nil {
+	if s.Outputs, err = s.names(ortSessionGetOutputCount, ortSessionGetOutputName); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-func (s *session) names(count, name int) ([]string, error) {
+func (s *Session) names(count, name int) ([]string, error) {
 	var n uintptr
 	if err := s.rt.call(count, s.handle, uintptr(unsafe.Pointer(&n))); err != nil {
 		return nil, err
@@ -199,82 +206,119 @@ func (s *session) names(count, name int) ([]string, error) {
 	return names, nil
 }
 
-// use picks the input and output that run gives and takes: the first of the wanted names the model has.
-func (s *session) use(inputs, outputs []string) error {
-	pick := func(have, want []string) []byte {
+// Use picks the input and output that Run gives and takes: the first of the wanted names the model has.
+func (s *Session) Use(inputs, outputs []string) error {
+	pick := func(have, want []string) string {
 		for _, w := range want {
-			for _, h := range have {
-				if h == w {
-					return cString(h)
-				}
+			if slices.Contains(have, w) {
+				return w
 			}
 		}
-		return nil
+		return ""
 	}
-	s.inputName, s.outputName = pick(s.inputs, inputs), pick(s.outputs, outputs)
-	if s.inputName == nil || s.outputName == nil {
-		return fmt.Errorf("the model takes %v and gives %v; expected one of %v and one of %v", s.inputs, s.outputs, inputs, outputs)
+	s.input, s.output = pick(s.Inputs, inputs), pick(s.Outputs, outputs)
+	if s.input == "" || s.output == "" {
+		return fmt.Errorf("the model takes %v and gives %v; expected one of %v and one of %v", s.Inputs, s.Outputs, inputs, outputs)
 	}
 	return nil
 }
 
-// tensor is the data of one input or output and its shape.
-type tensor[T float32 | int64] struct {
-	data  []T
-	shape []int64
+// Tensor is the data of one input or output and its shape.
+type Tensor[T float32 | int64] struct {
+	Data  []T
+	Shape []int64
 }
 
-// run gives the model one input and returns its output, which must be floats.
-func run[T float32 | int64](s *session, in tensor[T]) (tensor[float32], error) {
+// Run gives the model the input Use picked and returns the output it picked, which must be floats.
+func Run[T float32 | int64](s *Session, in Tensor[T]) (Tensor[float32], error) {
+	out, err := RunNamed(s, s.input, in, s.output)
+	if err != nil {
+		return Tensor[float32]{}, err
+	}
+	return out[0], nil
+}
+
+// RunNamed gives the model in as its input named input and returns its outputs named outputs, in that order,
+// which must be floats.
+func RunNamed[T float32 | int64](s *Session, input string, in Tensor[T], outputs ...string) ([]Tensor[float32], error) {
 	r := s.rt
 	elementType := uintptr(ortTensorFloat)
-	if _, ok := any(in.data).([]int64); ok {
+	if _, ok := any(in.Data).([]int64); ok {
 		elementType = ortTensorInt64
 	}
-	var input, output uintptr
+	var value uintptr
 	err := r.call(ortCreateTensorWithDataAsOrtValue, r.memory,
-		uintptr(unsafe.Pointer(&in.data[0])), uintptr(len(in.data))*unsafe.Sizeof(in.data[0]),
-		uintptr(unsafe.Pointer(&in.shape[0])), uintptr(len(in.shape)), elementType, uintptr(unsafe.Pointer(&input)))
+		uintptr(unsafe.Pointer(&in.Data[0])), uintptr(len(in.Data))*unsafe.Sizeof(in.Data[0]),
+		uintptr(unsafe.Pointer(&in.Shape[0])), uintptr(len(in.Shape)), elementType, uintptr(unsafe.Pointer(&value)))
 	if err != nil {
-		return tensor[float32]{}, err
+		return nil, err
 	}
-	defer r.release(ortReleaseValue, input)
-	inputNames := []uintptr{uintptr(unsafe.Pointer(&s.inputName[0]))}
-	outputNames := []uintptr{uintptr(unsafe.Pointer(&s.outputName[0]))}
-	err = r.call(ortRun, s.handle, 0, uintptr(unsafe.Pointer(&inputNames[0])), uintptr(unsafe.Pointer(&input)), 1,
-		uintptr(unsafe.Pointer(&outputNames[0])), 1, uintptr(unsafe.Pointer(&output)))
+	defer r.release(ortReleaseValue, value)
+	inputName := cString(input)
+	inputNames := []uintptr{uintptr(unsafe.Pointer(&inputName[0]))}
+	names := make([][]byte, len(outputs))
+	outputNames := make([]uintptr, len(outputs))
+	for i, o := range outputs {
+		names[i] = cString(o)
+		outputNames[i] = uintptr(unsafe.Pointer(&names[i][0]))
+	}
+	values := make([]uintptr, len(outputs))
+	err = r.call(ortRun, s.handle, 0, uintptr(unsafe.Pointer(&inputNames[0])), uintptr(unsafe.Pointer(&value)), 1,
+		uintptr(unsafe.Pointer(&outputNames[0])), uintptr(len(outputs)), uintptr(unsafe.Pointer(&values[0])))
 	// The names are held as plain numbers above, which the garbage collector doesn't see.
-	runtime.KeepAlive(s)
-	runtime.KeepAlive(in.data)
-	if err != nil {
-		return tensor[float32]{}, err
+	runtime.KeepAlive(inputName)
+	runtime.KeepAlive(names)
+	runtime.KeepAlive(in.Data)
+	for _, v := range values {
+		defer r.release(ortReleaseValue, v)
 	}
-	defer r.release(ortReleaseValue, output)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Tensor[float32], len(values))
+	for i, v := range values {
+		if out[i], err = r.floats(v); err != nil {
+			return nil, fmt.Errorf("output %s: %w", outputs[i], err)
+		}
+	}
+	return out, nil
+}
 
+// floats copies out the tensor value, which must hold floats.
+func (r *Runtime) floats(value uintptr) (Tensor[float32], error) {
 	var info, count uintptr
-	if err := r.call(ortGetTensorTypeAndShape, output, uintptr(unsafe.Pointer(&info))); err != nil {
-		return tensor[float32]{}, err
+	if err := r.call(ortGetTensorTypeAndShape, value, uintptr(unsafe.Pointer(&info))); err != nil {
+		return Tensor[float32]{}, err
 	}
 	defer r.release(ortReleaseTensorTypeAndShapeInfo, info)
-	if err := r.call(ortGetDimensionsCount, info, uintptr(unsafe.Pointer(&count))); err != nil {
-		return tensor[float32]{}, err
+	var elementType int32
+	if err := r.call(ortGetTensorElementType, info, uintptr(unsafe.Pointer(&elementType))); err != nil {
+		return Tensor[float32]{}, err
 	}
-	out := tensor[float32]{shape: make([]int64, count)}
+	if elementType != ortTensorFloat {
+		return Tensor[float32]{}, fmt.Errorf("holds elements of type %d, not floats", elementType)
+	}
+	if err := r.call(ortGetDimensionsCount, info, uintptr(unsafe.Pointer(&count))); err != nil {
+		return Tensor[float32]{}, err
+	}
+	out := Tensor[float32]{Shape: make([]int64, count)}
 	if count > 0 {
-		if err := r.call(ortGetDimensions, info, uintptr(unsafe.Pointer(&out.shape[0])), count); err != nil {
-			return tensor[float32]{}, err
+		if err := r.call(ortGetDimensions, info, uintptr(unsafe.Pointer(&out.Shape[0])), count); err != nil {
+			return Tensor[float32]{}, err
 		}
 	}
 	size := int64(1)
-	for _, d := range out.shape {
+	for _, d := range out.Shape {
 		size *= d
 	}
 	var data uintptr
-	if err := r.call(ortGetTensorMutableData, output, uintptr(unsafe.Pointer(&data))); err != nil {
-		return tensor[float32]{}, err
+	if err := r.call(ortGetTensorMutableData, value, uintptr(unsafe.Pointer(&data))); err != nil {
+		return Tensor[float32]{}, err
 	}
-	out.data = make([]float32, size)
-	copy(out.data, unsafe.Slice((*float32)(toPointer(data)), size))
+	out.Data = make([]float32, size)
+	if size > 0 {
+		copy(out.Data, unsafe.Slice((*float32)(toPointer(data)), size))
+	}
 	return out, nil
 }
 

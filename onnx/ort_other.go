@@ -1,6 +1,6 @@
 //go:build !darwin && !linux && !freebsd && !netbsd && !windows
 
-package search
+package onnx
 
 import (
 	"errors"

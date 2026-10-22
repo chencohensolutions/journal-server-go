@@ -16,6 +16,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, the change feed, nudity scores, private
   files, hidden collections, imports, turns between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server.
+- [docs/faces.md](docs/faces.md): face search: YuNet and SFace on the same runtime, groups of alike faces, people
+  the user names (`people.json`), `people`, `similarFaces`, `searchMedia(people:)`.
 
 Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
 
@@ -29,13 +31,13 @@ tools run as separate programs. The one library loaded into the process is ONNX 
 ```bash
 go run .                                   # serve https://0.0.0.0:56398 (needs config.json + certs/)
 go build -o journal-server . && ./journal-server    # what the VS Code task "server: run" does
-go test ./...                              # ~10 s; previews/poster/search tests skip without libvips/ffmpeg/model
+go test ./...                              # ~10 s; previews/poster/search/face tests skip without libvips/ffmpeg/models
 go test ./media -run TestTurns             # one test
 go test ./search/... .                     # the search package and the root (server) tests
 go vet ./...                               # the command-line lint (VS Code runs golangci-lint on save; no .golangci file)
 go tool gqlgen generate                    # after editing graph/schema/*.graphql
 go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
-go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + search model into onnxruntime/, models/ (gitignored)
+go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + search and face models into onnxruntime/, models/ (gitignored)
 go run ./scripts/bundle-vips               # portable libvips for Windows into vips/ (gitignored)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
@@ -107,17 +109,20 @@ cache would hold copies of what the phone already has. Don't propose turning it 
 `.cache/write.lock` only for the milliseconds it takes to place a file or rewrite a sidecar, and appends to
 `.cache/write-journal.tsv` so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside
-`Store.Turn` (the store's own write methods already do). The one exception is `.cache/search/`, which only the
-server writes.
+`Store.Turn` (the store's own write methods already do). The exceptions are `.cache/search/` and `.cache/faces/`,
+which only the server writes.
 
 **External tools are separate programs, found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and
 `vips/bin` first), or at `vips` / `ffmpeg` in `config.json`. Without them the server still runs and the affected
 endpoints answer 503. `scripts/scan-nudity` embeds a Python worker (`nudenet_worker.py`) and feeds it 640 px
-previews, never originals. Text search (package `search`): `ort.go` calls ONNX Runtime's C function table through
-purego by fixed places counted in `onnxruntime_c_api.h`, so add a function by its place there; `search.FindRuntime`
-looks in `onnxruntime/`, then Homebrew. Vectors live in `.cache/search/<model>.vectors` and are read in the
-background, newest upload first. Without the runtime or the model, search is off and `searchMedia` answers an
-error. `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
+previews, never originals. ONNX Runtime (package `onnx`, loaded once by `loadRuntime` in `library.go` and shared):
+`ort.go` calls its C function table through purego by fixed places counted in `onnxruntime_c_api.h`, so add a
+function by its place there; `onnx.FindRuntime` looks in `onnxruntime/`, then Homebrew. Text search (package
+`search`) keeps vectors in `.cache/search/<model>.vectors`; face search (package `faces`) keeps the faces of each
+file in `.cache/faces/<model>.faces`, and the people the user named in `people.json` (`media/people.go`). Both read
+new files in the background, newest upload first; without the runtime or a model, that search is off and its
+queries answer an error. The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
+`Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
 `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).
 
@@ -132,6 +137,7 @@ progress, reports), `review.go` (the browser review page), `cloud.go` (Google Dr
 - Results a device must act on are unions with a reason (`StartUploadResult`, `EnrollDeviceResult`), not errors;
   limits and bugs are plain GraphQL errors.
 - Tests use real temp data folders. `newTestEnv` in `serve_test.go` starts a full mTLS test server with a generated
-  CA, enrolled device and `Library`; the root `serve_*_test.go` files cover one area each (media, search, private,
-  hidden) through that server, and `media` tests drive a `Store` directly. Add tests that way rather than mocking
+  CA, enrolled device and `Library`; the root `serve_*_test.go` files cover one area each (media, search, faces,
+  private, hidden) through that server (face tests write made-up faces and run a second server on the same folder
+  with `fakeFaceModel`), and `media` tests drive a `Store` directly. Add tests that way rather than mocking
   the store.

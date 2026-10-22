@@ -29,7 +29,7 @@ type MediaSearch {
   indexed: Int!
   "How many files the user has."
   total: Int!
-  "The model that searched, e.g. siglip2-base-patch16-256."
+  "The model that searched, e.g. siglip2-base-patch16-256; empty for a search by people alone."
   model: String!
 }
 
@@ -47,11 +47,14 @@ extend type Query {
   """
   The photos and videos that text describes best ("a dog on the beach at sunset"), best first: limit of them (at most
   1000) after the first offset, for the next page; offset + limit at most 10000.
+  With people (Person.id), only files with a face of every one of them; with people and no text, those files, the
+  last taken first, and indexed and total count the files read for faces.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
   the best are picked, so a filtered search returns the best matches of that year or place. Files the user marked
   private (setPrivate) are left out too, unless includePrivate is true (an app showing private media); on a device
-  set to withhold them they are never found. Fails when text search is off on the server.
+  set to withhold them they are never found. Fails when text search is off on the server (face search, for people),
+  when neither text nor people is given, and when a person is not found (load the people again).
   """
-  searchMedia(text: String!, limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
+  searchMedia(text: String, people: [ID!], limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
 }

@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"github.com/journal/server-go/enroll"
+	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/search"
 )
@@ -13,7 +14,9 @@ import (
 
 type Resolver struct {
 	Enrollment *enroll.Service
-	Media      *media.Library
+	Library    *media.Library
 	// Text search; nil when it is off.
 	Search *search.Service
+	// Face search; nil when it is off.
+	Faces *faces.Service
 }

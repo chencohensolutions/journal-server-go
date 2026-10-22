@@ -1,12 +1,59 @@
 package resolver
 
 import (
+	"cmp"
 	"fmt"
 	"math"
+	"slices"
+	"strings"
 
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/search"
 )
+
+// page is a search's limit (default 100) and offset (default 0), checked.
+func page(limit, offset *int) (n, skip int, err error) {
+	n = 100
+	if limit != nil {
+		n = *limit
+	}
+	if n < 1 || n > maxSearchHits {
+		return 0, 0, fmt.Errorf("limit must be 1–%d", maxSearchHits)
+	}
+	if offset != nil {
+		skip = *offset
+	}
+	if skip < 0 || skip+n > maxSearchDepth {
+		return 0, 0, fmt.Errorf("offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
+	}
+	return n, skip, nil
+}
+
+// lastTaken is the limit files of files that keep accepts, the last taken first (uploaded, when not known): a
+// search by people alone.
+func lastTaken(v view, files map[string]bool, limit int, keep func(sha string) bool) []search.Hit {
+	var items []media.Item
+	for sha := range files {
+		if item, ok := v.store.Get(sha); ok && keep(sha) {
+			items = append(items, item)
+		}
+	}
+	at := func(item media.Item) int64 {
+		if t := item.Sidecar.Facts.TakenAt; t != nil {
+			return t.UnixNano()
+		}
+		return item.Sidecar.Facts.UploadedAt.UnixNano()
+	}
+	slices.SortFunc(items, func(a, b media.Item) int {
+		return cmp.Or(cmp.Compare(at(b), at(a)), strings.Compare(a.Sha256(), b.Sha256()))
+	})
+	hits := make([]search.Hit, 0, min(limit, len(items)))
+	for _, item := range items[:min(limit, len(items))] {
+		hits = append(hits, search.Hit{Sha256: item.Sha256()})
+	}
+	return hits
+}
 
 // searchFilter is searchMedia's years and area: which files a search may return. Zero value: all.
 type searchFilter struct {

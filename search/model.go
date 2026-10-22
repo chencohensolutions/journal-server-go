@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/eliben/go-sentencepiece"
+	"github.com/journal/server-go/onnx"
 	"golang.org/x/image/draw"
 )
 
@@ -26,7 +27,7 @@ type Model struct {
 	// How many numbers a vector has: 768 for the base model, 1152 for the large one.
 	Dim int
 
-	vision, text *session
+	vision, text *onnx.Session
 	tokenizer    *sentencepiece.Processor
 	eos, pad     int
 
@@ -43,7 +44,7 @@ type preprocessor struct {
 }
 
 // LoadModel loads the model in folder, run with up to threads CPU threads per half.
-func LoadModel(rt *Runtime, folder string, threads int) (*Model, error) {
+func LoadModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
 	abs, err := filepath.Abs(folder)
 	if err != nil {
 		return nil, err
@@ -75,16 +76,16 @@ func LoadModel(rt *Runtime, folder string, threads int) (*Model, error) {
 	}
 
 	// pooler_output is the embedding: the halves end in their projection heads.
-	if m.vision, err = rt.newSession(filepath.Join(folder, "vision_model.onnx"), threads); err != nil {
+	if m.vision, err = rt.NewSession(filepath.Join(folder, "vision_model.onnx"), threads); err != nil {
 		return nil, err
 	}
-	if err := m.vision.use([]string{"pixel_values"}, []string{"pooler_output", "image_embeds"}); err != nil {
+	if err := m.vision.Use([]string{"pixel_values"}, []string{"pooler_output", "image_embeds"}); err != nil {
 		return nil, fmt.Errorf("vision_model.onnx: %w", err)
 	}
-	if m.text, err = rt.newSession(filepath.Join(folder, "text_model.onnx"), threads); err != nil {
+	if m.text, err = rt.NewSession(filepath.Join(folder, "text_model.onnx"), threads); err != nil {
 		return nil, err
 	}
-	if err := m.text.use([]string{"input_ids"}, []string{"pooler_output", "text_embeds"}); err != nil {
+	if err := m.text.Use([]string{"input_ids"}, []string{"pooler_output", "text_embeds"}); err != nil {
 		return nil, fmt.Errorf("text_model.onnx: %w", err)
 	}
 	// The length of the vectors, from a first run (which also has ONNX Runtime prepare it).
@@ -110,11 +111,11 @@ func (m *Model) ImageVector(img image.Image) ([]float32, error) {
 		}
 	}
 	size := int64(m.size)
-	out, err := run(m.vision, tensor[float32]{pixels, []int64{1, 3, size, size}})
+	out, err := onnx.Run(m.vision, onnx.Tensor[float32]{Data: pixels, Shape: []int64{1, 3, size, size}})
 	if err != nil {
 		return nil, err
 	}
-	return unit(out.data), nil
+	return unit(out.Data), nil
 }
 
 // TextVector is the vector of a description, of length 1.
@@ -123,11 +124,11 @@ func (m *Model) TextVector(text string) ([]float32, error) {
 }
 
 func (m *Model) textVector(tokens []int64) ([]float32, error) {
-	out, err := run(m.text, tensor[int64]{tokens, []int64{1, textLength}})
+	out, err := onnx.Run(m.text, onnx.Tensor[int64]{Data: tokens, Shape: []int64{1, textLength}})
 	if err != nil {
 		return nil, err
 	}
-	return unit(out.data), nil
+	return unit(out.Data), nil
 }
 
 // Tokens is text as the text half reads it: lowercased (SigLIP 2 was trained on lowercase text), cut to fit,

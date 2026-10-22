@@ -103,11 +103,13 @@ func (g gzipWriter) WriteHeader(status int) {
 
 func (g gzipWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
 
-// then runs after once next has answered.
-func then(next http.Handler, after func()) http.Handler {
+// then runs each of after once next has answered.
+func then(next http.Handler, after ...func()) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)
-		after()
+		for _, fn := range after {
+			fn()
+		}
 	})
 }
 

@@ -33,10 +33,15 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   media/2026/2026-10/IMG_1234.HEIC.json     ← its sidecar
   media/2026/2026-10/IMG_1234 (2).HEIC      ← a different file with the same name
   media/undated/…                           ← files the device sent no date for
+  settings.json                             ← hidden collections (below)
+  people.json                               ← the people the user named in face search (faces.md)
   .cache/index.json                         ← what the last scan read, by folder (only a shortcut)
   .cache/uploads/<sha256>.partial           ← an upload in progress
   .cache/uploads/<sha256>.json              ← what the device declared for it
   .cache/previews/<sha[:2]>/<sha256>/1080x1440-cover.webp   ← previews made so far
+  .cache/search/<model>.vectors             ← text search's vectors (search.md)
+  .cache/faces/<model>.faces                ← the faces found in each file (faces.md)
+  .cache/{search,faces}/<model>.failed.log  ← files those readers could not read, one line each
 ```
 
 - The month folder is from `takenAt` in the photo's own local time (the offset the device sent).
@@ -293,6 +298,12 @@ user's, not a device's, and is kept at the data folder's root, so it moves with 
 
 Files can be found by a description in words with `searchMedia(text: "dog on the beach")`. It runs a SigLIP 2 model
 with ONNX Runtime inside the server, no Python. See [search.md](search.md).
+
+## Faces
+
+Files can be found by the people in them: the server finds the faces in each file, puts alike faces in groups, and
+the user names a group once (`people`, `namePerson`, `searchMedia(people: […])`, `similarFaces`). Two small open
+models, YuNet and SFace, run on the same ONNX Runtime. See [faces.md](faces.md).
 
 ## Fixing sources
 

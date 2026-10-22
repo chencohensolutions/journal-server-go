@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/journal/server-go/onnx"
 )
 
 var (
@@ -21,15 +23,15 @@ var (
 func loadTestModel(t testing.TB) *Model {
 	t.Helper()
 	folder := filepath.Join("..", "models", "siglip2-base-patch16-256")
-	library := filepath.Join("..", "onnxruntime", runtimeLibrary)
+	library := filepath.Join("..", "onnxruntime", onnx.RuntimeLibrary())
 	for _, need := range []string{folder, library} {
 		if _, err := os.Stat(need); err != nil {
 			t.Skipf("%s is missing (go run ./scripts/bundle-onnx)", need)
 		}
 	}
 	testModelOnce.Do(func() {
-		var rt *Runtime
-		if rt, testModelErr = LoadRuntime(library); testModelErr == nil {
+		var rt *onnx.Runtime
+		if rt, testModelErr = onnx.LoadRuntime(library); testModelErr == nil {
 			testModel, testModelErr = LoadModel(rt, folder, 4)
 		}
 	})

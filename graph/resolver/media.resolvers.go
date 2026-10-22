@@ -12,6 +12,7 @@ import (
 	"log"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/graph/generated"
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
 )
@@ -169,3 +170,8 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 	}
 	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: remaining > 0, Remaining: remaining}, nil
 }
+
+// Media returns generated.MediaResolver implementation.
+func (r *Resolver) Media() generated.MediaResolver { return &mediaResolver{r} }
+
+type mediaResolver struct{ *Resolver }

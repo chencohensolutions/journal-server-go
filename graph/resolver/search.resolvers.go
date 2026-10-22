@@ -18,55 +18,75 @@ import (
 )
 
 // SearchMedia is the resolver for the searchMedia field.
-func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error) {
+func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error) {
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if r.Search == nil {
+	n, skip, err := page(limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	words := ""
+	if text != nil {
+		words = strings.TrimSpace(*text)
+	}
+	if len(words) > maxSearchText {
+		return nil, fmt.Errorf("text must be at most %d bytes", maxSearchText)
+	}
+	if words == "" && len(people) == 0 {
+		return nil, errors.New("give text, people or both")
+	}
+	if words != "" && r.Search == nil {
 		return nil, errors.New("text search is off on this server")
-	}
-	n := 100
-	if limit != nil {
-		n = *limit
-	}
-	if n < 1 || n > maxSearchHits {
-		return nil, fmt.Errorf("limit must be 1–%d", maxSearchHits)
-	}
-	skip := 0
-	if offset != nil {
-		skip = *offset
-	}
-	if skip < 0 || skip+n > maxSearchDepth {
-		return nil, fmt.Errorf("offset must be 0 or more, and offset + limit at most %d", maxSearchDepth)
-	}
-	text = strings.TrimSpace(text)
-	if text == "" || len(text) > maxSearchText {
-		return nil, fmt.Errorf("text must be 1–%d bytes", maxSearchText)
 	}
 	filter, err := newSearchFilter(years, area)
 	if err != nil {
 		return nil, err
 	}
+	user := auth.FromContext(ctx).Username
+	// With people, only the files with a face of each of them.
+	var withPeople map[string]bool
+	if len(people) > 0 {
+		if r.Faces == nil {
+			return nil, errFacesOff
+		}
+		if withPeople, err = r.Faces.Files(user, people); err != nil {
+			return nil, fmt.Errorf("%w: load the people again", err)
+		}
+	}
 	// Private files are left out unless the app shows private media: a search is no place to see them by surprise.
 	withPrivate := includePrivate != nil && *includePrivate
-	user := auth.FromContext(ctx).Username
-	// The hits before the offset are found too: the sets and moments are numbered from the first hit.
-	hits, err := r.Search.Search(user, text, skip+n, func(sha string) bool {
+	keep := func(sha string) bool {
+		if withPeople != nil && !withPeople[sha] {
+			return false
+		}
 		item, ok := v.store.Get(sha)
 		return ok && !v.hides(item) && (withPrivate || !item.Sidecar.IsPrivate()) && filter.keeps(item)
-	})
-	if err != nil {
-		return nil, err
 	}
-	sets, moments := search.Groups(hits,
-		func(sha string) []float32 { return r.Search.Vector(user, sha) },
-		func(sha string) *time.Time {
-			item, _ := v.store.Get(sha)
-			return item.Sidecar.Facts.TakenAt
-		})
+	// The hits before the offset are found too: the sets and moments are numbered from the first hit.
+	var hits []search.Hit
+	result := &model.MediaSearch{}
+	if words != "" {
+		if hits, err = r.Search.Search(user, words, skip+n, keep); err != nil {
+			return nil, err
+		}
+		result.Model = r.Search.Model()
+		result.Indexed, result.Total = r.Search.Counts(user, v.hides)
+	} else {
+		hits = lastTaken(v, withPeople, skip+n, keep)
+		result.Indexed, result.Total = r.Faces.Counts(user, v.hides)
+	}
+	vector := func(string) []float32 { return nil }
+	if r.Search != nil {
+		vector = func(sha string) []float32 { return r.Search.Vector(user, sha) }
+	}
+	sets, moments := search.Groups(hits, vector, func(sha string) *time.Time {
+		item, _ := v.store.Get(sha)
+		return item.Sidecar.Facts.TakenAt
+	})
 	versions, paired := v.store.RelatedIndex()
-	result := &model.MediaSearch{Hits: make([]*model.SearchHit, 0, len(hits)), Model: r.Search.Model()}
+	result.Hits = make([]*model.SearchHit, 0, len(hits))
 	for i, hit := range hits {
 		if i < skip {
 			continue
@@ -76,6 +96,5 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text string, limit *int
 			result.Hits = append(result.Hits, &model.SearchHit{Media: m, Score: float64(hit.Score), Set: sets[i], Moment: moments[i]})
 		}
 	}
-	result.Indexed, result.Total = r.Search.Counts(user, v.hides)
 	return result, nil
 }

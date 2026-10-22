@@ -14,12 +14,16 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   first: it makes the 640 px JPEG preview, `media.ModelPreview` (with libvips; a video's poster frame with ffmpeg; the same preview
   `scripts/scan-nudity` reads), squeezes it to 256×256 and runs the vision half. An upload is read as soon as it
   finishes, an import within 30 seconds. A file that can't be read is logged and tried again after the server restarts.
+  It is also listed in `.cache/search/<model>.failed.log`, one tab-separated line each: when (UTC), sha256, path in
+  the data folder, and why. Every failure is listed, including those the console doesn't show one by one (no libvips
+  or ffmpeg). The list is appended to on each run (`media.FailureLog`, shared with faces) and can be deleted.
 - **Searching.** `searchMedia(text, limit)` lowercases the text, turns it into 64 tokens and runs the text half
   (about 50 ms), then compares it with every vector in memory (a few milliseconds for tens of thousands of files)
   and returns the closest, best first. With `years` and `area` (a box of latitudes and longitudes: the server has no
   place names, so the app sends the box around a town's photos) only files of those years, or taken inside the
   box, are considered, before the best are picked; a filtered search returns the best of that year or place, not the
-  overall best that happen to match. A file's year is where it was taken (its time's offset), or the year it was
+  overall best that happen to match. With `people` (ids from the `people` query), only files with a face of each of
+  them; `text` may then be left out, and the hits are those files, the last taken first ([faces.md](faces.md)). A file's year is where it was taken (its time's offset), or the year it was
   uploaded when that isn't known, as the apps date it; files without a location never match an area. Files the device may not see (private files on a device set to withhold
   them) are left out. Files the user marked private are left out on every device too, unless the app asks with
   `includePrivate: true` (it does while it shows private media); a device set to withhold them never finds them. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
@@ -39,9 +43,9 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
 
 ## Where things are
 
-- `search/` is the package. `ort.go` loads ONNX Runtime and calls it through its C function table with purego (no
-  cgo; `ort_windows.go` / `ort_unix.go` load the library). `model.go` prepares pictures and text and runs the two
-  halves. `index.go` is the vector file. `service.go` reads new files and answers searches.
+- `search/` is the package. ONNX Runtime is in `onnx/` (shared with face search, [faces.md](faces.md)): `ort.go`
+  loads it and calls it through its C function table with purego (no cgo; `ort_windows.go` / `ort_unix.go` load the
+  library). `model.go` prepares pictures and text and runs the two halves. `index.go` is the vector file. `service.go` reads new files and answers searches.
 - Vectors are kept per user and per model in the data folder: `.cache/search/<model>.vectors`. It is a header and
   then one record per file (its sha256's 32 bytes, then the vector as little-endian float32s), appended as files are
   read; a record cut short by a stop is dropped at the next start. It can be deleted: the server reads everything
@@ -64,7 +68,7 @@ why search is off and `searchMedia` answers an error. Settings in `config.json`:
 |---|---|---|
 | `search_model` | `models/siglip2-base-patch16-256` | the model folder |
 | `onnxruntime` | `./onnxruntime`, then Homebrew's (`brew install onnxruntime`) | the ONNX Runtime library |
-| `search_threads` | half the CPUs | threads each half of the model may use |
+| `search_threads` | half the CPUs | threads each half of the model (and each face model) may use |
 
 ## Models
 

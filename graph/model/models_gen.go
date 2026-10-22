@@ -18,8 +18,24 @@ type EnrollmentPreviewResult interface {
 	IsEnrollmentPreviewResult()
 }
 
+type FaceResult interface {
+	IsFaceResult()
+}
+
+type PersonResult interface {
+	IsPersonResult()
+}
+
 type StartUploadResult interface {
 	IsStartUploadResult()
+}
+
+// A part of a photo, as fractions of the upright photo's width and height: the same as a preview's crop.
+type Box struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
 }
 
 type Change struct {
@@ -83,6 +99,29 @@ type EnrollmentRejected struct {
 func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
 func (EnrollmentRejected) IsEnrollDeviceResult() {}
+
+type Face struct {
+	// The file's sha256 and the face's place in it (biggest first): <sha256>:<n>.
+	ID     string `json:"id"`
+	Sha256 string `json:"sha256"`
+	Box    *Box   `json:"box"`
+	// How sure the model is that this is a face, 0 to 1.
+	Score float64 `json:"score"`
+	// The person or group the face is in (Person.id); null when none.
+	PersonID *string `json:"personId,omitempty"`
+	// The person's name; null when the face is in no person, or in a group no one has named.
+	PersonName *string `json:"personName,omitempty"`
+}
+
+func (Face) IsFaceResult() {}
+
+type FaceHit struct {
+	// The face most like the one asked about, in media.
+	Face  *Face  `json:"face"`
+	Media *Media `json:"media"`
+	// How alike the two faces are: the cosine similarity of their vectors, -1 to 1. 0.36 or more is likely the same person.
+	Score float64 `json:"score"`
+}
 
 // A box on the map, in degrees. When east is less than west the box crosses the 180° meridian.
 type GeoAreaInput struct {
@@ -157,6 +196,8 @@ type Media struct {
 	Private bool `json:"private"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
+	// The faces found in the file, biggest first; empty until the server has read it, or when face search is off.
+	Faces []*Face `json:"faces"`
 }
 
 // The server already has this file (from this device or another); nothing to send.
@@ -173,12 +214,49 @@ type MediaSearch struct {
 	Indexed int `json:"indexed"`
 	// How many files the user has.
 	Total int `json:"total"`
-	// The model that searched, e.g. siglip2-base-patch16-256.
+	// The model that searched, e.g. siglip2-base-patch16-256; empty for a search by people alone.
 	Model string `json:"model"`
 }
 
 type Mutation struct {
 }
+
+// A person, group or face that is not there (any more): the app's list is older than the server's. Load it again.
+type NotFound struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+func (NotFound) IsPersonResult() {}
+
+func (NotFound) IsFaceResult() {}
+
+type People struct {
+	// Named people first, by name, then the groups, those in the most files first.
+	People []*Person `json:"people"`
+	// How many of the user's files the server has read for faces so far; the others are in no one's photos yet.
+	Read int `json:"read"`
+	// How many files the user has.
+	Total int `json:"total"`
+	// The models that found the faces, e.g. yunet-sface.
+	Model string `json:"model"`
+}
+
+// Someone the user named, or a group of faces the server found alike that no one has named yet.
+type Person struct {
+	// A named person's id starts with p and never changes. A group's starts with g, and may change whenever the server
+	// puts the faces together again (after the user names, moves or merges faces): load the list again then.
+	ID string `json:"id"`
+	// Null for a group no one has named.
+	Name *string `json:"name,omitempty"`
+	// The clearest of the faces, for the app to show.
+	Cover *Face `json:"cover"`
+	// How many faces, and how many files they are in (only those the device may see).
+	Faces int `json:"faces"`
+	Files int `json:"files"`
+}
+
+func (Person) IsPersonResult() {}
 
 type Query struct {
 }

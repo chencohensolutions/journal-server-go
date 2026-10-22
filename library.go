@@ -3,10 +3,13 @@ package main
 import (
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/onnx"
 	"github.com/journal/server-go/search"
 )
 
@@ -52,6 +55,23 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	return previews
 }
 
+var (
+	runtimeOnce sync.Once
+	runtimeLib  *onnx.Runtime
+	runtimeErr  error
+)
+
+// loadRuntime loads ONNX Runtime, once for the process: text search and face search share it.
+func loadRuntime(config auth.AppConfig) (*onnx.Runtime, error) {
+	runtimeOnce.Do(func() {
+		var path string
+		if path, runtimeErr = onnx.FindRuntime(config.OnnxRuntime); runtimeErr == nil {
+			runtimeLib, runtimeErr = onnx.LoadRuntime(path)
+		}
+	})
+	return runtimeLib, runtimeErr
+}
+
 // newSearch loads ONNX Runtime and the search model and opens each user's vectors; nil (search off) when either
 // is missing. Its Run reads the files that have no vector yet.
 func newSearch(config auth.AppConfig, library *media.Library, previews *media.Previews) *search.Service {
@@ -59,12 +79,7 @@ func newSearch(config auth.AppConfig, library *media.Library, previews *media.Pr
 		log.Printf("Text search is off: no model in %s (go run ./scripts/bundle-onnx, or set \"search_model\" in config.json)", config.SearchModel)
 		return nil
 	}
-	path, err := search.FindRuntime(config.OnnxRuntime)
-	if err != nil {
-		log.Printf("Text search is off: %v", err)
-		return nil
-	}
-	rt, err := search.LoadRuntime(path)
+	rt, err := loadRuntime(config)
 	if err != nil {
 		log.Printf("Text search is off: %v", err)
 		return nil
@@ -82,6 +97,32 @@ func newSearch(config auth.AppConfig, library *media.Library, previews *media.Pr
 	}
 	log.Printf("Text search with %s on ONNX Runtime %s (%d threads), loaded in %s", model.Name, rt.Version,
 		config.SearchThreads, time.Since(started).Round(time.Millisecond))
+	return service
+}
+
+// newFaces loads ONNX Runtime and the face models and opens each user's faces and people; nil (face search off)
+// when either is missing. Its Run reads the files not read yet.
+func newFaces(config auth.AppConfig, library *media.Library, previews *media.Previews) *faces.Service {
+	if _, err := os.Stat(config.FaceModel); err != nil {
+		log.Printf("Face search is off: no models in %s (go run ./scripts/bundle-onnx, or set \"face_model\" in config.json)", config.FaceModel)
+		return nil
+	}
+	rt, err := loadRuntime(config)
+	if err != nil {
+		log.Printf("Face search is off: %v", err)
+		return nil
+	}
+	model, err := faces.LoadModel(rt, config.FaceModel, config.SearchThreads)
+	if err != nil {
+		log.Printf("Face search is off: %s: %v", config.FaceModel, err)
+		return nil
+	}
+	service, err := faces.NewService(model, library, previews)
+	if err != nil {
+		log.Printf("Face search is off: %v", err)
+		return nil
+	}
+	log.Printf("Face search with %s on ONNX Runtime %s (%d threads)", model.Name, rt.Version, config.SearchThreads)
 	return service
 }
 

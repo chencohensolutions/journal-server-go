@@ -1,7 +1,10 @@
-// Command bundle-onnx downloads what text search needs (run from the server folder: go run ./scripts/bundle-onnx):
+// Command bundle-onnx downloads what text search and face search need (run from the server folder: go run
+// ./scripts/bundle-onnx):
 //
-//   - ONNX Runtime, the library that runs the model, into ./onnxruntime (from Microsoft's GitHub releases);
-//   - a SigLIP 2 model, as ONNX files, into ./models/<name> (from Hugging Face's onnx-community).
+//   - ONNX Runtime, the library that runs the models, into ./onnxruntime (from Microsoft's GitHub releases);
+//   - a SigLIP 2 model, as ONNX files, into ./models/<name> (from Hugging Face's onnx-community);
+//   - the face models, YuNet (finds faces, MIT licence) and SFace (tells them apart, Apache 2.0), into
+//     ./models/yunet-sface (from OpenCV's model zoo on Hugging Face). --faces=false leaves them out.
 //
 // --model base (the default, google/siglip2-base-patch16-256) reads a photo in about a tenth of a second on a
 // desktop CPU; --model large (google/siglip2-so400m-patch16-256) finds better but is about four times slower.
@@ -40,11 +43,18 @@ var models = map[string]string{
 // Suffix of the files of each precision in onnx-community's repositories.
 var precisions = map[string]string{"fp32": "", "q8": "_quantized"}
 
+// The face models: Hugging Face repository → file, kept under the same name.
+var faceModels = [][2]string{
+	{"opencv/face_detection_yunet", "face_detection_yunet_2023mar.onnx"},
+	{"opencv/face_recognition_sface", "face_recognition_sface_2021dec.onnx"},
+}
+
 func main() {
 	modelFlag := flag.String("model", "base", "base or large")
 	precision := flag.String("precision", "fp32", "fp32, or q8 for the smaller 8-bit files")
 	runtimeDir := flag.String("runtime", "onnxruntime", "folder for the ONNX Runtime library (replaced)")
 	modelsDir := flag.String("models", "models", "folder the model's folder is made in")
+	faces := flag.Bool("faces", true, "also download the face models")
 	flag.Parse()
 	name, ok := models[*modelFlag]
 	suffix, ok2 := precisions[*precision]
@@ -61,6 +71,13 @@ func main() {
 	}
 	out := filepath.Join(*modelsDir, folder)
 	bundleModel("onnx-community/"+name+"-ONNX", suffix, out)
+	if *faces {
+		facesOut := filepath.Join(*modelsDir, "yunet-sface")
+		for _, m := range faceModels {
+			download("https://huggingface.co/"+m[0]+"/resolve/main/"+m[1], filepath.Join(facesOut, m[1]), repoHashes(m[0])[m[1]])
+		}
+		log.Printf("Face models in %s", facesOut)
+	}
 	fmt.Printf("Done. In config.json: \"search_model\": %q\n", filepath.ToSlash(out))
 }
 
@@ -154,20 +171,7 @@ func bundleRuntime(dir string) {
 // bundleModel downloads the vision and text models of repo (in the precision of suffix), the tokenizer and the
 // image settings into out, under the names the server looks for.
 func bundleModel(repo, suffix, out string) {
-	var info struct {
-		Siblings []struct {
-			Name string `json:"rfilename"`
-			LFS  *struct{ Sha256 string }
-		}
-	}
-	getJSON("https://huggingface.co/api/models/"+repo+"?blobs=true", &info)
-	hashes := map[string]string{}
-	for _, s := range info.Siblings {
-		hashes[s.Name] = ""
-		if s.LFS != nil {
-			hashes[s.Name] = s.LFS.Sha256
-		}
-	}
+	hashes := repoHashes(repo)
 	files := map[string]string{ // in the repository → in out
 		"tokenizer.model":          "tokenizer.model",
 		"preprocessor_config.json": "preprocessor_config.json",
@@ -188,6 +192,26 @@ func bundleModel(repo, suffix, out string) {
 		download("https://huggingface.co/"+repo+"/resolve/main/"+from, filepath.Join(out, to), hash)
 	}
 	log.Printf("%s in %s", repo, out)
+}
+
+// repoHashes is the files of the Hugging Face repository repo, with the sha256 of each kept in LFS ("" for the
+// others).
+func repoHashes(repo string) map[string]string {
+	var info struct {
+		Siblings []struct {
+			Name string `json:"rfilename"`
+			LFS  *struct{ Sha256 string }
+		}
+	}
+	getJSON("https://huggingface.co/api/models/"+repo+"?blobs=true", &info)
+	hashes := map[string]string{}
+	for _, s := range info.Siblings {
+		hashes[s.Name] = ""
+		if s.LFS != nil {
+			hashes[s.Name] = s.LFS.Sha256
+		}
+	}
+	return hashes
 }
 
 // download fetches url into path unless a file with sha256 hash is already there; an empty hash is not checked.

@@ -23,7 +23,7 @@ func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
 	if user == nil {
 		return nil, fmt.Errorf("unauthorized")
 	}
-	store := r.Media.Store(user.Username)
+	store := r.Library.Store(user.Username)
 	if store == nil {
 		return nil, fmt.Errorf("no data_folder is configured for %s", user.Username)
 	}

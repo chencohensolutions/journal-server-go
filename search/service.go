@@ -169,6 +169,8 @@ func (s *Service) readNew(ctx context.Context, user string, failed map[string]bo
 
 	var read, unreadable int
 	started := time.Now()
+	failures := media.NewFailureLog(store, "search", "search", s.model.Name+".failed.log")
+	defer failures.Close()
 	for r := range made {
 		err := r.err
 		if err == nil {
@@ -184,6 +186,7 @@ func (s *Service) readNew(ctx context.Context, user string, failed map[string]bo
 		default:
 			failed[r.item.Sha256()] = true
 			unreadable++
+			failures.Add(r.item, err)
 			// Without libvips or ffmpeg every file (or video) fails alike; the server said so at start.
 			if !errors.Is(err, media.ErrPreviewsUnavailable) && !errors.Is(err, media.ErrPostersUnavailable) {
 				log.Printf("search: %s: %v", r.item.Path, err)
@@ -199,6 +202,9 @@ func (s *Service) readNew(ctx context.Context, user string, failed map[string]bo
 	if len(todo) > 1 || unreadable > 0 {
 		log.Printf("search: read %d files of %s in %s; %d could not be read", read, user,
 			time.Since(started).Round(time.Second), unreadable)
+	}
+	if unreadable > 0 {
+		log.Printf("search: the files that could not be read are listed in %s", failures.Path)
 	}
 }
 

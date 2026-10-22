@@ -1,0 +1,107 @@
+# --- Faces and people ---------------------------------------------------------
+# Photos found by the people in them, with face models on the server (YuNet and SFace); see docs/faces.md.
+# The server finds the faces in each file and puts alike faces in groups; the user names a group once ("Mom"), and
+# her faces are found from then on. Apps draw a face with the file's preview, cropped to the face's box.
+
+"A part of a photo, as fractions of the upright photo's width and height: the same as a preview's crop."
+type Box {
+  x: Float!
+  y: Float!
+  w: Float!
+  h: Float!
+}
+
+type Face {
+  "The file's sha256 and the face's place in it (biggest first): <sha256>:<n>."
+  id: ID!
+  sha256: Sha256!
+  box: Box!
+  "How sure the model is that this is a face, 0 to 1."
+  score: Float!
+  "The person or group the face is in (Person.id); null when none."
+  personId: ID
+  "The person's name; null when the face is in no person, or in a group no one has named."
+  personName: String
+}
+
+"""
+Someone the user named, or a group of faces the server found alike that no one has named yet.
+"""
+type Person {
+  """
+  A named person's id starts with p and never changes. A group's starts with g, and may change whenever the server
+  puts the faces together again (after the user names, moves or merges faces): load the list again then.
+  """
+  id: ID!
+  "Null for a group no one has named."
+  name: String
+  "The clearest of the faces, for the app to show."
+  cover: Face!
+  "How many faces, and how many files they are in (only those the device may see)."
+  faces: Int!
+  files: Int!
+}
+
+type People {
+  "Named people first, by name, then the groups, those in the most files first."
+  people: [Person!]!
+  "How many of the user's files the server has read for faces so far; the others are in no one's photos yet."
+  read: Int!
+  "How many files the user has."
+  total: Int!
+  "The models that found the faces, e.g. yunet-sface."
+  model: String!
+}
+
+type FaceHit {
+  "The face most like the one asked about, in media."
+  face: Face!
+  media: Media!
+  "How alike the two faces are: the cosine similarity of their vectors, -1 to 1. 0.36 or more is likely the same person."
+  score: Float!
+}
+
+"A person, group or face that is not there (any more): the app's list is older than the server's. Load it again."
+type NotFound {
+  id: ID!
+  reason: String!
+}
+
+union PersonResult = Person | NotFound
+union FaceResult = Face | NotFound
+
+extend type Media {
+  "The faces found in the file, biggest first; empty until the server has read it, or when face search is off."
+  faces: [Face!]!
+}
+
+extend type Query {
+  """
+  The user's named people and (unless includeGroups is false) the groups of alike faces no one has named, with at
+  least 3 faces. Faces in files the device may not see don't count, nor (unless includePrivate) in files marked
+  private; people and groups left with none are left out. Fails when face search is off on the server.
+  """
+  people(includeGroups: Boolean = true, includePrivate: Boolean = false): People!
+  """
+  The files with a face most like face (Face.id), best first, one face a file and not face's own file: limit of
+  them (at most 1000) after the first offset; offset + limit at most 10000. Private files as in searchMedia.
+  """
+  similarFaces(face: ID!, limit: Int = 100, offset: Int = 0, includePrivate: Boolean = false): [FaceHit!]!
+}
+
+extend type Mutation {
+  """
+  Names a group (it becomes a person, and its faces are hers), or renames a person. A group given the name of a
+  person (ignoring case) joins them. Faces found from then on that look like the person's are hers too.
+  """
+  namePerson(id: ID!, name: String!): PersonResult!
+  "Puts the faces of from (people or groups) in the person into; the people of from are no more."
+  mergePeople(into: ID!, from: [ID!]!): PersonResult!
+  """
+  Gives face to the person to, or to no one when to is null, and takes it from the person it was in: the server
+  never gives it to them again.
+  """
+  moveFace(face: ID!, to: ID): FaceResult!
+  "Forgets a named person; their faces go back into groups. False when there is no such person."
+  forgetPerson(id: ID!): Boolean!
+}

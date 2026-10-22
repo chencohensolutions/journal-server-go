@@ -16,6 +16,10 @@ const MaxPreviewSide = 4096
 // same for each of them, so one kept preview serves them all.
 var ModelPreview = PreviewSpec{Width: 640, Height: 640, Fit: "contain", Format: "jpeg", Quality: "high"}
 
+// FacePreview is the picture face search reads (package faces): bigger than ModelPreview, so that faces in the
+// background of a group photo are still big enough to tell apart.
+var FacePreview = PreviewSpec{Width: 1280, Height: 1280, Fit: "contain", Format: "jpeg", Quality: "high"}
+
 // PreviewSpec is the exact picture a client will draw: Width×Height physical pixels.
 type PreviewSpec struct {
 	Width, Height int
