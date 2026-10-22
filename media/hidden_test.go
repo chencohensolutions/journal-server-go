@@ -1,6 +1,7 @@
 package media
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -99,4 +100,32 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 	if len(items) != 3 || f.store.Hides(view, items[0]) || f.store.Hides(view, items[1]) || f.store.Hides(view, items[2]) {
 		t.Fatalf("shown again: %v", items)
 	}
+}
+
+// A feed read page by page while something is hidden reaches its end: the cursor keeps the view it was given for.
+func TestHiddenFeedPages(t *testing.T) {
+	f := newFixture(t)
+	for i := range 3 {
+		f.now = f.now.Add(time.Second)
+		f.upload([]byte(fmt.Sprint("photo", i)), fmt.Sprintf("2025110%d_110819.heic", i+1))
+	}
+	if err := f.store.SetHidden(Hidden{ScreenshotApps: []string{"Bumble"}}); err != nil {
+		t.Fatal(err)
+	}
+	cursor, seen := "", 0
+	for range 5 {
+		items, next, remaining, err := f.store.Changes(cursor, 1, f.store.ViewFor(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen += len(items)
+		if remaining == 0 {
+			if seen != 3 {
+				t.Errorf("read %d files, want 3", seen)
+			}
+			return
+		}
+		cursor = next
+	}
+	t.Fatal("the feed started again on every page")
 }

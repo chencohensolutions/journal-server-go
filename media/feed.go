@@ -97,7 +97,9 @@ func decodeCursor(cursor string) (p *feedPosition, key string, err error) {
 	case len(parts) == 3 && (parts[0] == "m1" || parts[0] == "w1"):
 		key = parts[0][:1]
 	case len(parts) == 4 && parts[0] == "m2" && len(parts[1]) > 1 && (parts[1][0] == 'm' || parts[1][0] == 'w'):
-		key, parts = parts[1], append(parts[:1], parts[2:]...)
+		// Two statements: in one, Go may run the append (which writes over parts[1]) before reading parts[1].
+		key = parts[1]
+		parts = append(parts[:1], parts[2:]...)
 	default:
 		return nil, "", ErrBadCursor
 	}
