@@ -82,7 +82,7 @@ func main() {
 	check(err)
 
 	var todo []media.Item
-	items, _, _, err := store.Changes("", 1<<31-1, false)
+	items, _, _, err := store.Changes("", 1<<31-1, media.View{})
 	check(err)
 	for _, item := range items {
 		if item.Sidecar.Facts.Kind == media.KindVideo && !withVideos {

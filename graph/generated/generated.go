@@ -51,6 +51,12 @@ type ComplexityRoot struct {
 		HasMore func(childComplexity int) int
 	}
 
+	Collection struct {
+		Files  func(childComplexity int) int
+		Hidden func(childComplexity int) int
+		Name   func(childComplexity int) int
+	}
+
 	EnrolledDevice struct {
 		Certificate func(childComplexity int) int
 		DeviceName  func(childComplexity int) int
@@ -73,7 +79,14 @@ type ComplexityRoot struct {
 		Lon func(childComplexity int) int
 	}
 
+	HiddenCollections struct {
+		ScreenshotApps        func(childComplexity int) int
+		ScreenshotsWithoutApp func(childComplexity int) int
+		Whatsapp              func(childComplexity int) int
+	}
+
 	Media struct {
+		App        func(childComplexity int) int
 		DurationMs func(childComplexity int) int
 		FileName   func(childComplexity int) int
 		Height     func(childComplexity int) int
@@ -108,14 +121,16 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		EnrollDevice func(childComplexity int, input model.EnrollDeviceInput) int
-		SetPrivate   func(childComplexity int, sha256s []string, private bool) int
-		StartUpload  func(childComplexity int, input model.StartUploadInput) int
+		EnrollDevice         func(childComplexity int, input model.EnrollDeviceInput) int
+		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
+		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
+		StartUpload          func(childComplexity int, input model.StartUploadInput) int
 	}
 
 	Query struct {
 		Changes           func(childComplexity int, since *string, limit *int) int
 		EnrollmentPreview func(childComplexity int, code string) int
+		HiddenCollections func(childComplexity int) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
 		SearchMedia       func(childComplexity int, text string, limit *int, offset *int, years []int, area *model.GeoAreaInput) int
@@ -151,11 +166,13 @@ type ComplexityRoot struct {
 
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
+	SetHiddenCollections(ctx context.Context, input model.HiddenCollectionsInput) (*model.HiddenCollections, error)
 	StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error)
 	SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
+	HiddenCollections(ctx context.Context) (*model.HiddenCollections, error)
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
@@ -221,6 +238,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ChangePage.HasMore(childComplexity), true
 
+	case "Collection.files":
+		if e.ComplexityRoot.Collection.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Collection.Files(childComplexity), true
+	case "Collection.hidden":
+		if e.ComplexityRoot.Collection.Hidden == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Collection.Hidden(childComplexity), true
+	case "Collection.name":
+		if e.ComplexityRoot.Collection.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Collection.Name(childComplexity), true
+
 	case "EnrolledDevice.certificate":
 		if e.ComplexityRoot.EnrolledDevice.Certificate == nil {
 			break
@@ -285,6 +321,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.GeoPoint.Lon(childComplexity), true
 
+	case "HiddenCollections.screenshotApps":
+		if e.ComplexityRoot.HiddenCollections.ScreenshotApps == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.ScreenshotApps(childComplexity), true
+	case "HiddenCollections.screenshotsWithoutApp":
+		if e.ComplexityRoot.HiddenCollections.ScreenshotsWithoutApp == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.ScreenshotsWithoutApp(childComplexity), true
+	case "HiddenCollections.whatsapp":
+		if e.ComplexityRoot.HiddenCollections.Whatsapp == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.Whatsapp(childComplexity), true
+
+	case "Media.app":
+		if e.ComplexityRoot.Media.App == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.App(childComplexity), true
 	case "Media.durationMs":
 		if e.ComplexityRoot.Media.DurationMs == nil {
 			break
@@ -449,6 +510,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.EnrollDevice(childComplexity, args["input"].(model.EnrollDeviceInput)), true
+	case "Mutation.setHiddenCollections":
+		if e.ComplexityRoot.Mutation.SetHiddenCollections == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setHiddenCollections_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetHiddenCollections(childComplexity, args["input"].(model.HiddenCollectionsInput)), true
 	case "Mutation.setPrivate":
 		if e.ComplexityRoot.Mutation.SetPrivate == nil {
 			break
@@ -494,6 +566,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.EnrollmentPreview(childComplexity, args["code"].(string)), true
+	case "Query.hiddenCollections":
+		if e.ComplexityRoot.Query.HiddenCollections == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.HiddenCollections(childComplexity), true
 
 	case "Query.media":
 		if e.ComplexityRoot.Query.Media == nil {
@@ -634,6 +712,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputEnrollDeviceInput,
 		ec.unmarshalInputGeoAreaInput,
 		ec.unmarshalInputGeoPointInput,
+		ec.unmarshalInputHiddenCollectionsInput,
 		ec.unmarshalInputStartUploadInput,
 	)
 	first := true
@@ -710,6 +789,52 @@ func newExecutionContext(
 }
 
 var sources = []*ast.Source{
+	{Name: "../schema/hidden.graphql", Input: `# --- Hidden collections -------------------------------------------------------
+# What the user hides on every device (Settings → Private media → Hidden collections in the apps). The server does
+# the hiding: a hidden file comes in the change feed as deleted, isn't counted in storageUsage, isn't found by
+# searchMedia, and /media and its preview answer 404. Nothing is deleted; showing a collection again brings its files
+# back. missingMedia, startUpload, uploads and verify still see hidden files, so they are never uploaded again.
+
+"Groups of files the user can hide on every device."
+type HiddenCollections {
+  "Every file WhatsApp saved (source whatsapp)."
+  whatsapp: Collection!
+  "Screenshots whose file name says no app (Screenshot_2015-07-18-03-54-57.png). Its name is empty."
+  screenshotsWithoutApp: Collection!
+  """
+  The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
+  listed too, so it can be shown again.
+  """
+  screenshotApps: [Collection!]!
+}
+
+"One group of files: how many it has, hidden or not, and whether it is hidden."
+type Collection {
+  name: String!
+  files: Int!
+  hidden: Boolean!
+}
+
+"The whole choice of what to hide: what isn't listed is shown."
+input HiddenCollectionsInput {
+  whatsapp: Boolean!
+  screenshotsWithoutApp: Boolean!
+  "Apps whose screenshots are hidden, compared ignoring case."
+  screenshotApps: [String!]!
+}
+
+extend type Query {
+  hiddenCollections: HiddenCollections!
+}
+
+extend type Mutation {
+  """
+  Replaces what the user hides on every device. Devices drop the files now hidden, and get back the ones shown again,
+  at their next sync.
+  """
+  setHiddenCollections(input: HiddenCollectionsInput!): HiddenCollections!
+}
+`, BuiltIn: false},
 	{Name: "../schema/media.graphql", Input: `# --- Media --------------------------------------------------------------------
 # Originals in the user's data folder, identified by the sha256 of their content.
 # The bytes travel over plain HTTP (PUT /upload/{sha256}, GET /media/{sha256}); see docs/media.md.
@@ -748,6 +873,8 @@ type Media {
   location: GeoPoint
   "The folder it came from on the device, as the device names it: camera, whatsapp, …"
   source: String
+  "The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
+  app: String
   "The photo this one is an edit of."
   versionOf: Sha256
   "Edits of this photo, oldest first."
@@ -1043,6 +1170,18 @@ func (ec *executionContext) childFields_ChangePage(ctx context.Context, field gr
 	return nil, fmt.Errorf("no field named %q was found under type ChangePage", field.Name)
 }
 
+func (ec *executionContext) childFields_Collection(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_Collection_name(ctx, field)
+	case "files":
+		return ec.fieldContext_Collection_files(ctx, field)
+	case "hidden":
+		return ec.fieldContext_Collection_hidden(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Collection", field.Name)
+}
+
 func (ec *executionContext) childFields_GeoPoint(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "lat":
@@ -1051,6 +1190,18 @@ func (ec *executionContext) childFields_GeoPoint(ctx context.Context, field grap
 		return ec.fieldContext_GeoPoint_lon(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type GeoPoint", field.Name)
+}
+
+func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "whatsapp":
+		return ec.fieldContext_HiddenCollections_whatsapp(ctx, field)
+	case "screenshotsWithoutApp":
+		return ec.fieldContext_HiddenCollections_screenshotsWithoutApp(ctx, field)
+	case "screenshotApps":
+		return ec.fieldContext_HiddenCollections_screenshotApps(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type HiddenCollections", field.Name)
 }
 
 func (ec *executionContext) childFields_Media(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -1077,6 +1228,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_location(ctx, field)
 	case "source":
 		return ec.fieldContext_Media_source(ctx, field)
+	case "app":
+		return ec.fieldContext_Media_app(ctx, field)
 	case "versionOf":
 		return ec.fieldContext_Media_versionOf(ctx, field)
 	case "versions":
@@ -1265,6 +1418,20 @@ func (ec *executionContext) field_Mutation_enrollDevice_args(ctx context.Context
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
 		func(ctx context.Context, v any) (model.EnrollDeviceInput, error) {
 			return ec.unmarshalNEnrollDeviceInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setHiddenCollections_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (model.HiddenCollectionsInput, error) {
+			return ec.unmarshalNHiddenCollectionsInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollectionsInput(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1676,6 +1843,75 @@ func (ec *executionContext) fieldContext_ChangePage_hasMore(_ context.Context, f
 	return graphql.NewScalarFieldContext("ChangePage", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _Collection_name(ctx context.Context, field graphql.CollectedField, obj *model.Collection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Collection_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Collection_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Collection", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Collection_files(ctx context.Context, field graphql.CollectedField, obj *model.Collection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Collection_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Collection_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Collection", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Collection_hidden(ctx context.Context, field graphql.CollectedField, obj *model.Collection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Collection_hidden(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Hidden, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Collection_hidden(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Collection", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1904,6 +2140,102 @@ func (ec *executionContext) _GeoPoint_lon(ctx context.Context, field graphql.Col
 }
 func (ec *executionContext) fieldContext_GeoPoint_lon(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("GeoPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _HiddenCollections_whatsapp(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_whatsapp(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Whatsapp, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_whatsapp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_screenshotsWithoutApp(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_screenshotsWithoutApp(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ScreenshotsWithoutApp, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_screenshotsWithoutApp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_screenshotApps(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_screenshotApps(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ScreenshotApps, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollectionᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_screenshotApps(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Media_sha256(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
@@ -2165,6 +2497,29 @@ func (ec *executionContext) _Media_source(ctx context.Context, field graphql.Col
 	)
 }
 func (ec *executionContext) fieldContext_Media_source(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_app(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_app(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.App, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_app(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -2565,6 +2920,50 @@ func (ec *executionContext) fieldContext_Mutation_enrollDevice(ctx context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_setHiddenCollections(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setHiddenCollections(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetHiddenCollections(ctx, fc.Args["input"].(model.HiddenCollectionsInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.HiddenCollections) graphql.Marshaler {
+			return ec.marshalNHiddenCollections2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollections(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setHiddenCollections(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_HiddenCollections(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setHiddenCollections_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_startUpload(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -2706,6 +3105,38 @@ func (ec *executionContext) fieldContext_Query_enrollmentPreview(ctx context.Con
 	if fc.Args, err = ec.field_Query_enrollmentPreview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_hiddenCollections(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_hiddenCollections(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().HiddenCollections(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.HiddenCollections) graphql.Marshaler {
+			return ec.marshalNHiddenCollections2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollections(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_hiddenCollections(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_HiddenCollections(ctx, field)
+		},
 	}
 	return fc, nil
 }
@@ -4523,6 +4954,50 @@ func (ec *executionContext) unmarshalInputGeoPointInput(ctx context.Context, obj
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Context, obj any) (model.HiddenCollectionsInput, error) {
+	var it model.HiddenCollectionsInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"whatsapp", "screenshotsWithoutApp", "screenshotApps"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "whatsapp":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("whatsapp"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Whatsapp = data
+		case "screenshotsWithoutApp":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("screenshotsWithoutApp"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ScreenshotsWithoutApp = data
+		case "screenshotApps":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("screenshotApps"))
+			data, err := ec.unmarshalNString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ScreenshotApps = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputStartUploadInput(ctx context.Context, obj any) (model.StartUploadInput, error) {
 	var it model.StartUploadInput
 	if obj == nil {
@@ -4833,6 +5308,55 @@ func (ec *executionContext) _ChangePage(ctx context.Context, sel ast.SelectionSe
 	return out
 }
 
+var collectionImplementors = []string{"Collection"}
+
+func (ec *executionContext) _Collection(ctx context.Context, sel ast.SelectionSet, obj *model.Collection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, collectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Collection")
+		case "name":
+			out.Values[i] = ec._Collection_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._Collection_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hidden":
+			out.Values[i] = ec._Collection_hidden(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var enrolledDeviceImplementors = []string{"EnrolledDevice", "EnrollDeviceResult"}
 
 func (ec *executionContext) _EnrolledDevice(ctx context.Context, sel ast.SelectionSet, obj *model.EnrolledDevice) graphql.Marshaler {
@@ -5019,6 +5543,55 @@ func (ec *executionContext) _GeoPoint(ctx context.Context, sel ast.SelectionSet,
 	return out
 }
 
+var hiddenCollectionsImplementors = []string{"HiddenCollections"}
+
+func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.SelectionSet, obj *model.HiddenCollections) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, hiddenCollectionsImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("HiddenCollections")
+		case "whatsapp":
+			out.Values[i] = ec._HiddenCollections_whatsapp(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "screenshotsWithoutApp":
+			out.Values[i] = ec._HiddenCollections_screenshotsWithoutApp(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "screenshotApps":
+			out.Values[i] = ec._HiddenCollections_screenshotApps(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var mediaImplementors = []string{"Media"}
 
 func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, obj *model.Media) graphql.Marshaler {
@@ -5067,6 +5640,8 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Media_location(ctx, field, obj)
 		case "source":
 			out.Values[i] = ec._Media_source(ctx, field, obj)
+		case "app":
+			out.Values[i] = ec._Media_app(ctx, field, obj)
 		case "versionOf":
 			out.Values[i] = ec._Media_versionOf(ctx, field, obj)
 		case "versions":
@@ -5245,6 +5820,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setHiddenCollections":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setHiddenCollections(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "startUpload":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_startUpload(ctx, field)
@@ -5311,6 +5893,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_enrollmentPreview(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "hiddenCollections":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_hiddenCollections(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -6068,6 +6672,32 @@ func (ec *executionContext) marshalNChangePage2ᚖgithubᚗcomᚋjournalᚋserve
 	return ec._ChangePage(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNCollection2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollectionᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Collection) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx context.Context, sel ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Collection(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNEnrollDeviceInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx context.Context, v any) (model.EnrollDeviceInput, error) {
 	res, err := ec.unmarshalInputEnrollDeviceInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -6117,6 +6747,25 @@ func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.S
 		}
 	}
 	return graphql.WrapContextMarshaler(ctx, res)
+}
+
+func (ec *executionContext) marshalNHiddenCollections2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollections(ctx context.Context, sel ast.SelectionSet, v model.HiddenCollections) graphql.Marshaler {
+	return ec._HiddenCollections(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNHiddenCollections2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollections(ctx context.Context, sel ast.SelectionSet, v *model.HiddenCollections) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._HiddenCollections(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNHiddenCollectionsInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollectionsInput(ctx context.Context, v any) (model.HiddenCollectionsInput, error) {
+	res, err := ec.unmarshalInputHiddenCollectionsInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
@@ -6326,6 +6975,36 @@ func (ec *executionContext) marshalNString2string(ctx context.Context, sel ast.S
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalNString2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]string, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNString2string(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel ast.SelectionSet, v []string) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNString2string(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalNTime2timeᚐTime(ctx context.Context, v any) (time.Time, error) {

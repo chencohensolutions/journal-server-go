@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -62,5 +63,46 @@ func TestFixCorrectsSourceByName(t *testing.T) {
 	}
 	if r, _ = fix(store, false); r.fixed != 0 {
 		t.Fatalf("second run fixed %d", r.fixed)
+	}
+}
+
+func TestFixScreenshotsSetsTheirApp(t *testing.T) {
+	// A screenshot placed before the server read the app from its name: source as its folder said, no app.
+	root := t.TempDir()
+	dir := filepath.Join(root, "media", "2024", "2024-03")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "Screenshot_20240301_030715_Bumble.jpg"
+	data := []byte(name)
+	sum := sha256.Sum256(data)
+	sha := hex.EncodeToString(sum[:])
+	sidecar := `{"format":1,"sha256":"` + sha + `","facts":{"fileName":"` + name + `","kind":"photo","mimeType":"image/jpeg",` +
+		`"size":` + strconv.Itoa(len(data)) + `,"takenAt":"2024-03-01T03:07:15+02:00","source":"other","uploadedAt":"2026-10-20T17:50:53Z","uploadedBy":"import"}}`
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".json"), []byte(sidecar), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := media.OpenStore(root, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if apps, err := fixScreenshots(store, true); err != nil || apps["Bumble"] != 1 {
+		t.Fatalf("dry run: %v %v", apps, err)
+	}
+	if got, _ := store.Get(sha); got.Sidecar.Facts.App != nil {
+		t.Fatal("a dry run changed the sidecar")
+	}
+	if apps, err := fixScreenshots(store, false); err != nil || apps["Bumble"] != 1 {
+		t.Fatalf("fix: %v %v", apps, err)
+	}
+	if got, _ := store.Get(sha); *got.Sidecar.Facts.Source != media.SourceScreenshots || got.Sidecar.Facts.App == nil || *got.Sidecar.Facts.App != "Bumble" {
+		t.Fatalf("not corrected: %+v", got.Sidecar.Facts)
+	}
+	if apps, _ := fixScreenshots(store, false); len(apps) != 0 {
+		t.Fatalf("second run: %v", apps)
 	}
 }

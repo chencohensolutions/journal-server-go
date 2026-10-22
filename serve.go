@@ -132,8 +132,8 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	}
 	mux.Handle("PUT /upload/{sha256}", upload)
 	mux.Handle("HEAD /upload/{sha256}", upload)
-	mux.Handle("GET /media/{sha256}", withUser(hidePrivate(userStore, media.OriginalHandler(userStore))))
-	mux.Handle("GET /media/{sha256}/preview", withUser(hidePrivate(userStore, media.PreviewHandler(userStore, previews))))
+	mux.Handle("GET /media/{sha256}", withUser(hideFromDevice(userStore, media.OriginalHandler(userStore))))
+	mux.Handle("GET /media/{sha256}/preview", withUser(hideFromDevice(userStore, media.PreviewHandler(userStore, previews))))
 	mux.Handle("POST /media/{sha256}/verify", withUser(media.VerifyHandler(userStore)))
 	return mux
 }

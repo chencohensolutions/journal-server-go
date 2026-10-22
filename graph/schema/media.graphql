@@ -36,6 +36,8 @@ type Media {
   location: GeoPoint
   "The folder it came from on the device, as the device names it: camera, whatsapp, …"
   source: String
+  "The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
+  app: String
   "The photo this one is an edit of."
   versionOf: Sha256
   "Edits of this photo, oldest first."

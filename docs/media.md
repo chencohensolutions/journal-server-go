@@ -73,7 +73,10 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
 The device sends the facts (it already read them from MediaStore/PhotoKit); the server adds
 `uploadedAt` and `uploadedBy` (the enrolled device's name). `versionOf` is set on an edit of a photo
 (same device id, new content). `pairedWith` is set on a Live Photo's video (it names the photo) and on
-a RAW (it names the JPEG). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
+a RAW (it names the JPEG). A file named like a screenshot (`Screenshot_20240301_030715_Bumble.jpg`,
+`Screenshot_2015-07-18-03-54-57.png`) gets `"source": "screenshots"` whatever the device or folder said, and
+`app`, the app on screen, when the name has one (`"app": "Bumble"`, also from `…_Bumble(1).jpg` and
+`…_Bumble~20221117-191459.jpg`; `media.ScreenshotApp`). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
@@ -197,7 +200,8 @@ again with each page's cursor until `hasMore` is false; afterwards it asks with 
 since (an empty page returns the same cursor). A file changes when it is uploaded, and again when a scan writes its
 answer into the sidecar (see [Nudity scan](#nudity-scan)), its source is corrected
 (see [Fixing sources](#fixing-sources)) or it is marked private or unmarked (see [Private files](#private-files)): it
-then comes again, whole. To a device the server keeps from private files, a private file comes as `deleted`. The cursor is opaque (today
+then comes again, whole. To a device the server keeps from private files, a private file comes as `deleted`, and so does a file in one
+of the user's [hidden collections](#hidden-collections) to every device. The cursor is opaque (today
 the time of the last change and sha256 of the last original in the page), so stories and notes can join the feed later
 without changing clients. Pages are at most 5000; responses to `/query` are gzipped when the client accepts it.
 
@@ -258,6 +262,32 @@ from them entirely, for example a tablet others use: `journal-server private <se
 Withholding protects what a lost device holds better than the apps' hiding, since nothing private reaches it. Revoke a
 lost device in any case (see [authentication.md](authentication.md)).
 
+## Hidden collections
+
+The user can hide whole groups of files on every device, without deleting them (Settings → Private media → Hidden
+collections in the apps): all of WhatsApp, the screenshots of chosen apps (by `facts.app`, compared ignoring case),
+and screenshots whose name says no app. `query hiddenCollections` lists them with how many files each has, hidden
+or not, apps with most files first (a hidden app with no files left is listed too, so it can be shown again);
+`mutation setHiddenCollections(input:)` replaces the whole choice and answers the same list. The choice is the
+user's, not a device's, and is kept at the data folder's root, so it moves with the data:
+
+```json
+// settings.json
+{ "format": 1, "hidden": { "sources": ["whatsapp"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true } }
+```
+
+- **The server does the hiding**, as for a device kept from private files: a hidden file comes in the change feed as
+  `deleted` (a feed from the start leaves it out), `media(sha256:)` is `null`, `/media/{sha256}` and its preview
+  answer 404, `storageUsage` doesn't count it, and `searchMedia` doesn't find or count it. An edit or paired file
+  of a hidden file is hidden with it. The apps don't know a file is hidden; they drop it like a deleted one, with
+  their cached previews and originals of it.
+- **Nothing is deleted or rewritten**: originals and sidecars stay as they are. Showing a collection again brings
+  its files back.
+- Changing the choice starts every device's feed again on its next sync (the cursor carries a short key of what
+  was hidden, `Hidden.Key`), so they drop what is now hidden and get back what is shown again.
+- `missingMedia`, `startUpload`, uploads and `/verify` still see hidden files, so a phone never uploads one again
+  and can still free its own copy. The phone's own copies in its gallery are not hidden by the server.
+
 ## Search
 
 Files can be found by a description in words with `searchMedia(text: "dog on the beach")`. It runs a SigLIP 2 model
@@ -275,6 +305,9 @@ file copied elsewhere before it was imported lost it; they now look at the name 
 - It prints how many it corrected, their sources before, and where they were found (the first folders of
   `importedFrom`), to tell why they had the wrong source. Files whose folders mention WhatsApp but whose name
   doesn't are listed and left as they are. Running it again changes nothing.
+- It also gives screenshots placed before the server read the app from their names what a new one gets
+  (`"source": "screenshots"` and `app`; see [Sidecar](#sidecar-json)), and prints how many it corrected for each app.
+  Only `facts.source`, `facts.app` and `facts.correctedAt` change.
 
 ## Importing files already on the server's disk
 
@@ -294,7 +327,8 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
   found in this run) is a **duplicate** and isn't copied. A new file is copied to `.cache/import/`, hashed again,
   and placed like an upload (month folder, safe name, sidecar), with `source` from its folder like the Android
   app (`camera`, `screenshots`, `whatsapp`, `other`), or `whatsapp` when WhatsApp named it
-  (`IMG-20230115-WA0012.jpg`) wherever it was found (`media.SourceOfPath`).
+  (`IMG-20230115-WA0012.jpg`) wherever it was found (`media.SourceOfPath`). Screenshots get their `app` from
+the name, as uploads do.
 - **Every source file that is done, copied or duplicate, is moved to a folder of this run inside `--imported`**,
   named by when the run started, keeping its path from the searched folder down
   (`D:\Archive\phone DCIM\Camera\x.jpg` → `D:\Imported\2026-10-20-19-15-42\phone DCIM\Camera\x.jpg`), so runs

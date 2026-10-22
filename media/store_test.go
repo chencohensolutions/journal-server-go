@@ -297,7 +297,7 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	var seen []string
 	cursor := ""
 	for {
-		items, next, more, err := f.store.Changes(cursor, 2, false)
+		items, next, more, err := f.store.Changes(cursor, 2, View{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -314,15 +314,15 @@ func TestChangesPageThroughEverythingInUploadOrder(t *testing.T) {
 	}
 
 	// Nothing new: the same cursor comes back. A new upload shows up after it.
-	if items, next, more, _ := f.store.Changes(cursor, 2, false); len(items) != 0 || next != cursor || more {
+	if items, next, more, _ := f.store.Changes(cursor, 2, View{}); len(items) != 0 || next != cursor || more {
 		t.Fatalf("after the end: %v %q %v", items, next, more)
 	}
 	f.now = f.now.Add(time.Second)
 	latest := f.upload([]byte("new"), "IMG.jpg")
-	if items, _, _, _ := f.store.Changes(cursor, 10, false); len(items) != 1 || items[0].Sha256() != latest.Sha256() {
+	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 1 || items[0].Sha256() != latest.Sha256() {
 		t.Fatalf("new upload: %v", items)
 	}
-	if _, _, _, err := f.store.Changes("garbage", 10, false); !errors.Is(err, ErrBadCursor) {
+	if _, _, _, err := f.store.Changes("garbage", 10, View{}); !errors.Is(err, ErrBadCursor) {
 		t.Fatalf("bad cursor: %v", err)
 	}
 }
@@ -331,7 +331,7 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 	f := newFixture(t)
 	f.now = f.now.Add(time.Second)
 	item := f.upload([]byte("photo"), "IMG.jpg")
-	_, cursor, _, _ := f.store.Changes("", 10, false)
+	_, cursor, _, _ := f.store.Changes("", 10, View{})
 
 	// Scanned an hour later; the time is the store's, taken during the write's turn.
 	f.now = f.now.Add(time.Hour)
@@ -339,7 +339,7 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 	if err := f.store.SetNudity(item.Sha256(), Detection{Score: 0.93, Model: "nudenet-320n", ScannedAt: scanned.Add(-time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	items, _, _, _ := f.store.Changes(cursor, 10, false)
+	items, _, _, _ := f.store.Changes(cursor, 10, View{})
 	if len(items) != 1 || items[0].Sidecar.Detected.Nudity.Score != 0.93 {
 		t.Fatalf("after the scan: %v", items)
 	}
@@ -359,13 +359,13 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 	f := newFixture(t)
 	f.now = f.now.Add(time.Second)
 	item := f.upload([]byte("photo"), "IMG-20230115-WA0012.jpg")
-	_, cursor, _, _ := f.store.Changes("", 10, false)
+	_, cursor, _, _ := f.store.Changes("", 10, View{})
 
 	f.now = f.now.Add(time.Hour)
 	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || !changed {
 		t.Fatal(changed, err)
 	}
-	items, cursor, _, _ := f.store.Changes(cursor, 10, false)
+	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
 	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceWhatsApp {
 		t.Fatalf("after the correction: %v", items)
 	}
@@ -375,7 +375,7 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || changed {
 		t.Fatal(changed, err)
 	}
-	if items, _, _, _ := f.store.Changes(cursor, 10, false); len(items) != 0 {
+	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 0 {
 		t.Fatalf("unchanged: %v", items)
 	}
 
@@ -386,5 +386,56 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 	got, _ := again.Get(item.Sha256())
 	if c := got.Sidecar.Facts.CorrectedAt; c == nil || *got.Sidecar.Facts.Source != SourceWhatsApp || got.Sidecar.Facts.FileName != "IMG-20230115-WA0012.jpg" {
 		t.Fatalf("reopened: %+v", got.Sidecar.Facts)
+	}
+}
+
+func TestScreenshotsGetTheirApp(t *testing.T) {
+	f := newFixture(t)
+	f.now = f.now.Add(time.Second)
+
+	// A new upload gets them from its name, whatever source the device sent.
+	req := photoRequest([]byte("bumble"), "Screenshot_20240301_030715_Bumble.jpg")
+	camera := SourceCamera
+	req.Source = &camera
+	f.start(req)
+	result, err := f.chunk([]byte("bumble"), 0, 6)
+	if err != nil || result.Item == nil {
+		t.Fatal(result, err)
+	}
+	if facts := result.Item.Sidecar.Facts; *facts.Source != SourceScreenshots || facts.App == nil || *facts.App != "Bumble" {
+		t.Fatalf("uploaded: %+v", facts)
+	}
+
+	// A file placed before the server read the name gets them from SetScreenshotFacts, and comes again in the feed.
+	item := f.upload([]byte("tinder"), "Screenshot_20240228-080750_Tinder(1).jpg")
+	old := item.Sidecar
+	old.Facts.Source, old.Facts.App = &camera, nil
+	f.store.mu.Lock()
+	err = f.store.rewriteSidecar(f.store.items[item.Sha256()], old)
+	f.store.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, cursor, _, _ := f.store.Changes("", 10, View{})
+	f.now = f.now.Add(time.Hour)
+	if changed, err := f.store.SetScreenshotFacts(item.Sha256()); err != nil || !changed {
+		t.Fatal(changed, err)
+	}
+	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
+	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceScreenshots || *items[0].Sidecar.Facts.App != "Tinder" {
+		t.Fatalf("after the correction: %v", items)
+	}
+	f.now = f.now.Add(time.Hour)
+	if changed, err := f.store.SetScreenshotFacts(item.Sha256()); err != nil || changed {
+		t.Fatal(changed, err)
+	}
+	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 0 {
+		t.Fatalf("unchanged: %v", items)
+	}
+
+	// Other files are left as they are.
+	photo := f.upload([]byte("photo"), "20251101_110819.heic")
+	if changed, err := f.store.SetScreenshotFacts(photo.Sha256()); err != nil || changed || photo.Sidecar.Facts.App != nil {
+		t.Fatal(changed, err, photo.Sidecar.Facts)
 	}
 }

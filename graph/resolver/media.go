@@ -30,11 +30,12 @@ func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
 	return store, nil
 }
 
-// view is what the request's device may see of its user's store: everything, unless the server keeps it from
-// private files (`journal-server private <serial> withhold`).
+// view is what the request's device may see of its user's store (media.View): everything but the user's hidden
+// collections, and without private files when the server keeps them from it
+// (`journal-server private <serial> withhold`).
 type view struct {
-	store           *media.Store
-	withholdPrivate bool
+	store *media.Store
+	media.View
 }
 
 func (r *Resolver) view(ctx context.Context) (view, error) {
@@ -42,11 +43,11 @@ func (r *Resolver) view(ctx context.Context) (view, error) {
 	if err != nil {
 		return view{}, err
 	}
-	return view{store, auth.WithholdPrivateFromContext(ctx)}, nil
+	return view{store, store.ViewFor(auth.WithholdPrivateFromContext(ctx))}, nil
 }
 
 // hides reports whether the device may not see item.
-func (v view) hides(item media.Item) bool { return v.withholdPrivate && item.Sidecar.IsPrivate() }
+func (v view) hides(item media.Item) bool { return v.store.Hides(v.View, item) }
 
 func (v view) hidesSha(sha string) bool {
 	item, ok := v.store.Get(sha)
@@ -55,7 +56,7 @@ func (v view) hidesSha(sha string) bool {
 
 // visible leaves out of hashes the files the device may not see.
 func (v view) visible(hashes []string) []string {
-	if !v.withholdPrivate {
+	if !v.WithholdPrivate && v.Hidden.IsEmpty() {
 		return hashes
 	}
 	var shown []string
@@ -103,6 +104,7 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		Height:     facts.Height,
 		DurationMs: facts.DurationMs,
 		Source:     facts.Source,
+		App:        facts.App,
 		VersionOf:  facts.VersionOf,
 		Versions:   versions,
 		PairedWith: facts.PairedWith,

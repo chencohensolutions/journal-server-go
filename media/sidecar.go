@@ -39,6 +39,8 @@ type Facts struct {
 	DurationMs *int64     `json:"durationMs"`
 	Location   *GeoPoint  `json:"location"`
 	Source     *string    `json:"source"`
+	// The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg → "Bumble").
+	App *string `json:"app,omitempty"`
 	// The photo this file is an edit of.
 	VersionOf *string `json:"versionOf"`
 	// The file this one belongs with: a Live Photo's video names its photo, a RAW its JPEG.
@@ -50,7 +52,7 @@ type Facts struct {
 	// Every folder scripts/import found this file in, from the searched folder down ("phone DCIM/Flowers"):
 	// the albums it was kept in, as clues. Copies found later add theirs.
 	Folders []string `json:"folders,omitempty"`
-	// When the server last corrected a fact clients show (SetSource), so the file comes again in the change feed.
+	// When the server last corrected a fact clients show (SetSource, SetScreenshotFacts), so the file comes again in the change feed.
 	CorrectedAt *time.Time `json:"correctedAt,omitempty"`
 }
 
@@ -230,3 +232,29 @@ func (s *Store) SetSource(sha, source string) (changed bool, err error) {
 	})
 	return changed, err
 }
+
+// SetScreenshotFacts gives a file named like a screenshot the facts a new one gets (source screenshots, and the
+// app its name says), for files placed before the server read them from the name. Like SetSource, it rewrites only
+// the sidecar and sets CorrectedAt, so the file comes again in the change feed; a file already so is left as it is.
+func (s *Store) SetScreenshotFacts(sha string) (changed bool, err error) {
+	err = s.Turn(func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		item, ok := s.items[sha]
+		if !ok {
+			return fmt.Errorf("%s isn't in the data folder", sha)
+		}
+		sidecar := item.Sidecar
+		screenshotFacts(&sidecar.Facts)
+		if equalString(sidecar.Facts.Source, item.Sidecar.Facts.Source) && equalString(sidecar.Facts.App, item.Sidecar.Facts.App) {
+			return nil
+		}
+		now := s.now().UTC()
+		sidecar.Facts.CorrectedAt = &now
+		changed = true
+		return s.rewriteSidecar(item, sidecar)
+	})
+	return changed, err
+}
+
+func equalString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }

@@ -1,0 +1,258 @@
+package media
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// Hidden is what the user hides on every device (Settings → Private media → Hidden collections in the apps): whole
+// sources (WhatsApp), the screenshots of some apps, and screenshots whose name says no app. Hidden files stay in the
+// data folder as they are; the server leaves them out of what devices see (View). It is kept in settings.json at the
+// data folder's root, so it moves with the data.
+type Hidden struct {
+	Sources               []string `json:"sources,omitempty"`
+	ScreenshotApps        []string `json:"screenshotApps,omitempty"`
+	ScreenshotsWithoutApp bool     `json:"screenshotsWithoutApp,omitempty"`
+}
+
+// SettingsFormat is the version of settings.json.
+const SettingsFormat = 1
+
+type settingsFile struct {
+	Format int    `json:"format"`
+	Hidden Hidden `json:"hidden"`
+}
+
+func (s *Store) settingsPath() string { return filepath.Join(s.root, "settings.json") }
+
+// Hides reports whether facts put a file in a hidden collection. Apps are compared ignoring case.
+func (h Hidden) Hides(facts Facts) bool {
+	source := SourceOther
+	if facts.Source != nil {
+		source = *facts.Source
+	}
+	for _, s := range h.Sources {
+		if s == source {
+			return true
+		}
+	}
+	if source != SourceScreenshots {
+		return false
+	}
+	if facts.App == nil {
+		return h.ScreenshotsWithoutApp
+	}
+	for _, app := range h.ScreenshotApps {
+		if strings.EqualFold(app, *facts.App) {
+			return true
+		}
+	}
+	return false
+}
+
+// normalized is h with apps trimmed, without empty ones or ones that differ only in case (the first spelling is
+// kept), sources likewise, both sorted.
+func (h Hidden) normalized() Hidden {
+	unique := func(values []string) []string {
+		seen := map[string]bool{}
+		var out []string
+		for _, v := range values {
+			v = strings.TrimSpace(v)
+			if v == "" || seen[strings.ToLower(v)] {
+				continue
+			}
+			seen[strings.ToLower(v)] = true
+			out = append(out, v)
+		}
+		sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+		return out
+	}
+	return Hidden{Sources: unique(h.Sources), ScreenshotApps: unique(h.ScreenshotApps), ScreenshotsWithoutApp: h.ScreenshotsWithoutApp}
+}
+
+// IsEmpty reports whether nothing is hidden.
+func (h Hidden) IsEmpty() bool {
+	return len(h.Sources) == 0 && len(h.ScreenshotApps) == 0 && !h.ScreenshotsWithoutApp
+}
+
+// Key is a short name for what is hidden ("" when nothing is), which the change feed's cursor carries: when it
+// changes, devices are sent everything again, so they drop what is now hidden and get back what is shown again.
+func (h Hidden) Key() string {
+	h = h.normalized()
+	if h.IsEmpty() {
+		return ""
+	}
+	for i, app := range h.ScreenshotApps {
+		h.ScreenshotApps[i] = strings.ToLower(app)
+	}
+	data, _ := json.Marshal(h)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:6])
+}
+
+// readHidden reads settings.json; a data folder without one hides nothing.
+func (s *Store) readHidden() (Hidden, error) {
+	data, err := os.ReadFile(s.settingsPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return Hidden{}, nil
+	}
+	if err != nil {
+		return Hidden{}, err
+	}
+	var file settingsFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return Hidden{}, fmt.Errorf("%s: %w", s.settingsPath(), err)
+	}
+	if file.Format > SettingsFormat {
+		return Hidden{}, fmt.Errorf("%s has format %d, newer than this server's %d", s.settingsPath(), file.Format, SettingsFormat)
+	}
+	return file.Hidden.normalized(), nil
+}
+
+// Hidden is what the user hides on every device.
+func (s *Store) Hidden() Hidden {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hidden
+}
+
+// SetHidden replaces what the user hides, in settings.json (inside a turn, written whole). Devices drop the files
+// now hidden and get back the ones shown again at their next sync (see Hidden.Key). Nothing in media/ changes.
+func (s *Store) SetHidden(h Hidden) error {
+	h = h.normalized()
+	return s.Turn(func() error {
+		data, err := json.MarshalIndent(settingsFile{Format: SettingsFormat, Hidden: h}, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(s.settingsPath(), append(data, '\n')); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.hidden = h
+		s.mu.Unlock()
+		return nil
+	})
+}
+
+// View is what a device may see of its user's files: everything but the hidden collections, and without private
+// files when the server keeps them from it (`journal-server private <serial> withhold`).
+type View struct {
+	WithholdPrivate bool
+	Hidden          Hidden
+}
+
+// ViewFor is the view of a device that is, or isn't, kept from private files, with what the user hides now.
+func (s *Store) ViewFor(withholdPrivate bool) View {
+	return View{WithholdPrivate: withholdPrivate, Hidden: s.Hidden()}
+}
+
+// key names the view in feed cursors: "w" or "m" (withheld or not), then Hidden.Key.
+func (v View) key() string {
+	flag := "m"
+	if v.WithholdPrivate {
+		flag = "w"
+	}
+	return flag + v.Hidden.Key()
+}
+
+// Hides reports whether the view leaves item out. A file is hidden with the file it is an edit of or paired with,
+// so the edit of a hidden screenshot is hidden too.
+func (s *Store) Hides(v View, item Item) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hides(v, item)
+}
+
+// hides is Hides for callers holding s.mu.
+func (s *Store) hides(v View, item Item) bool {
+	if v.WithholdPrivate && item.Sidecar.IsPrivate() {
+		return true
+	}
+	if v.Hidden.IsEmpty() {
+		return false
+	}
+	if v.Hidden.Hides(item.Sidecar.Facts) {
+		return true
+	}
+	for _, to := range []*string{item.Sidecar.Facts.VersionOf, item.Sidecar.Facts.PairedWith} {
+		if to == nil {
+			continue
+		}
+		if linked, ok := s.items[*to]; ok && v.Hidden.Hides(linked.Sidecar.Facts) {
+			return true
+		}
+	}
+	return false
+}
+
+// Collection is one group of files the user can hide: how many files it has and whether it is hidden.
+type Collection struct {
+	Name   string
+	Files  int
+	Hidden bool
+}
+
+// Collections is what the user can hide, with how many files each has (hidden or not): all of WhatsApp,
+// screenshots whose name says no app, and the screenshots of each app, most files first. An app is named as most of
+// its files spell it; a hidden app with no files left is listed too, so it can be shown again.
+func (s *Store) Collections() (whatsapp, withoutApp Collection, apps []Collection) {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	h := s.hidden
+	whatsapp = Collection{Name: "WhatsApp", Hidden: h.Hides(Facts{Source: ptr(SourceWhatsApp)})}
+	withoutApp = Collection{Name: "", Hidden: h.ScreenshotsWithoutApp}
+	counts := map[string]int{}
+	spellings := map[string]map[string]int{}
+	for _, item := range s.items {
+		facts := item.Sidecar.Facts
+		switch {
+		case facts.Source == nil:
+		case *facts.Source == SourceWhatsApp:
+			whatsapp.Files++
+		case *facts.Source == SourceScreenshots && facts.App == nil:
+			withoutApp.Files++
+		case *facts.Source == SourceScreenshots:
+			key := strings.ToLower(*facts.App)
+			counts[key]++
+			if spellings[key] == nil {
+				spellings[key] = map[string]int{}
+			}
+			spellings[key][*facts.App]++
+		}
+	}
+	for _, app := range h.ScreenshotApps {
+		key := strings.ToLower(app)
+		if _, ok := counts[key]; !ok {
+			counts[key] = 0
+			spellings[key] = map[string]int{app: 0}
+		}
+	}
+	for key, n := range counts {
+		name := ""
+		for spelling, m := range spellings[key] {
+			if name == "" || m > spellings[key][name] || m == spellings[key][name] && spelling < name {
+				name = spelling
+			}
+		}
+		apps = append(apps, Collection{Name: name, Files: n, Hidden: h.Hides(Facts{Source: ptr(SourceScreenshots), App: &name})})
+	}
+	sort.Slice(apps, func(i, j int) bool {
+		if apps[i].Files != apps[j].Files {
+			return apps[i].Files > apps[j].Files
+		}
+		return strings.ToLower(apps[i].Name) < strings.ToLower(apps[j].Name)
+	})
+	return whatsapp, withoutApp, apps
+}
+
+func ptr[T any](v T) *T { return &v }

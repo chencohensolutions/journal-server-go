@@ -345,6 +345,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 		},
 		Privacy: s.inheritedPrivacy(req),
 	}
+	screenshotFacts(&sidecar.Facts)
 	if err := writeSidecar(dest+".json", sidecar); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.
 		rename(dest, from)

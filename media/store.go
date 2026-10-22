@@ -19,8 +19,9 @@ type Store struct {
 	root string
 	now  func() time.Time
 
-	mu    sync.RWMutex
-	items map[string]*Item // by sha256
+	mu     sync.RWMutex
+	items  map[string]*Item // by sha256
+	hidden Hidden           // what the user hides on every device (hidden.go)
 
 	// Held while a file's upload is started, written to or finished, so the same file arriving from
 	// two devices (or a retry racing the first try) is written once.
@@ -42,6 +43,11 @@ func OpenStore(root string, now func() time.Time) (*Store, error) {
 			return nil, err
 		}
 	}
+	hidden, err := s.readHidden()
+	if err != nil {
+		return nil, err
+	}
+	s.hidden = hidden
 	s.startJournal()
 	log.Printf("media: indexing %s", root)
 	started := time.Now()
@@ -133,12 +139,16 @@ type Usage struct {
 	PhotoBytes, VideoBytes int64
 }
 
-func (s *Store) Usage() Usage {
+// Usage counts the originals the view shows (View{} for all of them).
+func (s *Store) Usage(v View) Usage {
 	s.CatchUp()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var u Usage
 	for _, item := range s.items {
+		if s.hides(v, *item) {
+			continue
+		}
 		facts := item.Sidecar.Facts
 		if facts.Kind == KindVideo {
 			u.Videos++

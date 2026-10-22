@@ -242,7 +242,7 @@ func main() {
 		return
 	}
 
-	usage := im.store.Usage()
+	usage := im.store.Usage(media.View{})
 	log.Printf("Data folder %s: %d photos, %d videos", im.dataFolder, usage.Photos, usage.Videos)
 	im.hashDataFolder(ctx, *jobs)
 	if im.dryRun {

@@ -1,0 +1,45 @@
+# --- Hidden collections -------------------------------------------------------
+# What the user hides on every device (Settings → Private media → Hidden collections in the apps). The server does
+# the hiding: a hidden file comes in the change feed as deleted, isn't counted in storageUsage, isn't found by
+# searchMedia, and /media and its preview answer 404. Nothing is deleted; showing a collection again brings its files
+# back. missingMedia, startUpload, uploads and verify still see hidden files, so they are never uploaded again.
+
+"Groups of files the user can hide on every device."
+type HiddenCollections {
+  "Every file WhatsApp saved (source whatsapp)."
+  whatsapp: Collection!
+  "Screenshots whose file name says no app (Screenshot_2015-07-18-03-54-57.png). Its name is empty."
+  screenshotsWithoutApp: Collection!
+  """
+  The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
+  listed too, so it can be shown again.
+  """
+  screenshotApps: [Collection!]!
+}
+
+"One group of files: how many it has, hidden or not, and whether it is hidden."
+type Collection {
+  name: String!
+  files: Int!
+  hidden: Boolean!
+}
+
+"The whole choice of what to hide: what isn't listed is shown."
+input HiddenCollectionsInput {
+  whatsapp: Boolean!
+  screenshotsWithoutApp: Boolean!
+  "Apps whose screenshots are hidden, compared ignoring case."
+  screenshotApps: [String!]!
+}
+
+extend type Query {
+  hiddenCollections: HiddenCollections!
+}
+
+extend type Mutation {
+  """
+  Replaces what the user hides on every device. Devices drop the files now hidden, and get back the ones shown again,
+  at their next sync.
+  """
+  setHiddenCollections(input: HiddenCollectionsInput!): HiddenCollections!
+}

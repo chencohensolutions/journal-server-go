@@ -1,8 +1,12 @@
 // Command fix-sources corrects, once, the source of files WhatsApp named (IMG-20230115-WA0012.jpg) that came in
 // as camera or other, so the apps can hide them with the rest of WhatsApp. scripts/import used to tell the source
 // from the folder only, so a WhatsApp file copied elsewhere before it was imported lost it; it now looks at the
-// name too (media.SourceOfPath). Only the sidecar's facts.source changes (and facts.correctedAt, so devices get
-// the file again in the change feed); originals are never touched.
+// name too (media.SourceOfPath).
+//
+// It also gives screenshots placed before the server read their names the facts new ones get
+// (media.ScreenshotApp): source screenshots, and the app on screen (Screenshot_20240301_030715_Bumble.jpg → app
+// "Bumble"), so a whole app's screenshots can be told apart. Only the sidecar's facts.source and facts.app change
+// (and facts.correctedAt, so devices get the file again in the change feed); originals are never touched.
 //
 // It prints where the corrected files were found (the first folders of facts.importedFrom), to tell why they
 // had the wrong source, and also lists files whose folders mention WhatsApp but whose source isn't whatsapp,
@@ -48,6 +52,8 @@ func main() {
 	check(err)
 	r, err := fix(store, *dryRun)
 	check(err)
+	apps, err := fixScreenshots(store, *dryRun)
+	check(err)
 
 	verb := "corrected"
 	if *dryRun {
@@ -70,6 +76,14 @@ func main() {
 	if len(r.folderOnly) > 0 {
 		fmt.Printf("%d files left as they are: only their folders mention WhatsApp\n", len(r.folderOnly))
 	}
+	screenshots := 0
+	for _, n := range apps {
+		screenshots += n
+	}
+	fmt.Printf("%d screenshots %s with their app\n", screenshots, verb)
+	for _, line := range sortedCounts(apps) {
+		fmt.Println("  " + line)
+	}
 }
 
 // report is what fix found: how many files it corrected, their sources before and where they were found, and
@@ -82,7 +96,7 @@ type report struct {
 
 // fix sets the source of every file WhatsApp named to whatsapp, unless dryRun.
 func fix(store *media.Store, dryRun bool) (report, error) {
-	items, _, _, err := store.Changes("", 1<<31-1, false)
+	items, _, _, err := store.Changes("", 1<<31-1, media.View{})
 	if err != nil {
 		return report{}, err
 	}
@@ -112,6 +126,33 @@ func fix(store *media.Store, dryRun bool) (report, error) {
 		}
 	}
 	return r, nil
+}
+
+// fixScreenshots gives every file named like a screenshot the source screenshots and the app its name says, unless
+// dryRun. It returns how many it corrected (or would) for each app ("" for names without one).
+func fixScreenshots(store *media.Store, dryRun bool) (map[string]int, error) {
+	items, _, _, err := store.Changes("", 1<<31-1, media.View{})
+	if err != nil {
+		return nil, err
+	}
+	apps := map[string]int{}
+	for _, item := range items {
+		facts := item.Sidecar.Facts
+		app, ok := media.ScreenshotApp(facts.FileName)
+		if !ok {
+			continue
+		}
+		if facts.Source != nil && *facts.Source == media.SourceScreenshots && (app == "" || facts.App != nil && *facts.App == app) {
+			continue
+		}
+		if !dryRun {
+			if _, err := store.SetScreenshotFacts(item.Sha256()); err != nil {
+				return apps, err
+			}
+		}
+		apps[app]++
+	}
+	return apps, nil
 }
 
 func mentionsWhatsApp(facts media.Facts) bool {

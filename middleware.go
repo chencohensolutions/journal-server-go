@@ -59,15 +59,14 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 	})
 }
 
-// hidePrivate answers 404 for a private file to a device kept from them, as if the server didn't have it.
-func hidePrivate(lookup media.StoreLookup, next http.Handler) http.Handler {
+// hideFromDevice answers 404 for a file the device may not see (media.View: a hidden collection's, or a private
+// file to a device kept from them), as if the server didn't have it.
+func hideFromDevice(lookup media.StoreLookup, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if auth.WithholdPrivateFromContext(r.Context()) {
-			if store := lookup(r); store != nil {
-				if item, ok := store.Get(r.PathValue("sha256")); ok && item.Sidecar.IsPrivate() {
-					http.NotFound(w, r)
-					return
-				}
+		if store := lookup(r); store != nil {
+			if item, ok := store.Get(r.PathValue("sha256")); ok && store.Hides(store.ViewFor(auth.WithholdPrivateFromContext(r.Context())), item) {
+				http.NotFound(w, r)
+				return
 			}
 		}
 		next.ServeHTTP(w, r)

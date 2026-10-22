@@ -39,6 +39,13 @@ type ChangePage struct {
 	HasMore bool   `json:"hasMore"`
 }
 
+// One group of files: how many it has, hidden or not, and whether it is hidden.
+type Collection struct {
+	Name   string `json:"name"`
+	Files  int    `json:"files"`
+	Hidden bool   `json:"hidden"`
+}
+
 type EnrollDeviceInput struct {
 	// As shown by `journal-server enroll-code`; case, dashes and spaces are ignored.
 	Code string `json:"code"`
@@ -93,6 +100,25 @@ type GeoPointInput struct {
 	Lon float64 `json:"lon"`
 }
 
+// Groups of files the user can hide on every device.
+type HiddenCollections struct {
+	// Every file WhatsApp saved (source whatsapp).
+	Whatsapp *Collection `json:"whatsapp"`
+	// Screenshots whose file name says no app (Screenshot_2015-07-18-03-54-57.png). Its name is empty.
+	ScreenshotsWithoutApp *Collection `json:"screenshotsWithoutApp"`
+	// The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
+	// listed too, so it can be shown again.
+	ScreenshotApps []*Collection `json:"screenshotApps"`
+}
+
+// The whole choice of what to hide: what isn't listed is shown.
+type HiddenCollectionsInput struct {
+	Whatsapp              bool `json:"whatsapp"`
+	ScreenshotsWithoutApp bool `json:"screenshotsWithoutApp"`
+	// Apps whose screenshots are hidden, compared ignoring case.
+	ScreenshotApps []string `json:"screenshotApps"`
+}
+
 type Media struct {
 	Sha256 string    `json:"sha256"`
 	Kind   MediaKind `json:"kind"`
@@ -108,6 +134,8 @@ type Media struct {
 	Location   *GeoPoint  `json:"location,omitempty"`
 	// The folder it came from on the device, as the device names it: camera, whatsapp, …
 	Source *string `json:"source,omitempty"`
+	// The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble).
+	App *string `json:"app,omitempty"`
 	// The photo this one is an edit of.
 	VersionOf *string `json:"versionOf,omitempty"`
 	// Edits of this photo, oldest first.

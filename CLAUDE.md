@@ -21,7 +21,10 @@ and videos already on the server's disk into a data folder once each (by sha256)
 it inside `Store.Turn` (the store's own write methods already do). `go run ./scripts/scan-nudity` scores files with
 NudeNet (Python, a separate program) into the sidecar's `detected.nudity` (never a tag; clients hide what is over
 the user's threshold); run by hand for now. Users mark files private with `setPrivate` (sidecar `privacy`,
-`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. **Text
+`media/private.go`); apps hide them like nudity, and devices set to withhold get them as deleted and 404. Users can
+also hide whole collections on every device (all WhatsApp, screenshots by `facts.app`; `setHiddenCollections`,
+`settings.json` at the data folder's root, `media/hidden.go`): the server leaves them out of everything a device
+sees through one `media.View`, so any new read path for devices must check `Store.Hides`. **Text
 search** (`searchMedia`, package `search`, [docs/search.md](docs/search.md)) runs SigLIP 2 with ONNX Runtime inside
 the server (loaded with purego, no cgo, no Python): files are read into vectors in the background, kept in
 `.cache/search/`. The change feed for stories and notes, and the story trash, are not built yet.
@@ -46,7 +49,7 @@ go run . enroll-code <user> | devices [user] | revoke <serial>   # admin command
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]
-go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named
+go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named, screenshots' app
 ```
 
 Lint is golangci-lint on save in VS Code (gofmt, govet, staticcheck, errcheck, gosimple); there is no

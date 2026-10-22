@@ -109,9 +109,9 @@ func TestDeviceUploadsAndStreamsAVideo(t *testing.T) {
 		t.Fatalf("stored file: %v", err)
 	}
 
-	media := env.graphql(t, device, `query($s: Sha256!) { media(sha256: $s) { kind size takenAt uploadedBy url location { lat } versions } }`, map[string]any{"s": sha})
+	media := env.graphql(t, device, `query($s: Sha256!) { media(sha256: $s) { kind size takenAt uploadedBy url location { lat } versions app } }`, map[string]any{"s": sha})
 	got := string(media.Data["media"])
-	for _, want := range []string{`"kind":"VIDEO"`, `"size":10000`, `"takenAt":"2026-10-17T15:52:22+03:00"`, `"uploadedBy":"Pixel 9 Pro"`, `"url":"/media/` + sha + `"`, `"lat":32.08`, `"versions":[]`} {
+	for _, want := range []string{`"kind":"VIDEO"`, `"size":10000`, `"takenAt":"2026-10-17T15:52:22+03:00"`, `"uploadedBy":"Pixel 9 Pro"`, `"url":"/media/` + sha + `"`, `"lat":32.08`, `"versions":[]`, `"app":null`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("media = %s, want %s (%+v)", got, want, media.Errors)
 		}

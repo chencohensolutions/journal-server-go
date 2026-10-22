@@ -18,7 +18,7 @@ func TestStoresOnOneFolderTakeTurns(t *testing.T) {
 	}
 	var learned []string
 	importer.OnCatchUp(func(item Item) { learned = append(learned, item.Path) })
-	_, cursor, _, _ := server.store.Changes("", 10, false)
+	_, cursor, _, _ := server.store.Changes("", 10, View{})
 
 	// The import places a file: the server's feed has it at once, and a phone's upload of it stores nothing.
 	data := []byte("a photo from an old backup")
@@ -29,7 +29,7 @@ func TestStoresOnOneFolderTakeTurns(t *testing.T) {
 	if err != nil || existed {
 		t.Fatalf("import: %v %v", existed, err)
 	}
-	if items, _, _, _ := server.store.Changes(cursor, 10, false); len(items) != 1 || items[0].Path != imported.Path {
+	if items, _, _, _ := server.store.Changes(cursor, 10, View{}); len(items) != 1 || items[0].Path != imported.Path {
 		t.Fatalf("the server's feed after the import: %v", items)
 	}
 	if missing := server.store.Missing([]string{shaOf(data)}); len(missing) != 0 {

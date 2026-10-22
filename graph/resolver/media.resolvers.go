@@ -78,7 +78,7 @@ func (r *mutationResolver) SetPrivate(ctx context.Context, sha256s []string, pri
 	if err != nil {
 		return nil, err
 	}
-	if v.withholdPrivate && !private {
+	if v.WithholdPrivate && !private {
 		return nil, fmt.Errorf("this device can't see private files, so it can't unmark them")
 	}
 	changed, err := v.store.SetPrivate(sha256s, private, auth.DeviceNameFromContext(ctx))
@@ -121,11 +121,11 @@ func (r *queryResolver) Media(ctx context.Context, sha256 string) (*model.Media,
 
 // StorageUsage is the resolver for the storageUsage field.
 func (r *queryResolver) StorageUsage(ctx context.Context) (*model.StorageUsage, error) {
-	store, err := r.store(ctx)
+	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
 	}
-	u := store.Usage()
+	u := v.store.Usage(v.View)
 	return &model.StorageUsage{
 		Photos:     u.Photos,
 		Videos:     u.Videos,
@@ -153,7 +153,7 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 	if since != nil {
 		cursor = *since
 	}
-	items, next, hasMore, err := store.Changes(cursor, n, v.withholdPrivate)
+	items, next, hasMore, err := store.Changes(cursor, n, v.View)
 	if err != nil {
 		return nil, err
 	}
