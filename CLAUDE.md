@@ -37,12 +37,12 @@ go test ./search/... .                     # the search package and the root (se
 go vet ./...                               # the command-line lint (VS Code runs golangci-lint on save; no .golangci file)
 go tool gqlgen generate                    # after editing graph/schema/*.graphql
 go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
-go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + search and face models into onnxruntime/, models/ (gitignored)
+go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + search, face and nudity models into onnxruntime/, models/ (gitignored)
 go run ./scripts/bundle-vips               # portable libvips for Windows into vips/ (gitignored)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
-go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet (Python); run by hand for now
+go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
 go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named, screenshots' app
 ```
 
@@ -77,10 +77,11 @@ only reach root fields marked `@public` in the schema (the two enrollment fields
 too. The media HTTP routes (`/upload`, `/media`) always require a certificate. Resolvers get the user with
 `auth.FromContext(ctx)`.
 
-**Everything a device reads goes through a `media.View`.** A user can hide whole collections on every device
-(`setHiddenCollections`, `settings.json` at the data folder's root, `media/hidden.go`) and mark files private
+**Everything a device reads goes through a `media.View`.** A user can hide whole collections, and what the nudity
+scan scored at a chosen score or more (from 0.5 by default), on every device (`setHiddenCollections`,
+`settings.json` at the data folder's root, `media/hidden.go`) and mark files private
 (`setPrivate`, sidecar `privacy`, `media/private.go`); a device can be set to withhold private files. The server
-does the hiding: such files come in the change feed as deleted, `media(sha256:)` is null, `/media` and its preview
+does the hiding: such files come in the change feed as deleted (and `hidden`, for what the user hides), `media(sha256:)` is null, `/media` and its preview
 answer 404, usage and search leave them out. In resolvers use `Resolver.view(ctx)` (store plus the device's
 `View`) for anything shown to a device, and `Resolver.store(ctx)` only for what must see every file
 (`missingMedia`, `startUpload`, verify). Any new read path for devices must check `Store.Hides`. The feed cursor
@@ -115,14 +116,14 @@ which only the server writes.
 
 **External tools are separate programs, found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and
 `vips/bin` first), or at `vips` / `ffmpeg` in `config.json`. Without them the server still runs and the affected
-endpoints answer 503. `scripts/scan-nudity` embeds a Python worker (`nudenet_worker.py`) and feeds it 640 px
-previews, never originals. ONNX Runtime (package `onnx`, loaded once by `loadRuntime` in `library.go` and shared):
+endpoints answer 503. No Python: the owner asked to avoid it (Oct 23, 2026). ONNX Runtime (package `onnx`, loaded once by `loadRuntime` in `library.go` and shared):
 `ort.go` calls its C function table through purego by fixed places counted in `onnxruntime_c_api.h`, so add a
 function by its place there; `onnx.FindRuntime` looks in `onnxruntime/`, then Homebrew. Text search (package
 `search`) keeps vectors in `.cache/search/<model>.vectors`; face search (package `faces`) keeps the faces of each
-file in `.cache/faces/<model>.faces`, and the people the user named in `people.json` (`media/people.go`). Both read
-new files in the background, newest upload first; without the runtime or a model, that search is off and its
-queries answer an error. The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
+file in `.cache/faces/<model>.faces`, and the people the user named in `people.json` (`media/people.go`); the nudity
+scan (package `nudity`, NudeNet's 320n detector, the same steps as NudeNet's Python) writes each score into the
+sidecar (`Store.SetNudity`), shared with `scripts/scan-nudity`. All three read new files in the background, newest
+upload first; without the runtime or a model, that one is off (search queries answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
 `Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
 `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).

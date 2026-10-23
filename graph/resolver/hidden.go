@@ -12,6 +12,13 @@ func hiddenCollections(store *media.Store) *model.HiddenCollections {
 		ScreenshotsWithoutApp: toCollection(withoutApp),
 		ScreenshotApps:        make([]*model.Collection, len(apps)),
 	}
+	hidden := store.Hidden()
+	nudity := &model.NudityHiding{Hidden: hidden.NudityFrom > 0, From: hidden.NudityFrom}
+	if !nudity.Hidden {
+		nudity.From = media.DefaultNudityFrom
+	}
+	nudity.Files, nudity.NotScanned = store.NudityCounts(nudity.From)
+	result.Nudity = nudity
 	for i, app := range apps {
 		result.ScreenshotApps[i] = toCollection(app)
 	}

@@ -202,14 +202,15 @@ All of these need a client certificate, like everything except enrollment
 ## Change feed
 
 `query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA,
-path: "media/<sha256>", deleted, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many
+path: "media/<sha256>", deleted, hidden, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many
 changes come after the page, for a progress count). A new device starts without `since` and calls again with each
 page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed since (an empty page
 returns the same cursor). A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
 (see [Nudity scan](#nudity-scan)), its source is corrected (see [Fixing sources](#fixing-sources)) or it is marked
 private or unmarked (see [Private files](#private-files)): it then comes again, whole. To a device the server keeps
-from private files, a private file comes as `deleted`, and so does a file in one of the user's
-[hidden collections](#hidden-collections) to every device. Pages are at most 5000; responses to `/query` are gzipped
+from private files, a private file comes as `deleted`, and so does a file the user hides (one of the
+[hidden collections](#hidden-collections), or nudity) to every device, with `hidden` set, so the device leaves out its
+own copy too. Pages are at most 5000; responses to `/query` are gzipped
 when the client accepts it.
 
 - **The cursor** is opaque. It carries where the device is in the feed (the time of the last change and sha256 of
@@ -224,9 +225,11 @@ when the client accepts it.
 
 ## Nudity scan
 
-`go run ./scripts/scan-nudity --user hen` scores every photo and video for nudity with
-[NudeNet](https://github.com/notAI-tech/NudeNet) (`python3 -m pip install nudenet`; `--python` picks another Python)
-and writes the answer into the sidecar:
+The server scores every photo and video for nudity with [NudeNet](https://github.com/notAI-tech/NudeNet)'s
+detector (`320n.onnx`, a small YOLOv8 model, AGPL-3.0) on ONNX Runtime, the same runtime as search and faces, with
+no Python (package `nudity`). `go run ./scripts/bundle-onnx` downloads it to `models/nudenet/320n.onnx`
+(`nudity_model` in config.json); without it nothing is scanned, the server says so at start, and
+`serverInfo.nudityScan` is false. It writes the answer into the sidecar:
 
 ```json
 "detected": {
@@ -235,13 +238,20 @@ and writes the answer into the sidecar:
 ```
 
 - The score is NudeNet's highest confidence in an exposed breast, genitals, buttocks or anus; 0 when it finds none.
-- It is never a tag: the user's tags stay theirs. The API gives it as `Media.nudity` (null until scanned). Clients
-  hide what is over the user's threshold while "Show private media" is off, and fetch nothing of it (no preview, no
-  original).
-- NudeNet runs in Python as a separate program and is given a 640 px JPEG preview (a video's poster frame), never the
-  original. Files already scanned by the same `model` are skipped, so a stopped run continues where it stopped;
-  `--rescan` scans everything again. The server may keep running (see "Several processes on one data folder").
-- For now it is run by hand after uploads or imports; later it will run on each new file.
+- It is never a tag: the user's tags stay theirs. The API gives it as `Media.nudity` (null until scanned).
+- **The server hides what scores high** on every device, like a hidden collection (see
+  [Hidden collections](#hidden-collections)): from 0.5 until the user chooses another score or turns it off. A file
+  not scanned yet isn't hidden, so a new file shows until the scan has read it.
+- **It runs by itself**, in the background like search and faces: the files not scanned yet, newest upload first,
+  then each upload as soon as it finishes and imports within 30 seconds. A file that can't be scanned is tried again
+  after the server restarts, and listed in `.cache/nudity/nudenet-320n.failed.log` (when, sha256, path, why).
+- It reads the 640 px JPEG preview search reads too (a video's poster frame), never the original, and does what
+  NudeNet's own `detect` does: pads it with black to a square at the right or bottom, shrinks it to 320×320
+  (bilinear, as OpenCV), gives it as blue, green and red planes of 0 to 1 (NudeNet's order), keeps each box whose
+  surest label reaches 0.2, and of boxes that overlap by more than 0.45, whatever their labels, the surest over 0.25.
+- `go run ./scripts/scan-nudity --user hen` scans a data folder without the server (or beside it: see "Several
+  processes on one data folder"), and prints what scores 0.5 or more. Files already scanned by the same `model` are
+  skipped, so a stopped run continues where it stopped; `--rescan` scans everything again.
 
 ## Private files
 
@@ -257,8 +267,9 @@ most 1000 per call. It returns the files that changed. The mark goes in the side
 - A file is marked with everything that goes with it, through `versionOf` and `pairedWith` either way: the photo and
   its edits, a Live Photo's video, a RAW and its JPEG. An edit or paired file uploaded later of a private file is
   private from the start (`setBy` is the device that uploaded it).
-- The API gives it as `Media.private`. **Clients hide private files the same way as nudity over the threshold**:
-  not shown while "Show private media" is off (the default), and nothing of them is fetched.
+- The API gives it as `Media.private`. **Clients hide private files themselves**: not shown while "Show private
+  media" is off (the default), and nothing of them is fetched. `searchMedia`, `people` and `similarFaces` leave them
+  out unless asked to include them (`includePrivate`).
 
 **Keeping private files from a device.** By default every device gets private files, flagged. A device can be kept
 from them entirely, for example a tablet others use: `journal-server private <serial> withhold` (`allow` undoes it;
@@ -283,27 +294,34 @@ lost device in any case (see [authentication.md](authentication.md)).
 
 The user can hide whole groups of files on every device, without deleting them (Settings → Private media → Hidden
 collections in the apps): all of WhatsApp, the screenshots of chosen apps (by `facts.app`, compared ignoring case),
-and screenshots whose name says no app. `query hiddenCollections` lists them with how many files each has, hidden
-or not, apps with most files first (a hidden app with no files left is listed too, so it can be shown again);
-`mutation setHiddenCollections(input:)` replaces the whole choice and answers the same list. The choice is the
-user's, not a device's, and is kept at the data folder's root, so it moves with the data:
+screenshots whose name says no app, and the files the [nudity scan](#nudity-scan) scored at a chosen score or more.
+`query hiddenCollections` lists them with how many files each has, hidden or not, apps with most files first (a
+hidden app with no files left is listed too, so it can be shown again), and for nudity how many files score that
+much and how many aren't scanned yet. `mutation setHiddenCollections(input:)` replaces the whole choice (its
+`nudity` may be left out to keep it) and answers the same list. The choice is the user's, not a device's, and is
+kept at the data folder's root, so it moves with the data:
 
 ```json
 // settings.json
-{ "format": 1, "hidden": { "sources": ["whatsapp"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true } }
+{ "format": 1, "hidden": { "sources": ["whatsapp"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5 } }
 ```
 
+`nudityFrom` is the score from which files are hidden, `0` for none. A data folder without settings.json, or one
+written before the server hid nudity (no `nudityFrom`), hides from 0.5, as the apps used to do themselves.
+
 - **The server does the hiding**, as for a device kept from private files: a hidden file comes in the change feed as
-  `deleted` (a feed from the start leaves it out), `media(sha256:)` is `null`, `/media/{sha256}` and its preview
-  answer 404, `storageUsage` doesn't count it, and `searchMedia` doesn't find or count it. An edit or paired file
-  of a hidden file is hidden with it. The apps don't know a file is hidden; they drop it like a deleted one, with
+  `deleted` and `hidden` (also in a feed from the start, for the phone's own copy; see below), `media(sha256:)` is `null`, `/media/{sha256}` and
+  its preview answer 404, `storageUsage` doesn't count it, and `searchMedia`, `people` and `similarFaces` don't find
+  or count it. An edit or paired file of a hidden file is hidden with it. The apps drop it like a deleted one, with
   their cached previews and originals of it.
 - **Nothing is deleted or rewritten**: originals and sidecars stay as they are. Showing a collection again brings
   its files back.
+- A file the scan scores later comes again in the feed (its sidecar changed), as hidden if it scored that much.
 - Changing the choice makes every device's next sync drop the files now hidden and get back those shown again, and
   nothing else (the cursor carries what was hidden when it was given out; see [Change feed](#change-feed)).
 - `missingMedia`, `startUpload`, uploads and `/verify` still see hidden files, so a phone never uploads one again
-  and can still free its own copy. The phone's own copies in its gallery are not hidden by the server.
+  and can still free its own copy. The server can't reach the phone's own copies in its gallery: `hidden` tells the
+  app to leave out its copy with that sha256 too (once backup has read it).
 
 ## Search
 
@@ -449,8 +467,9 @@ stream takes as long as it takes. Instead: headers must arrive within 10 s; Grap
 
 ## What the server can do
 
-`query serverInfo { api version search previews posters }` says what works on this server, so an app shows only
-that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed), the
+`query serverInfo { api version search previews posters nudityScan }` says what works on this server, so an app
+shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed),
+`nudityScan` (new files are scanned for nudity, so hiding nudity works), the
 server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
 (1 today). An app asks once when it connects, rather than learning from errors.
 

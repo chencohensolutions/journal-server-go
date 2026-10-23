@@ -19,6 +19,8 @@ type Resolver struct {
 	Search *search.Service
 	// Face search; nil when it is off.
 	Faces *faces.Service
+	// New files are scanned for nudity (package nudity), for serverInfo.
+	NudityScan bool
 	// Previews and posters, for serverInfo to say whether they can be made.
 	Previews *media.Previews
 	// The server's build, shown by serverInfo.

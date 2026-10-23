@@ -1,10 +1,12 @@
-// Command bundle-onnx downloads what text search and face search need (run from the server folder: go run
-// ./scripts/bundle-onnx):
+// Command bundle-onnx downloads what text search, face search and the nudity scan need (run from the server folder:
+// go run ./scripts/bundle-onnx):
 //
 //   - ONNX Runtime, the library that runs the models, into ./onnxruntime (from Microsoft's GitHub releases);
 //   - a SigLIP 2 model, as ONNX files, into ./models/<name> (from Hugging Face's onnx-community);
 //   - the face models, YuNet (finds faces, MIT licence) and SFace (tells them apart, Apache 2.0), into
-//     ./models/yunet-sface (from OpenCV's model zoo on Hugging Face). --faces=false leaves them out.
+//     ./models/yunet-sface (from OpenCV's model zoo on Hugging Face). --faces=false leaves them out;
+//   - NudeNet's detector (320n.onnx, AGPL-3.0), into ./models/nudenet (from NudeNet's GitHub releases).
+//     --nudity=false leaves it out.
 //
 // --model base (the default, google/siglip2-base-patch16-256) reads a photo in about a tenth of a second on a
 // desktop CPU; --model large (google/siglip2-so400m-patch16-256) finds better but is about four times slower.
@@ -43,6 +45,13 @@ var models = map[string]string{
 // Suffix of the files of each precision in onnx-community's repositories.
 var precisions = map[string]string{"fp32": "", "q8": "_quantized"}
 
+// NudeNet's detector, from its GitHub releases (which give no digest for it, so it is checked against this one).
+const (
+	nudityRelease = "notAI-tech/NudeNet/releases/tags/v3.4-weights"
+	nudityFile    = "320n.onnx"
+	nuditySha256  = "c15d8273adad2d0a92f014cc69ab2d6c311a06777a55545f2c4eb46f51911f0f"
+)
+
 // The face models: Hugging Face repository → file, kept under the same name.
 var faceModels = [][2]string{
 	{"opencv/face_detection_yunet", "face_detection_yunet_2023mar.onnx"},
@@ -55,6 +64,7 @@ func main() {
 	runtimeDir := flag.String("runtime", "onnxruntime", "folder for the ONNX Runtime library (replaced)")
 	modelsDir := flag.String("models", "models", "folder the model's folder is made in")
 	faces := flag.Bool("faces", true, "also download the face models")
+	nudity := flag.Bool("nudity", true, "also download NudeNet's detector, for the nudity scan")
 	flag.Parse()
 	name, ok := models[*modelFlag]
 	suffix, ok2 := precisions[*precision]
@@ -77,6 +87,23 @@ func main() {
 			download("https://huggingface.co/"+m[0]+"/resolve/main/"+m[1], filepath.Join(facesOut, m[1]), repoHashes(m[0])[m[1]])
 		}
 		log.Printf("Face models in %s", facesOut)
+	}
+	if *nudity {
+		var release struct {
+			// The API's link to the file: its browser link may answer a web page instead.
+			Assets []struct{ Name, URL string }
+		}
+		getJSON("https://api.github.com/repos/"+nudityRelease, &release)
+		to := filepath.Join(*modelsDir, "nudenet", nudityFile)
+		for _, a := range release.Assets {
+			if a.Name == nudityFile {
+				download(a.URL, to, nuditySha256)
+			}
+		}
+		if _, err := os.Stat(to); err != nil {
+			log.Fatalf("%s is not in %s", nudityFile, nudityRelease)
+		}
+		log.Printf("NudeNet's detector in %s", to)
 	}
 	fmt.Printf("Done. In config.json: \"search_model\": %q\n", filepath.ToSlash(out))
 }
@@ -223,7 +250,12 @@ func download(url, path, hash string) {
 	}
 	check(os.MkdirAll(filepath.Dir(path), 0o755))
 	log.Printf("Downloading %s", url)
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	check(err)
+	if strings.HasPrefix(url, "https://api.github.com/") {
+		req.Header.Set("Accept", "application/octet-stream") // the file, not its description
+	}
+	resp, err := http.DefaultClient.Do(req)
 	check(err)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

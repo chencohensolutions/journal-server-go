@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/journal/server-go/media"
 )
 
 func TestHiddenCollectionsAreHiddenOnEveryDevice(t *testing.T) {
@@ -47,7 +50,9 @@ func TestHiddenCollectionsAreHiddenOnEveryDevice(t *testing.T) {
 	if len(changes) != 1 || !strings.Contains(mustJSON(changes), `"deleted":true,"media":null,"path":"media/`+bumble+`"`) {
 		t.Fatalf("tablet's feed: %v", changes)
 	}
-	if changes, _ := feed(phone, ""); len(changes) != 1 || changes[0]["path"] != "media/"+photo {
+	// A feed from the start has it too, as deleted: the phone leaves out its own copy.
+	if changes, _ := feed(phone, ""); len(changes) != 2 || changes[0]["path"] != "media/"+photo ||
+		!strings.Contains(mustJSON(changes), `"deleted":true,"media":null,"path":"media/`+bumble+`"`) {
 		t.Fatalf("phone's feed from the start: %v", changes)
 	}
 	if resp := env.graphql(t, phone, `query($s: Sha256!) { media(sha256: $s) { sha256 } }`, map[string]any{"s": bumble}); string(resp.Data["media"]) != "null" {
@@ -72,5 +77,76 @@ func TestHiddenCollectionsAreHiddenOnEveryDevice(t *testing.T) {
 	changes, _ = feed(tablet, tabletCursor)
 	if len(changes) != 1 || changes[0]["path"] != "media/"+bumble || strings.Contains(mustJSON(changes), `"deleted":true`) {
 		t.Fatalf("shown again: %v", changes)
+	}
+}
+
+// What the nudity scan scored high is hidden like a hidden collection, from 0.5 until the user chooses: the feed says
+// so (hidden), so the phone leaves out its own copy too.
+func TestNudityIsHiddenOnEveryDevice(t *testing.T) {
+	env := newTestEnv(t)
+	phone := env.enrolledClient(t)
+	beach := env.uploadPhoto(t, phone, []byte("a beach"), "20251101_110819.jpg")
+	nude := env.uploadPhoto(t, phone, []byte("a nude"), "20251101_110820.jpg")
+	feed := func(since string) (changes []map[string]any, cursor string) {
+		t.Helper()
+		resp := env.graphql(t, phone, `query($s: String) { changes(since: $s) { cursor changes { path deleted hidden media { nudity } } } }`,
+			map[string]any{"s": since})
+		var page struct {
+			Cursor  string
+			Changes []map[string]any
+		}
+		if err := json.Unmarshal(resp.Data["changes"], &page); err != nil {
+			t.Fatalf("changes = %s %+v", resp.Data["changes"], resp.Errors)
+		}
+		return page.Changes, page.Cursor
+	}
+	_, cursor := feed("")
+
+	// The scan runs beside the server, as scripts/scan-nudity does.
+	scan, err := media.OpenStore(env.dataFolder, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for sha, score := range map[string]float64{beach: 0.1, nude: 0.8} {
+		if err := scan.SetNudity(sha, media.Detection{Score: score, Model: "nudenet-320n"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	changes, cursor := feed(cursor)
+	if got := mustJSON(changes); len(changes) != 2 || !strings.Contains(got, `{"deleted":true,"hidden":true,"media":null,"path":"media/`+nude+`"}`) {
+		t.Fatalf("after the scan: %s", got)
+	}
+	const nudity = `{ nudity { hidden from files notScanned } }`
+	if got := string(env.graphql(t, phone, `{ hiddenCollections `+nudity+` }`, nil).Data["hiddenCollections"]); got != `{"nudity":{"hidden":true,"from":0.5,"files":1,"notScanned":0}}` {
+		t.Fatalf("hiddenCollections = %s", got)
+	}
+	if resp, _ := phone.Get(env.server.URL + "/media/" + nude); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("fetching it: %d", resp.StatusCode)
+	}
+
+	// From 0.9 it is shown again; the feed starts over. Collections left out of the input stay as they were.
+	set := func(input map[string]any) string {
+		t.Helper()
+		input["whatsapp"], input["screenshotsWithoutApp"], input["screenshotApps"] = false, false, []string{}
+		resp := env.graphql(t, phone, `mutation($i: HiddenCollectionsInput!) { setHiddenCollections(input: $i) `+nudity+` }`, map[string]any{"i": input})
+		if len(resp.Errors) > 0 {
+			return resp.Errors[0].Message
+		}
+		return string(resp.Data["setHiddenCollections"])
+	}
+	if got := set(map[string]any{"nudity": map[string]any{"hidden": true, "from": 0.9}}); got != `{"nudity":{"hidden":true,"from":0.9,"files":0,"notScanned":0}}` {
+		t.Fatalf("from 0.9: %s", got)
+	}
+	if changes, _ = feed(cursor); strings.Contains(mustJSON(changes), `"deleted":true`) {
+		t.Fatalf("shown again: %v", changes)
+	}
+	if got := set(map[string]any{}); got != `{"nudity":{"hidden":true,"from":0.9,"files":0,"notScanned":0}}` {
+		t.Fatalf("left out: %s", got)
+	}
+	if got := set(map[string]any{"nudity": map[string]any{"hidden": false, "from": 0.9}}); got != `{"nudity":{"hidden":false,"from":0.5,"files":1,"notScanned":0}}` {
+		t.Fatalf("off: %s", got)
+	}
+	if got := set(map[string]any{"nudity": map[string]any{"hidden": true, "from": 0}}); !strings.Contains(got, "more than 0") {
+		t.Fatalf("from 0: %s", got)
 	}
 }

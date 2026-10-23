@@ -123,6 +123,7 @@ cannot enroll.
 ├── enroll/                   # Enrollment codes, certificate issuing, device registry, rate limit
 ├── media/                    # Data folder: store and index, uploads, previews, posters, DNG developing,
 │                             #   change feed, multi-process turns (see docs/media.md)
+├── nudity/                   # The nudity scan: NudeNet's detector on ONNX Runtime
 ├── graph/
 │   ├── schema/*.graphql      # Public GraphQL schema (enrollment, media, change feed)
 │   ├── generated/, model/    # gqlgen output (don't edit)
@@ -130,7 +131,7 @@ cannot enroll.
 │   └── admin/                # Admin API: its own schema, generated code and resolvers
 ├── scripts/
 │   ├── import/               # go run ./scripts/import: photos already on disk or in a cloud → data folder
-│   ├── scan-nudity/          # go run ./scripts/scan-nudity: NudeNet scores into sidecars
+│   ├── scan-nudity/          # go run ./scripts/scan-nudity: NudeNet scores into sidecars, without the server
 │   ├── bundle-vips/          # go run ./scripts/bundle-vips: portable libvips for Windows
 │   └── generate-*.sh/.ps1    # Local CA and certificates
 ├── docs/                     # authentication.md, media.md

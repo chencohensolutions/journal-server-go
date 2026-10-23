@@ -7,6 +7,7 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
@@ -28,7 +29,18 @@ func (r *mutationResolver) SetHiddenCollections(ctx context.Context, input model
 	if input.Whatsapp {
 		sources = append(sources, media.SourceWhatsApp)
 	}
-	err = store.SetHidden(media.Hidden{Sources: sources, ScreenshotApps: input.ScreenshotApps, ScreenshotsWithoutApp: input.ScreenshotsWithoutApp})
+	nudityFrom := hidden.NudityFrom
+	if n := input.Nudity; n != nil {
+		switch {
+		case !n.Hidden:
+			nudityFrom = 0
+		case n.From <= 0 || n.From > 1:
+			return nil, fmt.Errorf("nudity.from must be more than 0 and at most 1, not %v", n.From)
+		default:
+			nudityFrom = n.From
+		}
+	}
+	err = store.SetHidden(media.Hidden{Sources: sources, ScreenshotApps: input.ScreenshotApps, ScreenshotsWithoutApp: input.ScreenshotsWithoutApp, NudityFrom: nudityFrom})
 	if err != nil {
 		return nil, err
 	}

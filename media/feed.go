@@ -14,8 +14,9 @@ import (
 // the cursor is opaque to clients, so the feed can later count edits to notes and stories too.
 //
 // view is what the device may see (View): files it may not see still come, for the caller to send as deleted
-// (the device may have them from before they were marked private or hidden), except in a feed from the start, which
-// has nothing to take back and leaves them out. The cursor remembers the view it was given out for (whether the
+// (the device may have them from before they were marked private or hidden). A feed from the start has nothing to
+// take back and leaves out the private files it withholds, but not what the user hides: the device may have its own
+// copy of such a file in its gallery, which it leaves out too. The cursor remembers the view it was given out for (whether the
 // device was kept from private files, and what the user hid). One given out for another view first sends the files
 // whose visibility changed between the two views (to be sent as deleted, or whole), in pages, and then goes on where
 // it was; so a device's files are sent or taken back when its setting or the user's hidden collections change,
@@ -44,7 +45,7 @@ func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next
 		if old != nil && !c.pos.before(*item) && changed.before(*item) && s.hides(*old, *item) != s.hides(view, *item) {
 			over = append(over, *item)
 		}
-		if c.pos.before(*item) && !(fresh && s.hides(view, *item)) {
+		if c.pos.before(*item) && !(fresh && s.hides(view, *item) && !s.hides(View{Hidden: view.Hidden}, *item)) {
 			all = append(all, *item)
 		}
 	}

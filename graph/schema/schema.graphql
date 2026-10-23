@@ -28,6 +28,11 @@ type ServerInfo {
   previews: Boolean!
   "Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503."
   posters: Boolean!
+  """
+  New files are scanned for nudity (NudeNet's model is installed), so what scores high is hidden soon after it comes
+  (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
+  """
+  nudityScan: Boolean!
 }
 
 type Mutation {

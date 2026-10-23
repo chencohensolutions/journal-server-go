@@ -122,7 +122,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		}
 		t.Cleanup(facer.Close)
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher, facer))
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher, facer, nil))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()

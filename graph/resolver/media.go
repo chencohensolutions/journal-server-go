@@ -67,7 +67,8 @@ func (v view) visible(hashes []string) []string {
 	return shown
 }
 
-// changePage is a page of the feed as the device may see it: files it may not see come as deleted.
+// changePage is a page of the feed as the device may see it: files it may not see come as deleted, and as hidden
+// when the user hides them (the device leaves out its own copy too).
 func (v view) changePage(items []media.Item, next string, remaining int) *model.ChangePage {
 	versions, paired := v.store.RelatedIndex()
 	changes := make([]*model.Change, len(items))
@@ -75,6 +76,7 @@ func (v view) changePage(items []media.Item, next string, remaining int) *model.
 		changes[i] = &model.Change{Kind: model.ChangeKindMedia, Path: "media/" + item.Sha256()}
 		if v.hides(item) {
 			changes[i].Deleted = true
+			changes[i].Hidden = v.store.Hides(media.View{Hidden: v.Hidden}, item)
 		} else {
 			changes[i].Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
 		}

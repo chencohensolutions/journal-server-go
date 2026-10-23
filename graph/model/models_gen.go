@@ -42,8 +42,11 @@ type Change struct {
 	Kind ChangeKind `json:"kind"`
 	// media/<sha256> for media.
 	Path string `json:"path"`
-	// Gone from the server, or a private file the server keeps from this device.
+	// Gone from the server, a private file the server keeps from this device, or hidden (see hidden).
 	Deleted bool `json:"deleted"`
+	// Deleted because the user hides it on every device (hiddenCollections: a hidden collection or nudity). The file is
+	// still on the server: a device leaves out its own copy too (the photo with this sha256), and never uploads it again.
+	Hidden bool `json:"hidden"`
 	// The new state; null when deleted.
 	Media *Media `json:"media,omitempty"`
 }
@@ -150,6 +153,8 @@ type HiddenCollections struct {
 	// The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
 	// listed too, so it can be shown again.
 	ScreenshotApps []*Collection `json:"screenshotApps"`
+	// The files the nudity scan scored high.
+	Nudity *NudityHiding `json:"nudity"`
 }
 
 // The whole choice of what to hide: what isn't listed is shown.
@@ -158,6 +163,8 @@ type HiddenCollectionsInput struct {
 	ScreenshotsWithoutApp bool `json:"screenshotsWithoutApp"`
 	// Apps whose screenshots are hidden, compared ignoring case.
 	ScreenshotApps []string `json:"screenshotApps"`
+	// Hiding nudity; left out, it stays as it is.
+	Nudity *NudityHidingInput `json:"nudity,omitempty"`
 }
 
 type Media struct {
@@ -188,8 +195,8 @@ type Media struct {
 	UploadedAt time.Time `json:"uploadedAt"`
 	// The device that uploaded it.
 	UploadedBy string `json:"uploadedBy"`
-	// How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
-	// user's threshold, and fetch nothing of it.
+	// How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. What scores at the user's
+	// hiddenCollections.nudity.from or more never reaches devices while that is on.
 	Nudity *float64 `json:"nudity,omitempty"`
 	// The user marked it private (setPrivate). Clients hide it while "Show private media" is off, and fetch nothing of
 	// it. Devices the server keeps from private files never get it at all.
@@ -230,6 +237,24 @@ type NotFound struct {
 func (NotFound) IsPersonResult() {}
 
 func (NotFound) IsFaceResult() {}
+
+// Files the nudity scan scored at `from` or more (Media.nudity), hidden on every device while `hidden`. Hidden from 0.5
+// until the user chooses.
+type NudityHiding struct {
+	Hidden bool `json:"hidden"`
+	// The score from which files are hidden, 0 to 1 (more than 0); the default 0.5 while not hidden.
+	From float64 `json:"from"`
+	// How many files the scan scored at `from` or more.
+	Files int `json:"files"`
+	// How many files the scan hasn't read yet; they aren't hidden for nudity until it has.
+	NotScanned int `json:"notScanned"`
+}
+
+type NudityHidingInput struct {
+	Hidden bool `json:"hidden"`
+	// The score from which files are hidden: more than 0, at most 1. Ignored while not hidden.
+	From float64 `json:"from"`
+}
 
 type People struct {
 	// Named people first, by name, then the groups, those in the most files first.
@@ -287,6 +312,9 @@ type ServerInfo struct {
 	Previews bool `json:"previews"`
 	// Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503.
 	Posters bool `json:"posters"`
+	// New files are scanned for nudity (NudeNet's model is installed), so what scores high is hidden soon after it comes
+	// (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
+	NudityScan bool `json:"nudityScan"`
 }
 
 type StartUploadInput struct {

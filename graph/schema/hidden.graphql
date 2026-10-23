@@ -1,6 +1,7 @@
 # --- Hidden collections -------------------------------------------------------
-# What the user hides on every device (Settings → Private media → Hidden collections in the apps). The server does
-# the hiding: a hidden file comes in the change feed as deleted, isn't counted in storageUsage, isn't found by
+# What the user hides on every device (Settings → Private media → Hidden collections in the apps), and the files the
+# nudity scan scored high. The server does the hiding: a hidden file comes in the change feed as deleted and hidden
+# (so a device leaves out its own copy too), isn't counted in storageUsage, isn't found by
 # searchMedia, and /media and its preview answer 404. Nothing is deleted; showing a collection again brings its files
 # back. missingMedia, startUpload, uploads and verify still see hidden files, so they are never uploaded again.
 
@@ -15,6 +16,22 @@ type HiddenCollections {
   listed too, so it can be shown again.
   """
   screenshotApps: [Collection!]!
+  "The files the nudity scan scored high."
+  nudity: NudityHiding!
+}
+
+"""
+Files the nudity scan scored at `from` or more (Media.nudity), hidden on every device while `hidden`. Hidden from 0.5
+until the user chooses.
+"""
+type NudityHiding {
+  hidden: Boolean!
+  "The score from which files are hidden, 0 to 1 (more than 0); the default 0.5 while not hidden."
+  from: Float!
+  "How many files the scan scored at `from` or more."
+  files: Int!
+  "How many files the scan hasn't read yet; they aren't hidden for nudity until it has."
+  notScanned: Int!
 }
 
 "One group of files: how many it has, hidden or not, and whether it is hidden."
@@ -30,6 +47,14 @@ input HiddenCollectionsInput {
   screenshotsWithoutApp: Boolean!
   "Apps whose screenshots are hidden, compared ignoring case."
   screenshotApps: [String!]!
+  "Hiding nudity; left out, it stays as it is."
+  nudity: NudityHidingInput
+}
+
+input NudityHidingInput {
+  hidden: Boolean!
+  "The score from which files are hidden: more than 0, at most 1. Ignored while not hidden."
+  from: Float!
 }
 
 extend type Query {

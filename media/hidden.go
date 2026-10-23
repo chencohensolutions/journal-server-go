@@ -14,14 +14,20 @@ import (
 )
 
 // Hidden is what the user hides on every device (Settings → Private media → Hidden collections in the apps): whole
-// sources (WhatsApp), the screenshots of some apps, and screenshots whose name says no app. Hidden files stay in the
-// data folder as they are; the server leaves them out of what devices see (View). It is kept in settings.json at the
-// data folder's root, so it moves with the data.
+// sources (WhatsApp), the screenshots of some apps, screenshots whose name says no app, and what the nudity scan
+// scored high. Hidden files stay in the data folder as they are; the server leaves them out of what devices see
+// (View). It is kept in settings.json at the data folder's root, so it moves with the data.
 type Hidden struct {
 	Sources               []string `json:"sources,omitempty"`
 	ScreenshotApps        []string `json:"screenshotApps,omitempty"`
 	ScreenshotsWithoutApp bool     `json:"screenshotsWithoutApp,omitempty"`
+	// NudityFrom hides the files the nudity scan scored at this or more, 0 to 1; 0 hides none. Always written, so
+	// that off (0) stays off: a settings.json without it, or no settings.json, hides from DefaultNudityFrom.
+	NudityFrom float64 `json:"nudityFrom"`
 }
+
+// DefaultNudityFrom is the nudity score from which files are hidden until the user chooses another, or none.
+const DefaultNudityFrom = 0.5
 
 // SettingsFormat is the version of settings.json.
 const SettingsFormat = 1
@@ -32,6 +38,15 @@ type settingsFile struct {
 }
 
 func (s *Store) settingsPath() string { return filepath.Join(s.root, "settings.json") }
+
+// HidesFile reports whether a file is hidden by its own sidecar: in a hidden collection, or scored at NudityFrom
+// or more by the nudity scan (a file not scanned yet isn't).
+func (h Hidden) HidesFile(sidecar Sidecar) bool {
+	if h.NudityFrom > 0 && sidecar.Detected != nil && sidecar.Detected.Nudity != nil && sidecar.Detected.Nudity.Score >= h.NudityFrom {
+		return true
+	}
+	return h.Hides(sidecar.Facts)
+}
 
 // Hides reports whether facts put a file in a hidden collection. Apps are compared ignoring case.
 func (h Hidden) Hides(facts Facts) bool {
@@ -75,12 +90,15 @@ func (h Hidden) normalized() Hidden {
 		sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
 		return out
 	}
-	return Hidden{Sources: unique(h.Sources), ScreenshotApps: unique(h.ScreenshotApps), ScreenshotsWithoutApp: h.ScreenshotsWithoutApp}
+	return Hidden{
+		Sources: unique(h.Sources), ScreenshotApps: unique(h.ScreenshotApps), ScreenshotsWithoutApp: h.ScreenshotsWithoutApp,
+		NudityFrom: min(max(h.NudityFrom, 0), 1),
+	}
 }
 
 // IsEmpty reports whether nothing is hidden.
 func (h Hidden) IsEmpty() bool {
-	return len(h.Sources) == 0 && len(h.ScreenshotApps) == 0 && !h.ScreenshotsWithoutApp
+	return len(h.Sources) == 0 && len(h.ScreenshotApps) == 0 && !h.ScreenshotsWithoutApp && h.NudityFrom == 0
 }
 
 // Key is a short name for what is hidden ("" when nothing is), by which the change feed tells whether a cursor's
@@ -98,11 +116,11 @@ func (h Hidden) Key() string {
 	return hex.EncodeToString(sum[:6])
 }
 
-// readHidden reads settings.json; a data folder without one hides nothing.
+// readHidden reads settings.json; a data folder without one hides only nudity, from DefaultNudityFrom.
 func (s *Store) readHidden() (Hidden, error) {
 	data, err := os.ReadFile(s.settingsPath())
 	if errors.Is(err, fs.ErrNotExist) {
-		return Hidden{}, nil
+		return Hidden{NudityFrom: DefaultNudityFrom}, nil
 	}
 	if err != nil {
 		return Hidden{}, err
@@ -113,6 +131,15 @@ func (s *Store) readHidden() (Hidden, error) {
 	}
 	if file.Format > SettingsFormat {
 		return Hidden{}, fmt.Errorf("%s has format %d, newer than this server's %d", s.settingsPath(), file.Format, SettingsFormat)
+	}
+	// Written before nudity was hidden here: hidden from the default, as the apps did themselves.
+	var written struct {
+		Hidden struct {
+			NudityFrom *float64 `json:"nudityFrom"`
+		} `json:"hidden"`
+	}
+	if json.Unmarshal(data, &written) == nil && written.Hidden.NudityFrom == nil {
+		file.Hidden.NudityFrom = DefaultNudityFrom
 	}
 	return file.Hidden.normalized(), nil
 }
@@ -180,14 +207,14 @@ func (s *Store) hides(v View, item Item) bool {
 	if v.Hidden.IsEmpty() {
 		return false
 	}
-	if v.Hidden.Hides(item.Sidecar.Facts) {
+	if v.Hidden.HidesFile(item.Sidecar) {
 		return true
 	}
 	for _, to := range []*string{item.Sidecar.Facts.VersionOf, item.Sidecar.Facts.PairedWith} {
 		if to == nil {
 			continue
 		}
-		if linked, ok := s.items[*to]; ok && v.Hidden.Hides(linked.Sidecar.Facts) {
+		if linked, ok := s.items[*to]; ok && v.Hidden.HidesFile(linked.Sidecar) {
 			return true
 		}
 	}
@@ -253,6 +280,23 @@ func (s *Store) Collections() (whatsapp, withoutApp Collection, apps []Collectio
 		return strings.ToLower(apps[i].Name) < strings.ToLower(apps[j].Name)
 	})
 	return whatsapp, withoutApp, apps
+}
+
+// NudityCounts is how many files the nudity scan scored at from or more, and how many it hasn't scanned yet (they
+// can't be hidden for nudity until it has).
+func (s *Store) NudityCounts(from float64) (files, notScanned int) {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.items {
+		switch d := item.Sidecar.Detected; {
+		case d == nil || d.Nudity == nil:
+			notScanned++
+		case d.Nudity.Score >= from:
+			files++
+		}
+	}
+	return files, notScanned
 }
 
 func ptr[T any](v T) *T { return &v }

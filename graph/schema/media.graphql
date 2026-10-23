@@ -50,8 +50,8 @@ type Media {
   "The device that uploaded it."
   uploadedBy: String!
   """
-  How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
-  user's threshold, and fetch nothing of it.
+  How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. What scores at the user's
+  hiddenCollections.nudity.from or more never reaches devices while that is on.
   """
   nudity: Float
   """
@@ -154,8 +154,13 @@ type Change {
   kind: ChangeKind!
   "media/<sha256> for media."
   path: String!
-  "Gone from the server, or a private file the server keeps from this device."
+  "Gone from the server, a private file the server keeps from this device, or hidden (see hidden)."
   deleted: Boolean!
+  """
+  Deleted because the user hides it on every device (hiddenCollections: a hidden collection or nudity). The file is
+  still on the server: a device leaves out its own copy too (the photo with this sha256), and never uploads it again.
+  """
+  hidden: Boolean!
   "The new state; null when deleted."
   media: Media
 }

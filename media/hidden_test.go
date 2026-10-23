@@ -3,6 +3,7 @@ package media
 import (
 	"encoding/base64"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -69,9 +70,9 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 	if items, _, _, _ := f.store.Changes(hiddenCursor, 10, view); len(items) != 0 {
 		t.Fatalf("after the change-over: %v", items)
 	}
-	// A feed from the start leaves them out; counts too.
+	// A feed from the start has them too, for the device's own copies; counts leave them out.
 	items, shownCursor, _, _ := f.store.Changes("", 10, view)
-	if len(items) != 1 || items[0].Sha256() != photo.Sha256() {
+	if len(items) != 3 || countShown(f.store, view, items) != 1 || f.store.Hides(view, *f.store.mustGet(t, photo.Sha256())) {
 		t.Fatalf("from the start: %v", items)
 	}
 	if u := f.store.Usage(view); u.Photos != 1 {
@@ -189,4 +190,66 @@ func TestHiddenFeedPages(t *testing.T) {
 		cursor = next
 	}
 	t.Fatal("the feed started again on every page")
+}
+
+// Nudity is hidden from 0.5 in a data folder whose settings.json doesn't say (or that has none), and off stays off.
+func TestHiddenNudity(t *testing.T) {
+	f := newFixture(t)
+	f.now = f.now.Add(time.Second)
+	nude := f.upload([]byte("nude"), "20251101_110819.heic")
+	edit := photoRequest([]byte("nude edit"), "IMG_EDIT.jpg")
+	edit.VersionOf = ptr(nude.Sha256())
+	f.start(edit)
+	if result, err := f.chunk([]byte("nude edit"), 0, 9); err != nil || result.Item == nil {
+		t.Fatal(result, err)
+	}
+	unscanned := f.upload([]byte("beach"), "20251101_110820.heic")
+	if err := f.store.SetNudity(nude.Sha256(), Detection{Score: 0.5, Model: "nudenet-320n"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.store.Hidden().NudityFrom != DefaultNudityFrom {
+		t.Fatalf("without settings.json: %+v", f.store.Hidden())
+	}
+	view := f.store.ViewFor(false)
+	items, _, _, _ := f.store.Changes("", 10, view)
+	if len(items) != 3 || countShown(f.store, view, items) != 1 || f.store.Hides(view, *f.store.mustGet(t, unscanned.Sha256())) {
+		t.Fatalf("hidden with its edit: %v", items)
+	}
+	if files, notScanned := f.store.NudityCounts(0.5); files != 1 || notScanned != 2 {
+		t.Fatalf("counts: %d, %d not scanned", files, notScanned)
+	}
+
+	// A settings.json written before nudity was hidden here hides it from the default too.
+	if err := os.WriteFile(f.store.settingsPath(), []byte(`{"format": 1, "hidden": {"sources": ["whatsapp"]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.reopen()
+	if h := f.store.Hidden(); h.NudityFrom != DefaultNudityFrom || len(h.Sources) != 1 {
+		t.Fatalf("older settings.json: %+v", h)
+	}
+	if err := f.store.SetHidden(Hidden{}); err != nil {
+		t.Fatal(err)
+	}
+	f.reopen()
+	if h := f.store.Hidden(); !h.IsEmpty() {
+		t.Fatalf("off, reopened: %+v", h)
+	}
+}
+
+func countShown(store *Store, view View, items []Item) (shown int) {
+	for _, item := range items {
+		if !store.Hides(view, item) {
+			shown++
+		}
+	}
+	return shown
+}
+
+func (s *Store) mustGet(t *testing.T, sha string) *Item {
+	t.Helper()
+	item, ok := s.Get(sha)
+	if !ok {
+		t.Fatalf("no %s", sha)
+	}
+	return &item
 }

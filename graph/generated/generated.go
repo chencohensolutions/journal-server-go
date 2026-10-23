@@ -48,6 +48,7 @@ type ComplexityRoot struct {
 
 	Change struct {
 		Deleted func(childComplexity int) int
+		Hidden  func(childComplexity int) int
 		Kind    func(childComplexity int) int
 		Media   func(childComplexity int) int
 		Path    func(childComplexity int) int
@@ -104,6 +105,7 @@ type ComplexityRoot struct {
 	}
 
 	HiddenCollections struct {
+		Nudity                func(childComplexity int) int
 		ScreenshotApps        func(childComplexity int) int
 		ScreenshotsWithoutApp func(childComplexity int) int
 		Whatsapp              func(childComplexity int) int
@@ -161,6 +163,13 @@ type ComplexityRoot struct {
 		Reason func(childComplexity int) int
 	}
 
+	NudityHiding struct {
+		Files      func(childComplexity int) int
+		From       func(childComplexity int) int
+		Hidden     func(childComplexity int) int
+		NotScanned func(childComplexity int) int
+	}
+
 	People struct {
 		Model  func(childComplexity int) int
 		People func(childComplexity int) int
@@ -197,11 +206,12 @@ type ComplexityRoot struct {
 	}
 
 	ServerInfo struct {
-		API      func(childComplexity int) int
-		Posters  func(childComplexity int) int
-		Previews func(childComplexity int) int
-		Search   func(childComplexity int) int
-		Version  func(childComplexity int) int
+		API        func(childComplexity int) int
+		NudityScan func(childComplexity int) int
+		Posters    func(childComplexity int) int
+		Previews   func(childComplexity int) int
+		Search     func(childComplexity int) int
+		Version    func(childComplexity int) int
 	}
 
 	StorageUsage struct {
@@ -295,6 +305,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Change.Deleted(childComplexity), true
+	case "Change.hidden":
+		if e.ComplexityRoot.Change.Hidden == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Change.Hidden(childComplexity), true
 	case "Change.kind":
 		if e.ComplexityRoot.Change.Kind == nil {
 			break
@@ -478,6 +494,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.GeoPoint.Lon(childComplexity), true
 
+	case "HiddenCollections.nudity":
+		if e.ComplexityRoot.HiddenCollections.Nudity == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.Nudity(childComplexity), true
 	case "HiddenCollections.screenshotApps":
 		if e.ComplexityRoot.HiddenCollections.ScreenshotApps == nil {
 			break
@@ -764,6 +786,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.NotFound.Reason(childComplexity), true
 
+	case "NudityHiding.files":
+		if e.ComplexityRoot.NudityHiding.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.NudityHiding.Files(childComplexity), true
+	case "NudityHiding.from":
+		if e.ComplexityRoot.NudityHiding.From == nil {
+			break
+		}
+
+		return e.ComplexityRoot.NudityHiding.From(childComplexity), true
+	case "NudityHiding.hidden":
+		if e.ComplexityRoot.NudityHiding.Hidden == nil {
+			break
+		}
+
+		return e.ComplexityRoot.NudityHiding.Hidden(childComplexity), true
+	case "NudityHiding.notScanned":
+		if e.ComplexityRoot.NudityHiding.NotScanned == nil {
+			break
+		}
+
+		return e.ComplexityRoot.NudityHiding.NotScanned(childComplexity), true
+
 	case "People.model":
 		if e.ComplexityRoot.People.Model == nil {
 			break
@@ -948,6 +995,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.API(childComplexity), true
+	case "ServerInfo.nudityScan":
+		if e.ComplexityRoot.ServerInfo.NudityScan == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.NudityScan(childComplexity), true
 	case "ServerInfo.posters":
 		if e.ComplexityRoot.ServerInfo.Posters == nil {
 			break
@@ -1048,6 +1101,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputGeoAreaInput,
 		ec.unmarshalInputGeoPointInput,
 		ec.unmarshalInputHiddenCollectionsInput,
+		ec.unmarshalInputNudityHidingInput,
 		ec.unmarshalInputStartUploadInput,
 	)
 	first := true
@@ -1125,8 +1179,9 @@ func newExecutionContext(
 
 var sources = []*ast.Source{
 	{Name: "../schema/hidden.graphql", Input: `# --- Hidden collections -------------------------------------------------------
-# What the user hides on every device (Settings → Private media → Hidden collections in the apps). The server does
-# the hiding: a hidden file comes in the change feed as deleted, isn't counted in storageUsage, isn't found by
+# What the user hides on every device (Settings → Private media → Hidden collections in the apps), and the files the
+# nudity scan scored high. The server does the hiding: a hidden file comes in the change feed as deleted and hidden
+# (so a device leaves out its own copy too), isn't counted in storageUsage, isn't found by
 # searchMedia, and /media and its preview answer 404. Nothing is deleted; showing a collection again brings its files
 # back. missingMedia, startUpload, uploads and verify still see hidden files, so they are never uploaded again.
 
@@ -1141,6 +1196,22 @@ type HiddenCollections {
   listed too, so it can be shown again.
   """
   screenshotApps: [Collection!]!
+  "The files the nudity scan scored high."
+  nudity: NudityHiding!
+}
+
+"""
+Files the nudity scan scored at ` + "`" + `from` + "`" + ` or more (Media.nudity), hidden on every device while ` + "`" + `hidden` + "`" + `. Hidden from 0.5
+until the user chooses.
+"""
+type NudityHiding {
+  hidden: Boolean!
+  "The score from which files are hidden, 0 to 1 (more than 0); the default 0.5 while not hidden."
+  from: Float!
+  "How many files the scan scored at ` + "`" + `from` + "`" + ` or more."
+  files: Int!
+  "How many files the scan hasn't read yet; they aren't hidden for nudity until it has."
+  notScanned: Int!
 }
 
 "One group of files: how many it has, hidden or not, and whether it is hidden."
@@ -1156,6 +1227,14 @@ input HiddenCollectionsInput {
   screenshotsWithoutApp: Boolean!
   "Apps whose screenshots are hidden, compared ignoring case."
   screenshotApps: [String!]!
+  "Hiding nudity; left out, it stays as it is."
+  nudity: NudityHidingInput
+}
+
+input NudityHidingInput {
+  hidden: Boolean!
+  "The score from which files are hidden: more than 0, at most 1. Ignored while not hidden."
+  from: Float!
 }
 
 extend type Query {
@@ -1222,8 +1301,8 @@ type Media {
   "The device that uploaded it."
   uploadedBy: String!
   """
-  How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. Clients hide what is over the
-  user's threshold, and fetch nothing of it.
+  How sure the nudity scan is that it shows nudity, 0 to 1; null until scanned. What scores at the user's
+  hiddenCollections.nudity.from or more never reaches devices while that is on.
   """
   nudity: Float
   """
@@ -1326,8 +1405,13 @@ type Change {
   kind: ChangeKind!
   "media/<sha256> for media."
   path: String!
-  "Gone from the server, or a private file the server keeps from this device."
+  "Gone from the server, a private file the server keeps from this device, or hidden (see hidden)."
   deleted: Boolean!
+  """
+  Deleted because the user hides it on every device (hiddenCollections: a hidden collection or nudity). The file is
+  still on the server: a device leaves out its own copy too (the photo with this sha256), and never uploads it again.
+  """
+  hidden: Boolean!
   "The new state; null when deleted."
   media: Media
 }
@@ -1484,6 +1568,11 @@ type ServerInfo {
   previews: Boolean!
   "Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503."
   posters: Boolean!
+  """
+  New files are scanned for nudity (NudeNet's model is installed), so what scores high is hidden soon after it comes
+  (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
+  """
+  nudityScan: Boolean!
 }
 
 type Mutation {
@@ -1634,6 +1723,8 @@ func (ec *executionContext) childFields_Change(ctx context.Context, field graphq
 		return ec.fieldContext_Change_path(ctx, field)
 	case "deleted":
 		return ec.fieldContext_Change_deleted(ctx, field)
+	case "hidden":
+		return ec.fieldContext_Change_hidden(ctx, field)
 	case "media":
 		return ec.fieldContext_Change_media(ctx, field)
 	}
@@ -1714,6 +1805,8 @@ func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, f
 		return ec.fieldContext_HiddenCollections_screenshotsWithoutApp(ctx, field)
 	case "screenshotApps":
 		return ec.fieldContext_HiddenCollections_screenshotApps(ctx, field)
+	case "nudity":
+		return ec.fieldContext_HiddenCollections_nudity(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type HiddenCollections", field.Name)
 }
@@ -1782,6 +1875,20 @@ func (ec *executionContext) childFields_MediaSearch(ctx context.Context, field g
 	return nil, fmt.Errorf("no field named %q was found under type MediaSearch", field.Name)
 }
 
+func (ec *executionContext) childFields_NudityHiding(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "hidden":
+		return ec.fieldContext_NudityHiding_hidden(ctx, field)
+	case "from":
+		return ec.fieldContext_NudityHiding_from(ctx, field)
+	case "files":
+		return ec.fieldContext_NudityHiding_files(ctx, field)
+	case "notScanned":
+		return ec.fieldContext_NudityHiding_notScanned(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type NudityHiding", field.Name)
+}
+
 func (ec *executionContext) childFields_People(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "people":
@@ -1838,6 +1945,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_previews(ctx, field)
 	case "posters":
 		return ec.fieldContext_ServerInfo_posters(ctx, field)
+	case "nudityScan":
+		return ec.fieldContext_ServerInfo_nudityScan(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -2540,6 +2649,29 @@ func (ec *executionContext) _Change_deleted(ctx context.Context, field graphql.C
 	)
 }
 func (ec *executionContext) fieldContext_Change_deleted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Change", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Change_hidden(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Change_hidden(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Hidden, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Change_hidden(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Change", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -3300,6 +3432,38 @@ func (ec *executionContext) fieldContext_HiddenCollections_screenshotApps(_ cont
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_nudity(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_nudity(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Nudity, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.NudityHiding) graphql.Marshaler {
+			return ec.marshalNNudityHiding2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHiding(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_nudity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_NudityHiding(ctx, field)
 		},
 	}
 	return fc, nil
@@ -4373,6 +4537,98 @@ func (ec *executionContext) fieldContext_NotFound_reason(_ context.Context, fiel
 	return graphql.NewScalarFieldContext("NotFound", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _NudityHiding_hidden(ctx context.Context, field graphql.CollectedField, obj *model.NudityHiding) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_NudityHiding_hidden(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Hidden, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_NudityHiding_hidden(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("NudityHiding", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _NudityHiding_from(ctx context.Context, field graphql.CollectedField, obj *model.NudityHiding) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_NudityHiding_from(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.From, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_NudityHiding_from(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("NudityHiding", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _NudityHiding_files(ctx context.Context, field graphql.CollectedField, obj *model.NudityHiding) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_NudityHiding_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_NudityHiding_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("NudityHiding", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _NudityHiding_notScanned(ctx context.Context, field graphql.CollectedField, obj *model.NudityHiding) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_NudityHiding_notScanned(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.NotScanned, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_NudityHiding_notScanned(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("NudityHiding", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
 func (ec *executionContext) _People_people(ctx context.Context, field graphql.CollectedField, obj *model.People) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5304,6 +5560,29 @@ func (ec *executionContext) _ServerInfo_posters(ctx context.Context, field graph
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_posters(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_nudityScan(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_nudityScan(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.NudityScan, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_nudityScan(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -6746,7 +7025,7 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"whatsapp", "screenshotsWithoutApp", "screenshotApps"}
+	fieldsInOrder := [...]string{"whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -6774,6 +7053,50 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 				return it, err
 			}
 			it.ScreenshotApps = data
+		case "nudity":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("nudity"))
+			data, err := ec.unmarshalONudityHidingInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHidingInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Nudity = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputNudityHidingInput(ctx context.Context, obj any) (model.NudityHidingInput, error) {
+	var it model.NudityHidingInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"hidden", "from"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "hidden":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("hidden"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Hidden = data
+		case "from":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("from"))
+			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.From = data
 		}
 	}
 	return it, nil
@@ -7120,6 +7443,11 @@ func (ec *executionContext) _Change(ctx context.Context, sel ast.SelectionSet, o
 			}
 		case "deleted":
 			out.Values[i] = ec._Change_deleted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "hidden":
+			out.Values[i] = ec._Change_hidden(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -7570,6 +7898,11 @@ func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.Sele
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "nudity":
+			out.Values[i] = ec._HiddenCollections_nudity(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -7947,6 +8280,60 @@ func (ec *executionContext) _NotFound(ctx context.Context, sel ast.SelectionSet,
 			}
 		case "reason":
 			out.Values[i] = ec._NotFound_reason(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var nudityHidingImplementors = []string{"NudityHiding"}
+
+func (ec *executionContext) _NudityHiding(ctx context.Context, sel ast.SelectionSet, obj *model.NudityHiding) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, nudityHidingImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("NudityHiding")
+		case "hidden":
+			out.Values[i] = ec._NudityHiding_hidden(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "from":
+			out.Values[i] = ec._NudityHiding_from(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._NudityHiding_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "notScanned":
+			out.Values[i] = ec._NudityHiding_notScanned(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -8437,6 +8824,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "posters":
 			out.Values[i] = ec._ServerInfo_posters(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "nudityScan":
+			out.Values[i] = ec._ServerInfo_nudityScan(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -9322,6 +9714,16 @@ func (ec *executionContext) marshalNMediaSearch2ᚖgithubᚗcomᚋjournalᚋserv
 	return ec._MediaSearch(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNNudityHiding2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHiding(ctx context.Context, sel ast.SelectionSet, v *model.NudityHiding) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._NudityHiding(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNPeople2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐPeople(ctx context.Context, sel ast.SelectionSet, v model.People) graphql.Marshaler {
 	return ec._People(ctx, sel, &v)
 }
@@ -9901,6 +10303,14 @@ func (ec *executionContext) marshalOMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑg
 		return graphql.Null
 	}
 	return ec._Media(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalONudityHidingInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHidingInput(ctx context.Context, v any) (*model.NudityHidingInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputNudityHidingInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOSha2562ᚖstring(ctx context.Context, v any) (*string, error) {

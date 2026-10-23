@@ -9,6 +9,7 @@ import (
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/nudity"
 	"github.com/journal/server-go/onnx"
 	"github.com/journal/server-go/search"
 )
@@ -61,7 +62,7 @@ var (
 	runtimeErr  error
 )
 
-// loadRuntime loads ONNX Runtime, once for the process: text search and face search share it.
+// loadRuntime loads ONNX Runtime, once for the process: text search, face search and the nudity scan share it.
 func loadRuntime(config auth.AppConfig) (*onnx.Runtime, error) {
 	runtimeOnce.Do(func() {
 		var path string
@@ -124,6 +125,27 @@ func newFaces(config auth.AppConfig, library *media.Library, previews *media.Pre
 	}
 	log.Printf("Face search with %s on ONNX Runtime %s (%d threads)", model.Name, rt.Version, config.SearchThreads)
 	return service
+}
+
+// newNudity loads ONNX Runtime and NudeNet's detector; nil (no nudity scan) when either is missing. Its Run scans
+// the files not scanned yet.
+func newNudity(config auth.AppConfig, library *media.Library, previews *media.Previews) *nudity.Service {
+	if _, err := os.Stat(config.NudityModel); err != nil {
+		log.Printf("The nudity scan is off: no model at %s (go run ./scripts/bundle-onnx, or set \"nudity_model\" in config.json)", config.NudityModel)
+		return nil
+	}
+	rt, err := loadRuntime(config)
+	if err != nil {
+		log.Printf("The nudity scan is off: %v", err)
+		return nil
+	}
+	model, err := nudity.LoadModel(rt, config.NudityModel, config.SearchThreads)
+	if err != nil {
+		log.Printf("The nudity scan is off: %v", err)
+		return nil
+	}
+	log.Printf("Nudity scan with %s on ONNX Runtime %s (%d threads)", nudity.ModelName, rt.Version, config.SearchThreads)
+	return nudity.NewService(model, library, previews)
 }
 
 // maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches, once an hour.

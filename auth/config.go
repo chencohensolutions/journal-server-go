@@ -47,7 +47,10 @@ type AppConfig struct {
 	// Folder of the face models (YuNet and SFace) for face search, made by scripts/bundle-onnx; models/yunet-sface
 	// when empty. Face search is off when the folder isn't there.
 	FaceModel string `json:"face_model"`
-	// Path of the ONNX Runtime library, which runs the search and face models; the one in ./onnxruntime (scripts/bundle-onnx)
+	// Path of NudeNet's detector (320n.onnx) for the nudity scan, downloaded by scripts/bundle-onnx;
+	// models/nudenet/320n.onnx when empty. New files aren't scanned when it isn't there.
+	NudityModel string `json:"nudity_model"`
+	// Path of the ONNX Runtime library, which runs the search, face and nudity models; the one in ./onnxruntime (scripts/bundle-onnx)
 	// or Homebrew's when empty.
 	OnnxRuntime string `json:"onnxruntime"`
 	// CPU threads each half of the search model, and each face model, may use (default half the CPUs): reading new
@@ -64,6 +67,7 @@ const (
 	DefaultPreviewCacheGB = 50
 	DefaultSearchModel    = "models/siglip2-base-patch16-256"
 	DefaultFaceModel      = "models/yunet-sface"
+	DefaultNudityModel    = "models/nudenet/320n.onnx"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -112,6 +116,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.FaceModel == "" {
 		c.FaceModel = DefaultFaceModel
+	}
+	if c.NudityModel == "" {
+		c.NudityModel = DefaultNudityModel
 	}
 	if c.SearchThreads <= 0 {
 		c.SearchThreads = max(1, runtime.NumCPU()/2)
