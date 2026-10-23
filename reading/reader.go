@@ -90,8 +90,9 @@ func (p Previews) Open(ctx context.Context, store *media.Store, item media.Item,
 // How often the users' stores are looked through for files not read yet (imports; uploads Wake the reader).
 const rescanEvery = 30 * time.Second
 
-// Reading many files logs its progress after each this many.
-const progressEvery = 1000
+// Reading many files logs its progress about this often. The rate and the time left are counted from that last
+// stretch alone, so a change of pace (videos, screenshots full of text) shows at once.
+const progressEvery = time.Minute
 
 // Reader reads the users' files for its indexes.
 type Reader struct {
@@ -252,6 +253,7 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 		}
 	}()
 	started, done := time.Now(), 0
+	lastAt, lastDone := started, 0
 	for p := range ready {
 		for _, x := range p.needing {
 			if ctx.Err() != nil {
@@ -285,8 +287,10 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 			p.source.Close()
 			p.release()
 		}
-		if done++; done%progressEvery == 0 {
-			rate := float64(done) / time.Since(started).Seconds()
+		done++
+		if since := time.Since(lastAt); since >= progressEvery && done < len(todo) {
+			rate := float64(done-lastDone) / since.Seconds()
+			lastAt, lastDone = time.Now(), done
 			left := time.Duration(float64(len(todo)-done)/rate) * time.Second
 			log.Printf("reading: %d of %d files of %s (%s; %.1f/s, about %s left)", done, len(todo), user,
 				r.summary(stats), rate, left.Round(time.Minute))

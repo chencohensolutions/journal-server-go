@@ -54,7 +54,9 @@ picture its model reads, each **made from the original** at that size, never fro
     and the console says so once at start.
   - A file that failed is tried again only after a restart, so it appears once per restart. The lists can be
     deleted.
-- **Progress.** One line every 1000 files, then a summary:
+- **Progress.** One line a minute (after the file in hand, so a slow one can stretch it), then a summary at the end.
+  The rate and the time left are counted from the last minute alone, so they follow a change of pace (a run of
+  videos, or screenshots full of text) instead of the average since the start:
 
   ```
   reading: 1000 of 48210 files of hen (nudity 1000, faces 997 (3 could not be read), search 0; 2.9/s, about 4h30m left)

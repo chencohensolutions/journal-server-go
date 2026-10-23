@@ -47,8 +47,9 @@ devices.json
 /onnxruntime/
 /models/
 
-# Built by the "server: run" task
+# Built by the "server: run" and "server: index now" tasks
 /journal-server
+/journal-indexer
 
 # Output of "go run . > server.log"
 /server.log

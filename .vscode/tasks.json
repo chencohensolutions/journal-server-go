@@ -59,6 +59,22 @@
 			"problemMatcher": []
 		},
 		{
+			// Reads every user's new files for the indexes once and exits, as the nightly run with "index": "daily" does.
+			// Works beside a running server in "daily" mode (it then tells the server to read the results), but refuses
+			// beside one in "server" mode, which reads files itself. Ctrl+C finishes the file in hand; the next run carries on.
+			// Builds its own binary, journal-indexer, so the process has that name (go run would name it server-go, after
+			// the module) and the build doesn't overwrite the journal-server binary a running "server: run" holds open.
+			"label": "server: index now",
+			"type": "shell",
+			"command": "go build -o journal-indexer . && ./journal-indexer index",
+			"windows": {
+				"command": "go build -o journal-indexer.exe . ; if ($?) { .\\journal-indexer.exe index }"
+			},
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": [],
+			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
+		},
+		{
 			"label": "adb: devices",
 			"type": "shell",
 			"command": "adb devices -l",
