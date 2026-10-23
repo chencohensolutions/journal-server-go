@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -60,9 +62,14 @@ func serve(config auth.AppConfig) {
 	facer := newFaces(config, library)
 	scanner := newNudity(config)
 	reader := newReader(config, library, previews, scanner, facer, searcher)
+	readerDone := make(chan struct{})
+	running, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	if reader != nil {
-		go reader.Run(context.Background())
+		go func() { reader.Run(running); close(readerDone) }()
+	} else {
+		close(readerDone)
 	}
+	go stopOnSignal(running, stop, readerDone, library)
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
@@ -80,6 +87,22 @@ func serve(config auth.AppConfig) {
 	}
 	log.Printf("Listening on https://0.0.0.0:%s", config.Port)
 	log.Fatal(server.Serve(tls.NewListener(&loggingListener{Listener: ln}, tlsConfig)))
+}
+
+// stopOnSignal waits for Ctrl+C (or a stop from the system), lets the reader finish the file in hand, saves the
+// index caches the server's writes made stale, so the next start doesn't read the library's sidecars again, and
+// exits. A second Ctrl+C exits at once.
+func stopOnSignal(running context.Context, stop func(), readerDone <-chan struct{}, library *media.Library) {
+	<-running.Done()
+	stop() // a second Ctrl+C now ends the process the usual way
+	log.Printf("Stopping: finishing the file being read, then saving the index caches (Ctrl+C again to stop now)")
+	select {
+	case <-readerDone:
+	case <-time.After(30 * time.Second):
+	}
+	library.RefreshIndexCachesIfChanged()
+	log.Printf("Stopped")
+	os.Exit(0)
 }
 
 // serverVersion is the build's commit and time from the Go build info ("3f2a9c1 2026-10-23", "-dirty" with

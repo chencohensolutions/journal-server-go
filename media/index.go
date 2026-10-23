@@ -206,8 +206,24 @@ func (s *Store) scan() error {
 // RefreshIndexCache brings .cache/index.json up to date with the data folder, reading only the folders
 // that changed, so the next start (of the server or a script) is quick. The index in memory is not touched.
 func (s *Store) RefreshIndexCache() error {
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
 	_, err := s.walkIndex()
 	return err
+}
+
+// RefreshIndexCacheIfChanged refreshes .cache/index.json when this process has placed a file or rewritten a
+// sidecar since it was last saved: the nudity scan rewrites a sidecar for every file it reads, and each one makes
+// its folder read again at the next start (minutes for a library on a spinning disk) until the cache is saved.
+func (s *Store) RefreshIndexCacheIfChanged() error {
+	if !s.indexStale.Swap(false) {
+		return nil
+	}
+	if err := s.RefreshIndexCache(); err != nil {
+		s.indexStale.Store(true)
+		return err
+	}
+	return nil
 }
 
 // parallel calls fn(0) … fn(n-1) on up to workers goroutines at once.

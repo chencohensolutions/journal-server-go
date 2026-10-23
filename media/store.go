@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,6 +30,12 @@ type Store struct {
 
 	// Taking turns with other processes that have this data folder open (turns.go).
 	turns turns
+
+	// This process has placed a file or rewritten a sidecar since .cache/index.json was last saved, so the next
+	// start would read those folders again (RefreshIndexCacheIfChanged).
+	indexStale atomic.Bool
+	// One refresh of .cache/index.json at a time.
+	indexMu sync.Mutex
 
 	// Keep previews (and developed DNGs) in .cache/previews; else each is made, sent and deleted.
 	// Set once, before the store serves requests (config.json "preview_cache").

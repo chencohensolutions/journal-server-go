@@ -84,3 +84,46 @@ func TestVideoPreviewsComeFromAnUprightPosterFrame(t *testing.T) {
 		}
 	})
 }
+
+// The poster is the first keyframe at 1 s or later, not the frame at exactly 1 s: in a video black until 1.2 s,
+// white after, with keyframes at 0 and 1.2 s, the frame at 1 s is black and the poster white.
+func TestThePosterIsTheFirstKeyframeAfterASecond(t *testing.T) {
+	vips, header, err := FindVips("")
+	if err != nil {
+		t.Skip("libvips not installed")
+	}
+	ffmpeg, ffprobe, err := FindFFmpeg("")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	video := filepath.Join(t.TempDir(), "keys.mp4")
+	if out, err := exec.Command(ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "color=c=black:s=64x64:d=1.2:r=10", "-f", "lavfi", "-i", "color=c=white:s=64x64:d=1.8:r=10",
+		"-filter_complex", "concat=n=2:v=1", "-c:v", "libx264", "-g", "12", "-keyint_min", "12", "-sc_threshold", "0",
+		"-pix_fmt", "yuv420p", video).CombinedOutput(); err != nil {
+		t.Skipf("ffmpeg can't make the test video: %v %s", err, out)
+	}
+	data, err := os.ReadFile(video)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t)
+	req := photoRequest(data, "KEYS.mp4")
+	req.Kind, req.MimeType = KindVideo, "video/mp4"
+	duration := int64(3000)
+	req.DurationMs = &duration
+	f.start(req)
+	result, err := f.chunk(data, 0, int64(len(data)))
+	if err != nil || result.Item == nil {
+		t.Fatalf("upload: %v", err)
+	}
+	spec, _ := ParsePreviewSpec(url.Values{"w": {"64"}, "h": {"64"}, "fit": {"contain"}, "fmt": {"jpeg"}})
+	path, release, err := NewPreviews(vips, header).WithFFmpeg(ffmpeg, ffprobe).Get(context.Background(), f.store, *result.Item, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if r, _, _, _ := decodeJPEG(t, path).At(32, 32).RGBA(); r < 200*257 {
+		t.Errorf("the poster is dark (%d): the frame at 1 s, not the keyframe at 1.2 s", r>>8)
+	}
+}

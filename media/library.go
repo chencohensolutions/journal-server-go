@@ -61,6 +61,16 @@ func (l *Library) TrimPreviews(maxBytes int64) {
 	}
 }
 
+// RefreshIndexCachesIfChanged refreshes the .cache/index.json of every user whose data folder this process wrote
+// into since it was last saved.
+func (l *Library) RefreshIndexCachesIfChanged() {
+	for user, store := range l.stores {
+		if err := store.RefreshIndexCacheIfChanged(); err != nil {
+			log.Printf("media: refreshing the index cache of %s: %v", user, err)
+		}
+	}
+}
+
 // RefreshIndexCaches brings every user's .cache/index.json up to date, so the next start is quick.
 func (l *Library) RefreshIndexCaches() {
 	for user, store := range l.stores {

@@ -181,11 +181,19 @@ func newReader(config auth.AppConfig, library *media.Library, previews *media.Pr
 	return r
 }
 
-// maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches, once an hour.
+// maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches once an hour
+// (catching what scripts changed too), and every few minutes saves the index cache of a data folder the server
+// wrote into, so that a restart doesn't read the library's sidecars again.
 func maintainLibrary(config auth.AppConfig, library *media.Library) {
-	for ; ; time.Sleep(time.Hour) {
-		library.PurgeExpiredUploads()
-		library.TrimPreviews(int64(config.PreviewCacheMaxGB * (1 << 30)))
-		library.RefreshIndexCaches()
+	const every = 5 * time.Minute
+	for tick := 0; ; tick++ {
+		if tick%int(time.Hour/every) == 0 {
+			library.PurgeExpiredUploads()
+			library.TrimPreviews(int64(config.PreviewCacheMaxGB * (1 << 30)))
+			library.RefreshIndexCaches()
+		} else {
+			library.RefreshIndexCachesIfChanged()
+		}
+		time.Sleep(every)
 	}
 }

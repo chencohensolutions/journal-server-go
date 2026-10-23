@@ -68,6 +68,7 @@ func (s *Store) Turn(fn func() error) error {
 // wrote notes, during a turn, a file placed or a sidecar rewritten, for the other processes.
 func (s *Store) wrote(item *Item) {
 	s.turns.pending = append(s.turns.pending, fmt.Sprintf("%s\t%s\n", item.Sidecar.Sha256, item.Path))
+	s.indexStale.Store(true)
 }
 
 func (s *Store) appendJournal(lines string) error {

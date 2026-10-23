@@ -407,3 +407,34 @@ func TestWakeReadsANewUpload(t *testing.T) {
 		}
 	}
 }
+
+// sidecarWriter is an index that rewrites each file's sidecar, as the nudity scan does.
+type sidecarWriter struct{ *index }
+
+func (w sidecarWriter) Read(ctx context.Context, user string, in Input) error {
+	if err := w.index.Read(ctx, user, in); err != nil {
+		return err
+	}
+	return in.Store.SetNudity(in.Item.Sha256(), media.Detection{Score: 0.1, Model: "test"})
+}
+
+// After a run that rewrote sidecars, the start-up shortcut (.cache/index.json) is saved again, so a restart
+// doesn't read those folders.
+func TestARunSavesTheIndexCache(t *testing.T) {
+	lib, _ := library(t, media.KindPhoto, media.KindPhoto)
+	cache := filepath.Join(lib.Store("hen").Root(), ".cache", "index.json")
+	before, err := os.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	var calls []string
+	var mu sync.Mutex
+	r := New(lib, newOpener(), 2)
+	r.Add(sidecarWriter{newIndex("nudity", 0, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{small}}, &calls, &mu)})
+	r.ReadNew(context.Background(), "hen")
+	after, err := os.Stat(cache)
+	if err != nil || !after.ModTime().After(before.ModTime()) {
+		t.Errorf("index.json not saved after the run: %v → %v (%v)", before.ModTime(), after.ModTime(), err)
+	}
+}

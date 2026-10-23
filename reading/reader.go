@@ -139,6 +139,9 @@ func (r *Reader) Wake() {
 func (r *Reader) Run(ctx context.Context) {
 	for {
 		for _, user := range r.library.Users() {
+			if ctx.Err() != nil {
+				return
+			}
 			r.ReadNew(ctx, user)
 		}
 		select {
@@ -170,7 +173,7 @@ type prepared struct {
 // (prepare files ahead, in goroutines of their own), stage 2 runs the indexes on them in order.
 func (r *Reader) ReadNew(ctx context.Context, user string) {
 	store := r.library.Store(user)
-	if store == nil || len(r.indexes) == 0 {
+	if store == nil || len(r.indexes) == 0 || ctx.Err() != nil {
 		return
 	}
 	var todo []file
@@ -274,6 +277,11 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 	}
 	for _, x := range r.indexes {
 		x.Finish(user)
+	}
+	// The nudity scan rewrote a sidecar for each file it read: save the start-up shortcut now, or the next start
+	// reads those folders again from disk.
+	if err := store.RefreshIndexCacheIfChanged(); err != nil {
+		log.Printf("reading: saving the index cache of %s: %v", user, err)
 	}
 	failed := 0
 	for _, c := range stats {

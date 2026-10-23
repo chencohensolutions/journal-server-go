@@ -18,8 +18,10 @@ import (
 
 const posterName = "poster.jpg"
 
-// The frame is taken this far in (or halfway through a shorter video), past the black or blurry first
-// frame many recordings start with.
+// The frame is the first keyframe this far in or later (or halfway through a shorter video), past the black or
+// blurry first frame many recordings start with. Only keyframes are decoded: landing exactly on the time would mean
+// decoding every frame from the keyframe before it (about 3.7 s for a 4K HDR video from the owner's phone, against
+// 1.3 s for the keyframe, which comes every 1.1 to 1.6 s there; Oct 23, 2026).
 const posterAtMillis = 1000
 
 var ErrPostersUnavailable = errors.New("ffmpeg is not installed")
@@ -76,31 +78,53 @@ func (p *Previews) poster(ctx context.Context, store *Store, item Item, original
 	defer os.Remove(frame)
 	args := func(filter string) []string {
 		a := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-			"-ss", fmt.Sprintf("%d.%03d", at/1000, at%1000), "-i", original, "-frames:v", "1", "-an"}
+			"-skip_frame", "nokey", "-ss", fmt.Sprintf("%d.%03d", at/1000, at%1000), "-i", original, "-frames:v", "1", "-an"}
 		if filter != "" {
 			a = append(a, "-vf", filter)
 		}
 		return append(a, "-q:v", "2", frame)
 	}
+	// take runs ffmpeg and reports whether it wrote the frame. When no keyframe comes after the time, nothing is
+	// decoded, and ffmpeg either writes nothing or fails setting up its encoder: either way, no frame.
 	err := errors.New("no frame")
+	take := func(filter string) bool {
+		os.Remove(frame)
+		if _, err = p.output(ctx, p.ffmpeg, args(filter)...); err != nil {
+			return false
+		}
+		if _, statErr := os.Stat(frame); statErr != nil {
+			err = fmt.Errorf("ffmpeg: no frame at %d ms", at)
+			return false
+		}
+		return true
+	}
+	filters := []string{""}
 	if p.isHDR(ctx, original) {
-		_, err = p.output(ctx, p.ffmpeg, args(hdrToSDR)...)
-		if err != nil {
-			// An ffmpeg without zscale: the frame as it is.
-			log.Printf("media: tone-mapping the poster of %s: %v", item.Path, err)
+		// Tone-mapped, else (an ffmpeg without zscale) the frame as it is.
+		filters = []string{hdrToSDR, ""}
+	}
+	got := false
+	// The keyframe from the time on, else the video's first frame (always a keyframe).
+	for _, from := range []int64{at, 0} {
+		at = from
+		var toneMapping error
+		for _, filter := range filters {
+			if got = take(filter); got {
+				if filter == "" && toneMapping != nil {
+					log.Printf("media: tone-mapping the poster of %s: %v", item.Path, toneMapping)
+				}
+				break
+			}
+			if filter != "" {
+				toneMapping = err
+			}
+		}
+		if got || from == 0 {
+			break
 		}
 	}
-	if err != nil {
-		if _, err = p.output(ctx, p.ffmpeg, args("")...); err != nil {
-			return "", err
-		}
-	}
-	// A video shorter than where the frame is taken has none there: take its first.
-	if _, statErr := os.Stat(frame); statErr != nil {
-		at = 0
-		if _, err := p.output(ctx, p.ffmpeg, args("")...); err != nil {
-			return "", err
-		}
+	if !got {
+		return "", err
 	}
 	if err := rename(frame, path); err != nil {
 		return "", err

@@ -79,3 +79,47 @@ func TestIndexCacheOfAnotherFormatIsIgnored(t *testing.T) {
 		t.Fatal("not indexed")
 	}
 }
+
+// After the store rewrites sidecars (the nudity scan), RefreshIndexCacheIfChanged saves the cache, so the next
+// start finds every folder unchanged; with nothing written since, it does nothing.
+func TestIndexCacheIsSavedAfterTheStoreWrites(t *testing.T) {
+	f := newFixture(t)
+	item := f.upload([]byte("photo"), "IMG.jpg")
+	if err := f.store.RefreshIndexCacheIfChanged(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SetNudity(item.Sha256(), Detection{Score: 0.1, Model: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	stale := func() []string {
+		t.Helper()
+		var changed []string
+		for rel, folder := range f.store.readIndexCache() {
+			info, err := os.Stat(filepath.Join(f.root, filepath.FromSlash(rel)))
+			if err != nil || !folder.Modified.Equal(info.ModTime()) {
+				changed = append(changed, rel)
+			}
+		}
+		return changed
+	}
+	if len(stale()) == 0 {
+		t.Fatal("the rewritten sidecar's folder should be stale before the refresh")
+	}
+	if err := f.store.RefreshIndexCacheIfChanged(); err != nil {
+		t.Fatal(err)
+	}
+	if changed := stale(); len(changed) != 0 {
+		t.Fatalf("still read again at the next start: %v", changed)
+	}
+	saved, err := os.Stat(f.store.indexPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := f.store.RefreshIndexCacheIfChanged(); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.Stat(f.store.indexPath()); !again.ModTime().Equal(saved.ModTime()) {
+		t.Error("saved again with nothing written")
+	}
+}

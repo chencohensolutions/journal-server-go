@@ -8,8 +8,15 @@ Reading every sidecar takes minutes on a spinning disk (one seek each), so what 
 `.cache/index.json`, folder by folder, with each folder's modified time. On start only folders whose time has
 changed are read again. Adding, removing or renaming a file changes its folder's time, and every write the server
 and scripts make ends in a rename, so nothing they do is missed. A sidecar edited **in place by hand** is not
-noticed: delete `.cache/index.json` and the next start reads everything. The server refreshes the cache hourly,
-so imports done while it runs don't slow its next start.
+noticed: delete `.cache/index.json` and the next start reads everything.
+
+The server keeps the cache up to date while it runs, so a restart reads only what changed since:
+- every hour, catching the scripts' imports too;
+- whenever it has written into the data folder itself, at most 5 minutes later, and after each run of the reader.
+  The nudity scan rewrites a sidecar for every file it reads, which used to make the next start read much of the
+  library again;
+- when it is stopped with Ctrl+C. It then finishes the file being read, saves the cache and exits; a second
+  Ctrl+C exits at once.
 
 Built so far: upload (resumable, deduplicated by sha256), downloading or streaming originals, verifying an
 original before a device deletes its copy, and photo previews at the exact size the client asks for, video posters, the change feed for media, and
@@ -197,8 +204,15 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
   `config.json` (off by default): then under `.cache/previews/`, and when they pass `preview_cache_max_gb` (default
   50) the least recently used are deleted (checked hourly). Without it each preview is made in a temporary folder,
   sent and deleted.
-- **Videos** get their poster: one frame about 1 s in (halfway through a shorter one), taken by **ffmpeg** with the
-  video's rotation applied, HDR (HLG or PQ) tone-mapped to standard range, then made into the preview like a photo.
+- **Videos** get their poster: the first keyframe at 1 s or later (halfway through a shorter video), taken by
+  **ffmpeg** with the video's rotation applied, HDR (HLG or PQ) tone-mapped to standard range, then made into the
+  preview like a photo.
+  - **Why a keyframe:** ffmpeg decodes only keyframes, instead of every frame from the keyframe before 1 s.
+    The owner's phone puts a keyframe every 1.1 to 1.6 s, and a 4K HDR poster went from about 3.7–4.4 s to 1.3–1.7 s
+    (Oct 23, 2026).
+  - **Why 1 s in:** the very first frame, though always a keyframe, is often black or blurry while the camera
+    settles.
+  - **When there's no keyframe there** (a short video), the first frame is taken.
   ffmpeg is found like libvips (`"ffmpeg"` in config.json, the PATH, or Homebrew; on Windows `winget install
   Gyan.FFmpeg`). The frame is kept as `poster.jpg` only with `preview_cache` (about 2 s for a large video on a disk).
 - Answers: `422` bad parameters, `404` unknown sha256, `503` when libvips (or, for a video, ffmpeg) isn't installed (the server logs this at startup; set `"vips"` in config.json if it's
