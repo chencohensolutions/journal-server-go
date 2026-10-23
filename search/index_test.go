@@ -1,6 +1,7 @@
 package search
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,4 +85,43 @@ func TestIndexStartsOverForAnotherVectorLength(t *testing.T) {
 	if err := x.Add(sha('a'), []float32{1, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// A server whose indexes another process writes reads the file without touching it, and Refresh picks up what is
+// appended; a record still being written waits for the next look.
+func TestAnIndexReadFromAnotherProcess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.vectors")
+	reader, err := OpenVectorsReadOnly(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.Len() != 0 || reader.Dim() != 0 {
+		t.Fatal("a file not there yet should be an empty index")
+	}
+	writer, err := OpenVectors(path, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	writer.Add(a, []float32{1, 0})
+	if n, err := reader.Refresh(); err != nil || n != 1 || reader.Dim() != 2 || reader.Vector(a) == nil {
+		t.Fatalf("refresh: %d, %v", n, err)
+	}
+	// Half a record: not read yet.
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	raw, _ := hex.DecodeString(b)
+	f.Write(raw[:20])
+	if n, _ := reader.Refresh(); n != 0 || reader.Has(b) {
+		t.Fatal("read half a record")
+	}
+	f.Write(append(raw[20:], 0, 0, 0x80, 0x3f, 0, 0, 0, 0)) // the rest: 1, 0
+	f.Close()
+	if n, _ := reader.Refresh(); n != 1 || reader.Vector(b)[0] != 1 {
+		t.Fatalf("the whole record: %d", n)
+	}
+	if err := reader.Add(a, []float32{0, 1}); err == nil {
+		t.Error("wrote into a file another process writes")
+	}
+	writer.Close()
+	reader.Close()
 }

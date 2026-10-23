@@ -123,3 +123,25 @@ func TestIndexCacheIsSavedAfterTheStoreWrites(t *testing.T) {
 		t.Error("saved again with nothing written")
 	}
 }
+
+// Only one process at a time reads files for the indexes: a second lock fails at once, and works after release.
+func TestIndexesAreLockedForOneReader(t *testing.T) {
+	f := newFixture(t)
+	unlock, err := f.store.LockIndexes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := OpenStore(f.store.Root(), time.Now) // as another process would open the folder
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.LockIndexes(); err != ErrIndexesLocked {
+		t.Fatalf("second lock: %v", err)
+	}
+	unlock()
+	again, err := other.LockIndexes()
+	if err != nil {
+		t.Fatalf("after release: %v", err)
+	}
+	again()
+}

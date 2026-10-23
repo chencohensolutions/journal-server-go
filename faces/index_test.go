@@ -123,3 +123,30 @@ func TestDetectionsThatOverlapAreOne(t *testing.T) {
 		t.Errorf("tiles over 640: %v", got)
 	}
 }
+
+// A server whose indexes another process writes reads the faces without touching the file, and Refresh picks up
+// what is appended.
+func TestAFacesIndexReadFromAnotherProcess(t *testing.T) {
+	root := t.TempDir()
+	reader, err := OpenIndexReadOnly(root, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := OpenIndex(root, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	writer.Add(a, []Face{testFace(1)})
+	writer.Add(b, nil)
+	if n, err := reader.Refresh(); err != nil || n != 2 || len(reader.Faces(a)) != 1 || !reader.Has(b) {
+		t.Fatalf("refresh: %d, %v", n, err)
+	}
+	if n, _ := reader.Refresh(); n != 0 {
+		t.Errorf("read %d again", n)
+	}
+	if err := reader.Add(a, nil); err == nil {
+		t.Error("wrote into a file another process writes")
+	}
+}

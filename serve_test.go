@@ -42,6 +42,8 @@ type testEnv struct {
 	search     *search.Service
 	faces      *faces.Service
 	reader     *reading.Reader
+	// Reads what journal-server index added ("index": "daily"); nil otherwise.
+	refreshIndexes func()
 }
 
 // fakeFaceModel as config.FaceModel gives a test env face search without the models: the test writes the faces
@@ -105,44 +107,52 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		t.Fatal(err)
 	}
 	previews := newPreviews(config)
-	// Text search is off unless a test names a model folder: loading one takes seconds. The test runs the reader.
+	var ix indexes
 	var searcher *search.Service
-	if config.SearchModel != auth.DefaultSearchModel {
-		if searcher = newSearch(config, library); searcher == nil {
-			t.Fatalf("no text search with %s", config.SearchModel)
-		}
-		t.Cleanup(searcher.Close)
-	}
-	// Face search likewise, with the models a test names, or none (fakeFaceModel).
 	var facer *faces.Service
-	switch config.FaceModel {
-	case auth.DefaultFaceModel:
-	case fakeFaceModel:
-		if facer, err = faces.NewService(&faces.Model{Name: fakeFaceModel}, library); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(facer.Close)
-	default:
-		if facer = newFaces(config, library); facer == nil {
-			t.Fatalf("no face search with %s", config.FaceModel)
-		}
-		t.Cleanup(facer.Close)
-	}
-	ix := indexes{search: searcher, faces: facer}
-	ix.ocr, ix.similar, ix.aesthetic = testIndexes(t, config, library)
-	// The reader of the indexes on, which a test runs itself (never with fake models: they can't read).
 	var reader *reading.Reader
-	if config.FaceModel != fakeFaceModel && config.SimilarModel != fakeModel {
-		reader = newReader(config, library, previews, ix)
+	var refreshIndexes func()
+	if config.Index == auth.IndexDaily {
+		// As the server does with "index": "daily": only what queries need, read from caches another process writes.
+		ix = openQueryIndexes(config, library)
+		refreshIndexes = ix.refresh
+	} else {
+		// Text search is off unless a test names a model folder: loading one takes seconds. The test runs the reader.
+		if config.SearchModel != auth.DefaultSearchModel {
+			if searcher = newSearch(config, library); searcher == nil {
+				t.Fatalf("no text search with %s", config.SearchModel)
+			}
+			t.Cleanup(searcher.Close)
+		}
+		// Face search likewise, with the models a test names, or none (fakeFaceModel).
+		switch config.FaceModel {
+		case auth.DefaultFaceModel:
+		case fakeFaceModel:
+			if facer, err = faces.NewService(&faces.Model{Name: fakeFaceModel}, library); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(facer.Close)
+		default:
+			if facer = newFaces(config, library); facer == nil {
+				t.Fatalf("no face search with %s", config.FaceModel)
+			}
+			t.Cleanup(facer.Close)
+		}
+		ix = indexes{search: searcher, faces: facer}
+		ix.ocr, ix.similar, ix.aesthetic = testIndexes(t, config, library)
+		// The reader of the indexes on, which a test runs itself (never with fake models: they can't read).
+		if config.FaceModel != fakeFaceModel && config.SimilarModel != fakeModel {
+			reader = newReader(config, library, previews, ix)
+		}
+		ix.reader = reader
 	}
-	ix.reader = reader
 	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
-		config: config, search: searcher, faces: facer, reader: reader}
+		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {
@@ -284,7 +294,7 @@ func TestEnrolledDeviceCanUseItsCertificateUntilRevoked(t *testing.T) {
 
 func TestAdminAPIRequiresTokenAndCreatesCodes(t *testing.T) {
 	env := newTestEnv(t)
-	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret"))
+	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes))
 	defer admin.Close()
 
 	unauthorized, err := http.Post(admin.URL+"/admin/query", "application/json", strings.NewReader(`{"query":"{ devices { serial } }"}`))

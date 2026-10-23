@@ -22,9 +22,13 @@ import (
 // record per file, appended as files are read: the 32 bytes of its sha256, how many faces it has (2 bytes; 0 for
 // a file read that has none), and for each face its box (4 numbers), score (1), five points (10) and vector, all
 // as 4-byte little-endian floats. A record cut short (the server stopped while writing it) is dropped when the
-// file is opened. Only the server writes it.
+// file is opened. Only one process writes it: the server, or `journal-server index` (config.json "index":
+// "daily"), while the server reads it (OpenIndexReadOnly, Refresh).
 type Index struct {
 	path string
+	// Opened to read only: never written or cut, and read on from end by Refresh.
+	readOnly bool
+	end      int64
 
 	mu    sync.RWMutex
 	file  *os.File
@@ -93,23 +97,87 @@ func (x *Index) read(f *os.File) (int64, error) {
 	if dim := int(binary.LittleEndian.Uint32(header[len(indexHeader):])); dim != Dim {
 		return 0, fmt.Errorf("vectors of %d numbers, the model makes %d", dim, Dim)
 	}
-	end := int64(len(header))
+	end, _ := x.records(r, int64(len(header)))
+	return end, nil
+}
+
+// records reads whole records from r, which is at end, and returns where the last whole one ends and how many
+// there were: the end of r, or a record cut short (being written, or by a stop), ends them.
+func (x *Index) records(r io.Reader, end int64) (int64, int) {
 	head := make([]byte, 34)
 	face := make([]byte, 4*(faceFields+Dim))
+	n := 0
 	for {
 		if _, err := io.ReadFull(r, head); err != nil {
-			return end, nil // the end, or a record cut short
+			return end, n
 		}
 		faces := make([]Face, binary.LittleEndian.Uint16(head[32:]))
 		for i := range faces {
 			if _, err := io.ReadFull(r, face); err != nil {
-				return end, nil
+				return end, n
 			}
 			faces[i] = decodeFace(face)
 		}
 		x.put(hex.EncodeToString(head[:32]), faces)
 		end += int64(len(head) + len(faces)*len(face))
+		n++
 	}
+}
+
+// OpenIndexReadOnly opens the faces of model in the data folder root to read only, for a server whose indexes are
+// written by another process (journal-server index): nothing is ever written or cut, and Refresh reads on what
+// the other process appends. A file not there yet is an empty index.
+func OpenIndexReadOnly(root, model string) (*Index, error) {
+	x := &Index{path: filepath.Join(root, ".cache", "faces", model+".faces"), files: map[string][]Face{}, readOnly: true}
+	if _, err := x.Refresh(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// Refresh reads the records appended since the last look, by the process that writes the file, and returns how
+// many there were; a record still being written is left for the next look. A file started over is read again
+// from its start. Only for an index opened read-only.
+func (x *Index) Refresh() (int, error) {
+	if !x.readOnly {
+		return 0, errors.New("the index is written here, not read from another process")
+	}
+	f, err := os.Open(x.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if info.Size() < x.end {
+		x.files, x.faces, x.end = map[string][]Face{}, 0, 0
+	}
+	if x.end == 0 {
+		header := make([]byte, len(indexHeader)+4)
+		if _, err := io.ReadFull(f, header); err != nil {
+			return 0, nil // not even its header yet
+		}
+		if string(header[:len(indexHeader)]) != indexHeader {
+			return 0, fmt.Errorf("%s is not a faces file", x.path)
+		}
+		if dim := int(binary.LittleEndian.Uint32(header[len(indexHeader):])); dim != Dim {
+			return 0, fmt.Errorf("%s has vectors of %d numbers, the model makes %d", x.path, dim, Dim)
+		}
+		x.end = int64(len(header))
+	}
+	if _, err := f.Seek(x.end, io.SeekStart); err != nil {
+		return 0, err
+	}
+	var n int
+	x.end, n = x.records(bufio.NewReaderSize(f, 1<<20), x.end)
+	return n, nil
 }
 
 // put keeps faces in memory; a sha256 that comes again has its faces replaced.
@@ -152,6 +220,9 @@ func (x *Index) Range(fn func(sha string, faces []Face)) {
 
 // Add saves the faces found in the file sha (none is saved too: the file has been read).
 func (x *Index) Add(sha string, faces []Face) error {
+	if x.readOnly {
+		return errors.New("the index is read from another process's file, not written here")
+	}
 	raw, err := hex.DecodeString(sha)
 	if err != nil || len(raw) != 32 {
 		return fmt.Errorf("%q is not a sha256", sha)
@@ -181,6 +252,9 @@ func (x *Index) Add(sha string, faces []Face) error {
 func (x *Index) Close() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	if x.file == nil {
+		return nil
+	}
 	return x.file.Close()
 }
 

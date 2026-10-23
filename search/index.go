@@ -22,11 +22,15 @@ import (
 //
 // The file is a header ("journal-vectors 1\n" and the vector length as a 4-byte little-endian number) and then a
 // record per file, appended as files are read: the 32 bytes of its sha256, then its vector as 4-byte little-endian
-// floats. A record cut short (the server stopped while writing it) is dropped when the file is opened. Only the
-// server writes it.
+// floats. A record cut short (the server stopped while writing it) is dropped when the file is opened. Only one
+// process writes it: the server, or `journal-server index` (config.json "index": "daily"), while the server reads
+// it (OpenVectorsReadOnly, Refresh).
 type Index struct {
 	path string
 	dim  int
+	// Opened to read only: never written or cut, and read on from end by Refresh.
+	readOnly bool
+	end      int64
 
 	mu      sync.RWMutex
 	file    *os.File
@@ -81,6 +85,84 @@ func OpenVectors(path string, dim int) (*Index, error) {
 	}
 	x.file = f
 	return x, nil
+}
+
+// OpenVectorsReadOnly opens the vectors file at path to read only, for a server whose indexes are written by
+// another process (journal-server index): nothing is ever written or cut, and Refresh reads on what the other
+// process appends. dim 0 takes the vectors' length from the file. A file not there yet is an empty index.
+func OpenVectorsReadOnly(path string, dim int) (*Index, error) {
+	x := &Index{path: path, dim: dim, row: map[string]int{}, readOnly: true}
+	if _, err := x.Refresh(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// Refresh reads the records appended since the last look, by the process that writes the file, and returns how
+// many there were; a record still being written is left for the next look. A file started over (another model's
+// length, or deleted) is read again from its start. Only for an index opened read-only.
+func (x *Index) Refresh() (int, error) {
+	if !x.readOnly {
+		return 0, errors.New("the index is written here, not read from another process")
+	}
+	f, err := os.Open(x.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if info.Size() < x.end {
+		x.shas, x.vectors, x.row, x.end = nil, nil, map[string]int{}, 0
+	}
+	if x.end == 0 {
+		header := make([]byte, len(indexHeader)+4)
+		if _, err := io.ReadFull(f, header); err != nil {
+			return 0, nil // not even its header yet
+		}
+		if string(header[:len(indexHeader)]) != indexHeader {
+			return 0, fmt.Errorf("%s is not a vectors file", x.path)
+		}
+		dim := int(binary.LittleEndian.Uint32(header[len(indexHeader):]))
+		if x.dim != 0 && dim != x.dim {
+			return 0, fmt.Errorf("%s has vectors of %d numbers, the model makes %d", x.path, dim, x.dim)
+		}
+		x.dim, x.end = dim, int64(len(header))
+	}
+	if _, err := f.Seek(x.end, io.SeekStart); err != nil {
+		return 0, err
+	}
+	// Room for every whole record in the file at once: grown record by record, a library's vectors (hundreds of
+	// MB) would leave copies behind for the garbage collector to give back later.
+	if more := int(info.Size()-x.end) / x.recordSize(); more > 0 {
+		x.shas = slices.Grow(x.shas, more)
+		x.vectors = slices.Grow(x.vectors, more*x.dim)
+	}
+	r := bufio.NewReaderSize(f, 1<<20)
+	record := make([]byte, x.recordSize())
+	n := 0
+	for {
+		if _, err := io.ReadFull(r, record); err != nil {
+			return n, nil // the end, or a record still being written
+		}
+		x.put(hex.EncodeToString(record[:32]), decodeFloats(record[32:]))
+		x.end += int64(len(record))
+		n++
+	}
+}
+
+// Dim is how many numbers a vector has; 0 for an index read from a file that has no header yet.
+func (x *Index) Dim() int {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	return x.dim
 }
 
 // read loads the records of f and returns where the last whole one ends; 0 when f is empty.
@@ -151,6 +233,9 @@ func (x *Index) Len() int {
 
 // Add saves the vector of the file sha (of length 1, from the index's model).
 func (x *Index) Add(sha string, vector []float32) error {
+	if x.readOnly {
+		return errors.New("the index is read from another process's file, not written here")
+	}
 	if len(vector) != x.dim {
 		return fmt.Errorf("a vector of %d numbers, the index keeps %d", len(vector), x.dim)
 	}
@@ -184,6 +269,9 @@ func (x *Index) View(fn func(shas []string, vectors []float32, dim int)) {
 func (x *Index) Close() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	if x.file == nil {
+		return nil
+	}
 	return x.file.Close()
 }
 

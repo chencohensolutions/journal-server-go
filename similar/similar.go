@@ -143,6 +143,35 @@ func NewService(model *Model, library *media.Library) (*Service, error) {
 	return s, nil
 }
 
+// NewReadOnlyService answers queries about the vectors another process makes (journal-server index), named after
+// its model: each user's vectors opened to read only. Refresh reads what that process added.
+func NewReadOnlyService(model string, library *media.Library) (*Service, error) {
+	s := &Service{model: &Model{Name: model}, library: library, users: map[string]*user{}}
+	for _, name := range library.Users() {
+		index, err := search.OpenVectorsReadOnly(filepath.Join(library.Store(name).Root(), ".cache", "similar", model+".vectors"), 0)
+		if err != nil {
+			return nil, fmt.Errorf("user %s: %w", name, err)
+		}
+		s.users[name] = &user{index: index, groups: newUnionFind()}
+	}
+	return s, nil
+}
+
+// Refresh reads the vectors another process made since the last look (NewReadOnlyService), and finds the
+// duplicates among the new files in the background, so the next duplicates query doesn't wait for them.
+func (s *Service) Refresh() error {
+	for name, u := range s.users {
+		n, err := u.index.Refresh()
+		if err != nil {
+			return fmt.Errorf("user %s: %w", name, err)
+		}
+		if n > 0 {
+			go u.findDuplicates()
+		}
+	}
+	return nil
+}
+
 // Model is the name of the model.
 func (s *Service) Model() string { return s.model.Name }
 

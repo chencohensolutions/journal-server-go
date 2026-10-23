@@ -17,6 +17,8 @@ const usage = `usage:
   journal-server revoke <serial>      revoke an enrolled device
   journal-server private <serial> withhold|allow
                                       keep private files from a device, or send them to it again
+  journal-server index                read new files for the indexes once, then exit (for "index": "daily";
+                                      the server starts it at "index_at")
 `
 
 func main() {
@@ -27,6 +29,12 @@ func main() {
 
 	if len(os.Args) < 2 {
 		serve(config)
+		return
+	}
+	if os.Args[1] == "index" && len(os.Args) == 2 {
+		if err := runIndex(config); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 	if err := runAdminCommand(config, os.Args[1], os.Args[2:]); err != nil {

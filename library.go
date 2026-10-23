@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -252,10 +256,121 @@ type indexes struct {
 	similar   *similar.Service
 	aesthetic *aesthetic.Service
 	reader    *reading.Reader
+	// The caches are written by journal-server index ("index": "daily"), and read here to answer queries.
+	daily bool
 }
 
-// openIndexes loads every index whose model is there, and the reader for them.
+// openIndexes is the server's indexes. With "index": "server" (the default) every index whose model is there,
+// and the reader for them; with "index": "daily" only what queries need (openQueryIndexes), the reading being
+// done by journal-server index once a day.
 func openIndexes(config auth.AppConfig, library *media.Library, previews *media.Previews) indexes {
+	if config.Index == auth.IndexDaily {
+		return openQueryIndexes(config, library)
+	}
+	return loadIndexes(config, library, previews)
+}
+
+// openQueryIndexes is what queries need of the indexes another process writes (journal-server index): the text
+// half of the search model, and each index's caches opened to read only (refresh reads what the process added).
+// No reading model is loaded and there is no reader. An index whose model folder isn't there is off, as when it
+// reads in the server.
+func openQueryIndexes(config auth.AppConfig, library *media.Library) indexes {
+	var ix indexes
+	named := func(folder, what, setting string) (string, bool) {
+		abs, err := filepath.Abs(folder)
+		if _, statErr := os.Stat(folder); err != nil || statErr != nil {
+			log.Printf("%s off: no model in %s (go run ./scripts/bundle-onnx, or set \"%s\" in config.json)", what, folder, setting)
+			return "", false
+		}
+		return filepath.Base(abs), true
+	}
+	fail := func(what string, err error) { log.Printf("%s off: %v", what, err) }
+	if name, ok := named(config.SearchModel, "Text search is", "search_model"); ok {
+		// The text half (1.15 GB) is loaded only while searches come: about 4 s at the first after a quiet spell.
+		rt, err := loadRuntime(config)
+		if err == nil {
+			ix.search, err = search.NewOnDemandService(rt, config.SearchModel, config.SearchThreads, library)
+		}
+		if err != nil {
+			fail("Text search is", fmt.Errorf("%s: %w", name, err))
+		}
+	}
+	var err error
+	if name, ok := named(config.FaceModel, "Face search is", "face_model"); ok {
+		if ix.faces, err = faces.NewReadOnlyService(name, library); err != nil {
+			fail("Face search is", err)
+		}
+	}
+	if name, ok := named(config.OCRModel, "Text in photos is", "ocr_model"); ok {
+		if ix.ocr, err = ocr.NewReadOnlyService(name, library); err != nil {
+			fail("Text in photos is", err)
+		}
+	}
+	if name, ok := named(config.SimilarModel, "Similar photos are", "similar_model"); ok {
+		if ix.similar, err = similar.NewReadOnlyService(name, library); err != nil {
+			fail("Similar photos are", err)
+		}
+	}
+	if name, ok := named(config.AestheticModel, "Aesthetic scores are", "aesthetic_model"); ok {
+		if ix.aesthetic, err = aesthetic.NewReadOnlyService(name, library); err != nil {
+			fail("Aesthetic scores are", err)
+		}
+	}
+	ix.daily = true
+	// Reading the caches left garbage behind: give it back to the system now, not in the minutes the runtime takes.
+	debug.FreeOSMemory()
+	log.Printf("Indexing daily at %s in a separate process (journal-server index); the server keeps only what queries need", config.IndexAt)
+	return ix
+}
+
+// refresh reads what journal-server index added to the caches (with "index": "daily"); a no-op otherwise.
+func (ix indexes) refresh() {
+	if !ix.daily {
+		return
+	}
+	var errs []error
+	if ix.search != nil {
+		errs = append(errs, ix.search.Refresh())
+	}
+	if ix.faces != nil {
+		errs = append(errs, ix.faces.Refresh())
+	}
+	if ix.ocr != nil {
+		errs = append(errs, ix.ocr.Refresh())
+	}
+	if ix.similar != nil {
+		errs = append(errs, ix.similar.Refresh())
+	}
+	if ix.aesthetic != nil {
+		errs = append(errs, ix.aesthetic.Refresh())
+	}
+	if err := errors.Join(errs...); err != nil {
+		log.Printf("Reading the indexes' new results: %v", err)
+	}
+	debug.FreeOSMemory()
+}
+
+// close closes the indexes' cache files.
+func (ix indexes) close() {
+	if ix.search != nil {
+		ix.search.Close()
+	}
+	if ix.faces != nil {
+		ix.faces.Close()
+	}
+	if ix.ocr != nil {
+		ix.ocr.Close()
+	}
+	if ix.similar != nil {
+		ix.similar.Close()
+	}
+	if ix.aesthetic != nil {
+		ix.aesthetic.Close()
+	}
+}
+
+// loadIndexes loads every index whose model is there, and the reader for them.
+func loadIndexes(config auth.AppConfig, library *media.Library, previews *media.Previews) indexes {
 	ix := indexes{
 		nudity:    newNudity(config),
 		faces:     newFaces(config, library),

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 )
 
 type UserConfig struct {
@@ -47,6 +48,13 @@ type AppConfig struct {
 	// How many files are decoded ahead of the indexes (nudity, faces, search) while they read the one before
 	// (default 2).
 	ReaderPrepare int `json:"reader_prepare"`
+	// Where the indexes (nudity, faces, text in photos, search, similar photos, aesthetic scores) read new files:
+	// "server" (the default) as they come, inside the server; or "daily", once a day at IndexAt in a separate
+	// process (journal-server index) that exits when done, so the server keeps only what queries need and takes
+	// much less memory. New files are then found, and hidden for nudity, only after that day's run.
+	Index string `json:"index"`
+	// The local time of the daily run, "15:04" (default "03:00"); for Index "daily".
+	IndexAt string `json:"index_at"`
 	// Path of the ffmpeg program, used for video posters (ffprobe beside it); found on the PATH or in Homebrew when empty.
 	FFmpeg string `json:"ffmpeg"`
 	// Most space the previews of one user may take before the least recently used are deleted (default 50).
@@ -90,6 +98,8 @@ const (
 	DefaultSimilarModel   = "models/dinov2-small"
 	DefaultOCRModel       = "models/paddleocr-hebrew"
 	DefaultAestheticModel = "models/clip-vit-large-patch14-laion"
+	IndexInServer         = "server"
+	IndexDaily            = "daily"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -113,7 +123,14 @@ func LoadConfig(path string) (AppConfig, error) {
 		}
 		seen[user.Username] = true
 	}
-	return config.WithDefaults(), nil
+	config = config.WithDefaults()
+	if config.Index != IndexInServer && config.Index != IndexDaily {
+		return AppConfig{}, fmt.Errorf("%s: index is %q or %q, not %q", path, IndexInServer, IndexDaily, config.Index)
+	}
+	if _, err := time.Parse("15:04", config.IndexAt); err != nil {
+		return AppConfig{}, fmt.Errorf("%s: index_at is a time like \"03:00\", not %q", path, config.IndexAt)
+	}
+	return config, nil
 }
 
 // WithDefaults fills in the optional settings.
@@ -150,6 +167,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.AestheticModel == "" {
 		c.AestheticModel = DefaultAestheticModel
+	}
+	if c.Index == "" {
+		c.Index = IndexInServer
+	}
+	if c.IndexAt == "" {
+		c.IndexAt = "03:00"
 	}
 	if c.ReaderPrepare <= 0 {
 		c.ReaderPrepare = 2

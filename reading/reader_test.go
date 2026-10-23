@@ -85,6 +85,9 @@ type opener struct {
 	open   int
 	most   int
 	closed int
+	// An index's reads in hand, and how many files began to be decoded while one was.
+	reading    *atomic.Int32
+	overlapped atomic.Int32
 }
 
 func newOpener() *opener {
@@ -92,6 +95,9 @@ func newOpener() *opener {
 }
 
 func (o *opener) Open(ctx context.Context, store *media.Store, item media.Item, largest int) (Source, error) {
+	if o.reading != nil && o.reading.Load() > 0 {
+		o.overlapped.Add(1) // an index is reading another file meanwhile
+	}
 	time.Sleep(o.delay)
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -142,6 +148,7 @@ type index struct {
 	done     map[string]bool
 	reads    []Input
 	log      *[]string
+	reading  *atomic.Int32 // counts its reads in hand
 	logMu    *sync.Mutex
 	finished int
 }
@@ -160,6 +167,10 @@ func (x *index) Needs(user string, item media.Item) bool {
 	return !x.done[item.Sha256()]
 }
 func (x *index) Read(ctx context.Context, user string, in Input) error {
+	if x.reading != nil {
+		x.reading.Add(1)
+		defer x.reading.Add(-1)
+	}
 	time.Sleep(x.delay)
 	x.logMu.Lock()
 	*x.log = append(*x.log, x.name+":"+in.Item.Sha256()[:8])
@@ -332,8 +343,8 @@ func TestFailuresAreKeptPerIndex(t *testing.T) {
 	}
 }
 
-// Preparing the next files overlaps the indexes' work: 10 files, each 100 ms to decode and 100 ms to read, take
-// about a second, not two.
+// Preparing the next files overlaps the indexes' work: while an index reads one file, the next are being decoded.
+// (Measured as what happens at once, not as time, which a busy machine stretches.)
 func TestPreparingOverlapsReading(t *testing.T) {
 	kinds := make([]media.Kind, 10)
 	for i := range kinds {
@@ -343,15 +354,15 @@ func TestPreparingOverlapsReading(t *testing.T) {
 	var calls []string
 	var mu sync.Mutex
 	x := newIndex("x", 0, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{small}, Regions: true}, &calls, &mu)
-	x.delay = 100 * time.Millisecond
+	var reading atomic.Int32
+	x.delay, x.reading = 100*time.Millisecond, &reading
 	o := newOpener()
-	o.delay = 100 * time.Millisecond
+	o.delay, o.reading = 100*time.Millisecond, &reading
 	r := New(lib, o, 2)
 	r.Add(x)
-	started := time.Now()
 	r.ReadNew(context.Background(), "hen")
-	if took := time.Since(started); took > 1600*time.Millisecond {
-		t.Errorf("took %s: preparing and reading didn't overlap", took)
+	if n := o.overlapped.Load(); n < 5 {
+		t.Errorf("only %d of 10 files began to be decoded while another was read", n)
 	}
 	if o.most > 3 {
 		t.Errorf("%d originals open at once, more than the 2 prepared ahead and the one being read", o.most)

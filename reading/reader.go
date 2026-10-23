@@ -103,7 +103,13 @@ type Reader struct {
 	wake    chan struct{}
 	// Files an index failed on, by index name: tried again only after a restart.
 	failed map[string]map[string]bool
+	// Not call the indexes' Finish: in journal-server index, whose results the server puts together itself.
+	skipFinish bool
 }
+
+// SkipFinish has ReadNew not call the indexes' Finish (faces grouping, duplicate finding): for a process that only
+// writes the caches, while the server that answers queries does that work when it reads them.
+func (r *Reader) SkipFinish() { r.skipFinish = true }
 
 // New reads library's files with opener, preparing up to prepare files ahead of the indexes.
 func New(library *media.Library, opener Opener, prepare int) *Reader {
@@ -286,8 +292,10 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 				r.summary(stats), rate, left.Round(time.Minute))
 		}
 	}
-	for _, x := range r.indexes {
-		x.Finish(user)
+	if !r.skipFinish {
+		for _, x := range r.indexes {
+			x.Finish(user)
+		}
 	}
 	// The nudity scan rewrote a sidecar for each file it read: save the start-up shortcut now, or the next start
 	// reads those folders again from disk.

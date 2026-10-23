@@ -45,6 +45,16 @@ type preprocessor struct {
 
 // LoadModel loads the model in folder, run with up to threads CPU threads per half.
 func LoadModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
+	return loadModel(rt, folder, threads, true)
+}
+
+// LoadTextModel loads only the text half of the model in folder: what searches need, for a server whose files
+// are read by another process (journal-server index). ImageVector then fails.
+func LoadTextModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
+	return loadModel(rt, folder, threads, false)
+}
+
+func loadModel(rt *onnx.Runtime, folder string, threads int, vision bool) (*Model, error) {
 	abs, err := filepath.Abs(folder)
 	if err != nil {
 		return nil, err
@@ -76,11 +86,13 @@ func LoadModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
 	}
 
 	// pooler_output is the embedding: the halves end in their projection heads.
-	if m.vision, err = rt.NewSession(filepath.Join(folder, "vision_model.onnx"), threads); err != nil {
-		return nil, err
-	}
-	if err := m.vision.Use([]string{"pixel_values"}, []string{"pooler_output", "image_embeds"}); err != nil {
-		return nil, fmt.Errorf("vision_model.onnx: %w", err)
+	if vision {
+		if m.vision, err = rt.NewSession(filepath.Join(folder, "vision_model.onnx"), threads); err != nil {
+			return nil, err
+		}
+		if err := m.vision.Use([]string{"pixel_values"}, []string{"pooler_output", "image_embeds"}); err != nil {
+			return nil, fmt.Errorf("vision_model.onnx: %w", err)
+		}
 	}
 	if m.text, err = rt.NewSession(filepath.Join(folder, "text_model.onnx"), threads); err != nil {
 		return nil, err
@@ -100,6 +112,9 @@ func LoadModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
 // ImageVector is the vector of a picture, of length 1. The picture is squeezed to the model's square (as SigLIP
 // was trained, not cut), with bilinear resampling.
 func (m *Model) ImageVector(img image.Image) ([]float32, error) {
+	if m.vision == nil {
+		return nil, errors.New("only the model's text half is loaded")
+	}
 	square := image.NewRGBA(image.Rect(0, 0, m.size, m.size))
 	draw.BiLinear.Scale(square, square.Bounds(), img, img.Bounds(), draw.Src, nil)
 	plane := m.size * m.size
@@ -116,6 +131,16 @@ func (m *Model) ImageVector(img image.Image) ([]float32, error) {
 		return nil, err
 	}
 	return unit(out.Data), nil
+}
+
+// Close releases the model's halves and the memory they hold; the model can't be used after.
+func (m *Model) Close() {
+	if m.vision != nil {
+		m.vision.Close()
+	}
+	if m.text != nil {
+		m.text.Close()
+	}
 }
 
 // TextVector is the vector of a description, of length 1.

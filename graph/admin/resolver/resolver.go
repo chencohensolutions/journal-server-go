@@ -16,4 +16,6 @@ type Resolver struct {
 	Config     auth.AppConfig
 	Enrollment *enroll.Service
 	Now        func() time.Time
+	// Reads what journal-server index added to the indexes' caches; nil when the server reads files itself.
+	RefreshIndexes func()
 }

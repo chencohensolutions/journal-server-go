@@ -63,6 +63,39 @@ picture its model reads, each **made from the original** at that size, never fro
 Measured on 20 of the owner's photos (Oct 23, 2026), against before (each index making its own preview with the vips
 program), for all three indexes' pictures of one photo: **JPEG 600 → 117 ms, HEIC 1.92 s → 573 ms**.
 
+## Indexing once a day (optional)
+With `"index": "daily"` in config.json (the default is `"server"`), files are read by a separate process once a
+day, and the server keeps only what queries need, so it takes far less memory.
+- **The run:** `journal-server index` loads every index's model, reads every user's new files (the same reader,
+  each file decoded once), saves the caches and exits, so the models' memory is gone until the next run.
+  - The server starts it at `"index_at"` (local time, default `"03:00"`) and copies its output into its own log, so
+    the `reading:` progress lines show as before.
+  - It can also be run by hand at any time; it then tells the server through the admin API (`indexesUpdated`).
+  - Ctrl+C, on it or on the server, finishes the file in hand.
+- **The server keeps:**
+  - SigLIP's text half, at full precision (the same model the photos' vectors were made with, so search finds
+    exactly what it did), **loaded only while searches come**. The first search after a quiet spell loads it, about
+    4 s (3.5–4.7 s measured, the file in the system's cache; longer after a restart of the PC). It is released 10
+    minutes after the last search (`search.IdleRelease`). Searches meanwhile answer as before (60–90 ms for the
+    text).
+  - the caches, opened **read-only**, never cut or written. It reads what a run added when the run ends, when told
+    (`indexesUpdated`), and every 10 minutes as a safety net. Faces then group the new faces, and similar finds the
+    new duplicates in the background.
+  - No reading model is loaded and there is no reader.
+- **What waits for the night:** new uploads are found by words, faces, text or likeness only after that day's run.
+  They aren't hidden for nudity until then either: the nudity scan runs with the others (the owner's choice, Oct 23,
+  2026).
+- **Memory, measured** (Oct 23, 2026, with the owner's caches: 295 MB of search vectors and 32 MB of faces):
+  - **3.05 GB** with `"server"`;
+  - with `"daily"`: **about 0.4 GB idle**, 1.6 GB while searches come, about 0.5 GB again 10 minutes after the last.
+  - SigLIP's text half alone is 1.15 GB, whatever ONNX Runtime's settings (no arena, no prepacking or basic
+    optimization made no difference), hence loading it only to search.
+  - The caches stay in memory, to answer at once. They are read with room for every record at once, and what that
+    leaves behind is given back to the system right away.
+- **One writer at a time:** whoever writes the caches holds `.cache/index.lock` in each data folder. A server in
+  `"server"` mode holds it while its own reader runs, and `journal-server index` holds it for its run. A second run,
+  or a run beside a `"server"` server, refuses at once.
+
 ## Text in photos (OCR)
 - **Models:** Rivok/paddleocr-hebrew (Apache 2.0), PaddleOCR finetuned for Hebrew: the word detector (DBNet,
   4.6 MB) and the PP-OCRv6 word recognizer (60 MB). The official PP-OCRv5 has no Hebrew. The recognizer's 120

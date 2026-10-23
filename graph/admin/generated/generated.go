@@ -58,6 +58,7 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		CreateEnrollmentCode func(childComplexity int, user string) int
+		IndexesUpdated       func(childComplexity int) int
 		RevokeDevice         func(childComplexity int, serial string) int
 		SetWithholdPrivate   func(childComplexity int, serial string, withhold bool) int
 	}
@@ -71,6 +72,7 @@ type MutationResolver interface {
 	CreateEnrollmentCode(ctx context.Context, user string) (*model.EnrollmentCode, error)
 	RevokeDevice(ctx context.Context, serial string) (*enroll.Device, error)
 	SetWithholdPrivate(ctx context.Context, serial string, withhold bool) (*enroll.Device, error)
+	IndexesUpdated(ctx context.Context) (bool, error)
 }
 type QueryResolver interface {
 	Devices(ctx context.Context, user *string) ([]*enroll.Device, error)
@@ -175,6 +177,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateEnrollmentCode(childComplexity, args["user"].(string)), true
+	case "Mutation.indexesUpdated":
+		if e.ComplexityRoot.Mutation.IndexesUpdated == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.IndexesUpdated(childComplexity), true
 	case "Mutation.revokeDevice":
 		if e.ComplexityRoot.Mutation.RevokeDevice == nil {
 			break
@@ -309,6 +317,11 @@ type Mutation {
   revokeDevice(serial: String!): Device!
   "Keeps the files the user marked private from a device (withhold), or sends them to it again."
   setWithholdPrivate(serial: String!, withhold: Boolean!): Device!
+  """
+  journal-server index finished a run: the server reads what it added to the indexes' caches now. False when the
+  server reads files itself ("index": "server") and has nothing to read.
+  """
+  indexesUpdated: Boolean!
 }
 
 type EnrollmentCode {
@@ -1038,6 +1051,29 @@ func (ec *executionContext) fieldContext_Mutation_setWithholdPrivate(ctx context
 		return fc, err
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_indexesUpdated(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_indexesUpdated(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().IndexesUpdated(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_indexesUpdated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _Query_devices(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2385,6 +2421,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "setWithholdPrivate":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setWithholdPrivate(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "indexesUpdated":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_indexesUpdated(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

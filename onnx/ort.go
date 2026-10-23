@@ -45,6 +45,7 @@ const (
 	ortAllocatorFree                    = 76
 	ortGetAllocatorWithDefaultOptions   = 78
 	ortReleaseStatus                    = 93
+	ortReleaseSession                   = 95
 	ortReleaseValue                     = 96
 	ortReleaseTensorTypeAndShapeInfo    = 99
 	ortReleaseSessionOptions            = 100
@@ -187,6 +188,12 @@ func (r *Runtime) NewSession(path string, threads int) (*Session, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// Close releases the model and the memory it holds; the session can't be run after.
+func (s *Session) Close() {
+	s.rt.release(ortReleaseSession, s.handle)
+	s.handle = 0
 }
 
 func (s *Session) names(count, name int) ([]string, error) {

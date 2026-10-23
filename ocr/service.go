@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -38,6 +39,30 @@ func NewService(model *Model, library *media.Library) (*Service, error) {
 		s.users[user] = t
 	}
 	return s, nil
+}
+
+// NewReadOnlyService answers queries about the text another process reads (journal-server index), named after
+// its models: each user's texts opened to read only. Refresh reads what that process added.
+func NewReadOnlyService(model string, library *media.Library) (*Service, error) {
+	s := &Service{model: &Model{Name: model}, library: library, users: map[string]*texts{}}
+	for _, user := range library.Users() {
+		t, err := openTextsReadOnly(filepath.Join(library.Store(user).Root(), ".cache", "ocr", model+".jsonl"))
+		if err != nil {
+			return nil, fmt.Errorf("user %s: %w", user, err)
+		}
+		s.users[user] = t
+	}
+	return s, nil
+}
+
+// Refresh reads the text another process read since the last look (NewReadOnlyService).
+func (s *Service) Refresh() error {
+	for user, t := range s.users {
+		if _, err := t.refresh(); err != nil {
+			return fmt.Errorf("user %s: %w", user, err)
+		}
+	}
+	return nil
 }
 
 // Model is the name of the models.
@@ -122,8 +147,14 @@ func (s *Service) Close() {
 // texts is the text found in one user's files, kept in .cache/ocr/<model>.jsonl: one JSON line a file read,
 // {"sha256": …, "lines": [{"text", "box", "score"}, …]} (no lines: read, none found), appended as files are read; a
 // line cut short by a stop is dropped when the file is opened, and a file read again has its last line counted.
-// Only the server writes it, and it can be deleted: the server reads everything again.
+// Only one process writes it: the server, or `journal-server index` (config.json "index": "daily"), while the
+// server reads it (openTextsReadOnly, refresh). It can be deleted: everything is read again.
 type texts struct {
+	path string
+	// Opened to read only: never written or cut, and read on from end by refresh.
+	readOnly bool
+	end      int64
+
 	mu    sync.RWMutex
 	file  *os.File
 	files map[string][]Line         // by sha256
@@ -143,20 +174,8 @@ func openTexts(path string) (*texts, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &texts{file: f, files: map[string][]Line{}, words: map[string]map[string]int{}}
-	r := bufio.NewReaderSize(f, 1<<20)
-	var end int64
-	for {
-		line, err := r.ReadBytes('\n')
-		if err != nil {
-			break // the end, or a line cut short
-		}
-		var rec record
-		if json.Unmarshal(bytes.TrimSpace(line), &rec) == nil && media.IsSha256(rec.Sha256) {
-			t.put(rec.Sha256, rec.Lines)
-		}
-		end += int64(len(line))
-	}
+	t := &texts{path: path, file: f, files: map[string][]Line{}, words: map[string]map[string]int{}}
+	end, _ := t.records(f, 0)
 	if err := f.Truncate(end); err != nil {
 		f.Close()
 		return nil, err
@@ -166,6 +185,66 @@ func openTexts(path string) (*texts, error) {
 		return nil, err
 	}
 	return t, nil
+}
+
+// records reads whole lines from r, which is at end, and returns where the last whole one ends and how many there
+// were: a line without its newline (being written, or cut short by a stop) is left.
+func (t *texts) records(r io.Reader, end int64) (int64, int) {
+	br := bufio.NewReaderSize(r, 1<<20)
+	n := 0
+	for {
+		line, err := br.ReadBytes('\n')
+		if err != nil {
+			return end, n
+		}
+		var rec record
+		if json.Unmarshal(bytes.TrimSpace(line), &rec) == nil && media.IsSha256(rec.Sha256) {
+			t.put(rec.Sha256, rec.Lines)
+			n++
+		}
+		end += int64(len(line))
+	}
+}
+
+// openTextsReadOnly opens the texts at path to read only, for a server whose indexes another process writes
+// (journal-server index): nothing is written or cut, and refresh reads on. A file not there yet is no text yet.
+func openTextsReadOnly(path string) (*texts, error) {
+	t := &texts{path: path, readOnly: true, files: map[string][]Line{}, words: map[string]map[string]int{}}
+	if _, err := t.refresh(); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// refresh reads the lines appended since the last look and returns how many there were; a line still being
+// written is left for the next look, and a file started over is read again from its start.
+func (t *texts) refresh() (int, error) {
+	if !t.readOnly {
+		return 0, errors.New("the texts are written here, not read from another process")
+	}
+	f, err := os.Open(t.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if info.Size() < t.end {
+		t.files, t.words, t.end = map[string][]Line{}, map[string]map[string]int{}, 0
+	}
+	if _, err := f.Seek(t.end, io.SeekStart); err != nil {
+		return 0, err
+	}
+	var n int
+	t.end, n = t.records(f, t.end)
+	return n, nil
 }
 
 func (t *texts) put(sha string, lines []Line) {
@@ -187,6 +266,9 @@ func (t *texts) put(sha string, lines []Line) {
 }
 
 func (t *texts) add(sha string, lines []Line) error {
+	if t.readOnly {
+		return errors.New("the texts are read from another process's file, not written here")
+	}
 	data, err := json.Marshal(record{sha, lines})
 	if err != nil {
 		return err
@@ -254,6 +336,9 @@ func (t *texts) find(query string, keep func(sha string) bool) []string {
 func (t *texts) close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.file == nil {
+		return
+	}
 	if err := t.file.Close(); err != nil {
 		log.Printf("ocr: %v", err)
 	}

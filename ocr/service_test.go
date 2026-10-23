@@ -73,3 +73,29 @@ func TestTextsAreKeptAndFound(t *testing.T) {
 		t.Errorf("nothing: %v", got)
 	}
 }
+
+// A server whose indexes another process writes reads the texts without touching the file; refresh picks up whole
+// lines and leaves one still being written.
+func TestTextsReadFromAnotherProcess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.jsonl")
+	reader, err := openTextsReadOnly(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := openTexts(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.close()
+	a := strings.Repeat("a", 64)
+	writer.add(a, []Line{{Text: "קבלה"}})
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString(`{"sha256":"` + strings.Repeat("b", 64) + `","li`)
+	f.Close()
+	if n, err := reader.refresh(); err != nil || n != 1 || !reader.has(a) || len(reader.find("קבלה", func(string) bool { return true })) != 1 {
+		t.Fatalf("refresh: %d, %v", n, err)
+	}
+	if err := reader.add(a, nil); err == nil {
+		t.Error("wrote into a file another process writes")
+	}
+}

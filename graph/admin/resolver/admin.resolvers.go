@@ -46,6 +46,15 @@ func (r *mutationResolver) SetWithholdPrivate(ctx context.Context, serial string
 	return &device, nil
 }
 
+// IndexesUpdated is the resolver for the indexesUpdated field.
+func (r *mutationResolver) IndexesUpdated(ctx context.Context) (bool, error) {
+	if r.RefreshIndexes == nil {
+		return false, nil
+	}
+	r.RefreshIndexes()
+	return true, nil
+}
+
 // Devices is the resolver for the devices field.
 func (r *queryResolver) Devices(ctx context.Context, user *string) ([]*enroll.Device, error) {
 	filter := ""

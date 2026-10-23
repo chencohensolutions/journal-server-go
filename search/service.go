@@ -17,9 +17,11 @@ import (
 // Service is text search over the users' photos and videos. It is an index of package reading, which reads each
 // file once for every index and calls Read.
 type Service struct {
-	model   *Model
-	library *media.Library
-	indexes map[string]*Index // by username
+	model *Model
+	// The text half loaded only while searches come (NewOnDemandService); nil when model is loaded for good.
+	onDemand *onDemand
+	library  *media.Library
+	indexes  map[string]*Index // by username
 }
 
 // NewService opens the model's vectors in the data folder of each of library's users.
@@ -36,6 +38,16 @@ func NewService(model *Model, library *media.Library) (*Service, error) {
 	return s, nil
 }
 
+// Refresh reads the vectors another process added to the users' files since the last look (NewOnDemandService).
+func (s *Service) Refresh() error {
+	for user, index := range s.indexes {
+		if _, err := index.Refresh(); err != nil {
+			return fmt.Errorf("user %s: %w", user, err)
+		}
+	}
+	return nil
+}
+
 // Model is the name of the model searches use.
 func (s *Service) Model() string { return s.model.Name }
 
@@ -45,7 +57,13 @@ func (s *Service) Search(user, text string, limit int, keep func(sha string) boo
 	if index == nil {
 		return nil, fmt.Errorf("no data_folder is configured for %s", user)
 	}
-	query, err := s.model.TextVector(text)
+	var query []float32
+	var err error
+	if s.onDemand != nil {
+		query, err = s.onDemand.vector(text)
+	} else {
+		query, err = s.model.TextVector(text)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -116,5 +134,16 @@ func (s *Service) FailureLog() (folder, name string) { return "search", s.model.
 func (s *Service) Close() {
 	for _, index := range s.indexes {
 		index.Close()
+	}
+	if o := s.onDemand; o != nil {
+		o.mu.Lock()
+		if o.timer != nil {
+			o.timer.Stop()
+		}
+		if o.model != nil {
+			o.model.Close()
+			o.model = nil
+		}
+		o.mu.Unlock()
 	}
 }

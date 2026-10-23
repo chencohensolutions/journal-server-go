@@ -7,3 +7,5 @@ import "os"
 // Without file locks, processes don't take turns: run one at a time.
 func lockFile(*os.File) error   { return nil }
 func unlockFile(*os.File) error { return nil }
+
+func tryLockFile(*os.File) (bool, error) { return true, nil }

@@ -52,14 +52,27 @@ func serve(config auth.AppConfig) {
 		log.Fatalf("failed to open data folders: %v", err)
 	}
 	go maintainLibrary(config, library)
-	go serveAdmin(config, enrollment)
 	previews := newPreviews(config)
 	ix := openIndexes(config, library, previews)
+	var refreshIndexes func()
+	if ix.daily {
+		refreshIndexes = ix.refresh
+	}
+	go serveAdmin(config, enrollment, refreshIndexes)
 	readerDone := make(chan struct{})
 	running, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	if ix.reader != nil {
+	switch {
+	case ix.daily:
+		go func() { indexDaily(running, config, ix); close(readerDone) }()
+	case ix.reader != nil:
+		// The server's own reader writes the indexes' caches: journal-server index can't run beside it.
+		if err := lockIndexes(library); err != nil {
+			log.Printf("Reading new files is off until a restart: %v", err)
+			close(readerDone)
+			break
+		}
 		go func() { ix.reader.Run(running); close(readerDone) }()
-	} else {
+	default:
 		close(readerDone)
 	}
 	go stopOnSignal(running, stop, readerDone, library)
@@ -82,7 +95,8 @@ func serve(config auth.AppConfig) {
 	log.Fatal(server.Serve(tls.NewListener(&loggingListener{Listener: ln}, tlsConfig)))
 }
 
-// stopOnSignal waits for Ctrl+C (or a stop from the system), lets the reader finish the file in hand, saves the
+// stopOnSignal waits for Ctrl+C (or a stop from the system), lets the reader (or a daily run of journal-server
+// index) finish the file in hand, saves the
 // index caches the server's writes made stale, so the next start doesn't read the library's sidecars again, and
 // exits. A second Ctrl+C exits at once.
 func stopOnSignal(running context.Context, stop func(), readerDone <-chan struct{}, library *media.Library) {

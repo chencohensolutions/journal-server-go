@@ -48,6 +48,35 @@ func NewService(model *Model, library *media.Library) (*Service, error) {
 	return s, nil
 }
 
+// NewReadOnlyService answers queries about the faces another process finds (journal-server index), named after
+// its models: each user's faces opened to read only, and the people they named. Refresh reads what that process
+// added; nothing is read here.
+func NewReadOnlyService(model string, library *media.Library) (*Service, error) {
+	s := &Service{model: &Model{Name: model}, library: library, users: map[string]*people{}}
+	for _, user := range library.Users() {
+		store := library.Store(user)
+		index, err := OpenIndexReadOnly(store.Root(), model)
+		if err != nil {
+			return nil, fmt.Errorf("user %s: %w", user, err)
+		}
+		if s.users[user], err = newPeople(store, index); err != nil {
+			return nil, fmt.Errorf("user %s: %w", user, err)
+		}
+	}
+	return s, nil
+}
+
+// Refresh reads the faces another process found since the last look (NewReadOnlyService); the next query puts
+// them with the others.
+func (s *Service) Refresh() error {
+	for user, p := range s.users {
+		if _, err := p.index.Refresh(); err != nil {
+			return fmt.Errorf("user %s: %w", user, err)
+		}
+	}
+	return nil
+}
+
 // Model is the name of the models the faces were found with.
 func (s *Service) Model() string { return s.model.Name }
 

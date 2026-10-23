@@ -15,6 +15,11 @@ type Mutation {
   revokeDevice(serial: String!): Device!
   "Keeps the files the user marked private from a device (withhold), or sends them to it again."
   setWithholdPrivate(serial: String!, withhold: Boolean!): Device!
+  """
+  journal-server index finished a run: the server reads what it added to the indexes' caches now. False when the
+  server reads files itself ("index": "server") and has nothing to read.
+  """
+  indexesUpdated: Boolean!
 }
 
 type EnrollmentCode {

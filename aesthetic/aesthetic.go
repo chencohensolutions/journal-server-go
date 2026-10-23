@@ -147,6 +147,30 @@ func NewService(model *Model, library *media.Library) (*Service, error) {
 	return s, nil
 }
 
+// NewReadOnlyService answers queries about the scores another process gives (journal-server index), named after
+// its model: each user's scores opened to read only. Refresh reads what that process added.
+func NewReadOnlyService(model string, library *media.Library) (*Service, error) {
+	s := &Service{model: &Model{Name: model}, library: library, scores: map[string]*search.Index{}}
+	for _, user := range library.Users() {
+		index, err := search.OpenVectorsReadOnly(filepath.Join(library.Store(user).Root(), ".cache", "aesthetic", model+".vectors"), 1)
+		if err != nil {
+			return nil, fmt.Errorf("user %s: %w", user, err)
+		}
+		s.scores[user] = index
+	}
+	return s, nil
+}
+
+// Refresh reads the scores another process gave since the last look (NewReadOnlyService).
+func (s *Service) Refresh() error {
+	for user, index := range s.scores {
+		if _, err := index.Refresh(); err != nil {
+			return fmt.Errorf("user %s: %w", user, err)
+		}
+	}
+	return nil
+}
+
 // Model is the name of the model.
 func (s *Service) Model() string { return s.model.Name }
 

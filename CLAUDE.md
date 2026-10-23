@@ -45,6 +45,7 @@ go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime +
 go run ./scripts/bundle-vips               # portable libvips for Windows into vips/ (gitignored)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
+go run . index                             # read new files for every index once and exit ("index": "daily" runs it at "index_at")
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
 go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named, screenshots' app
@@ -133,7 +134,11 @@ scan (package `nudity`, NudeNet's 320n detector, the same steps as NudeNet's Pyt
 sidecar (`Store.SetNudity`), shared with `scripts/scan-nudity`. All three are `reading.Index`es of one
 `reading.Reader` (`newReader` in `library.go`): it decodes each original once, gives every index exactly the picture
 its model reads, in order (nudity, faces, search), prepares the next files while the models read this one, and
-keeps each index's failure list (docs/indexes.md). Packages `ocr` (Hebrew and English text in photos, found by
+keeps each index's failure list (docs/indexes.md). With config.json `"index": "daily"` the server runs no reader and
+loads no reading model: `journal-server index` (`index.go`, started at `"index_at"`) writes the caches, the server
+opens them read-only (`OpenVectorsReadOnly`, `OpenIndexReadOnly`, `Refresh`) with only SigLIP's text half,
+loaded at a search and released after 10 idle minutes (`search.NewOnDemandService`), and `.cache/index.lock` keeps
+one writer at a time. Packages `ocr` (Hebrew and English text in photos, found by
 `searchMedia`), `similar` (DINOv2: `similarMedia`, `duplicates`) and `aesthetic` (LAION on CLIP L/14:
 `Media.aesthetic`) are indexes too; logs name indexes by their model (`Index.Model`). Without the runtime or a model, that index is off (search queries
 answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for

@@ -13,3 +13,12 @@ import (
 func lockFile(f *os.File) error { return unix.Flock(int(f.Fd()), unix.LOCK_EX) }
 
 func unlockFile(f *os.File) error { return unix.Flock(int(f.Fd()), unix.LOCK_UN) }
+
+// tryLockFile takes f's exclusive lock if no one holds it, and reports whether it did.
+func tryLockFile(f *os.File) (bool, error) {
+	err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	if err == unix.EWOULDBLOCK {
+		return false, nil
+	}
+	return err == nil, err
+}
