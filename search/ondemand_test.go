@@ -67,4 +67,19 @@ func TestTheTextHalfIsLoadedOnlyWhileSearching(t *testing.T) {
 	if hits, err := s.Search("hen", "a red car", 1, all); err != nil || len(hits) != 1 || !s.onDemand.loaded() {
 		t.Fatalf("search after release: %v, %v", hits, err)
 	}
+
+	// Prepared: loaded in the background, and a search sent meanwhile waits for the same load.
+	time.Sleep(IdleRelease + 300*time.Millisecond)
+	if s.State() != Unloaded {
+		t.Fatalf("state after the idle time: %v", s.State())
+	}
+	if state := s.Prepare(); state != Loading {
+		t.Fatalf("Prepare = %v", state)
+	}
+	if hits, err := s.Search("hen", "a red car", 1, all); err != nil || len(hits) != 1 || s.State() != Ready {
+		t.Fatalf("search while loading: %v, %v", hits, err)
+	}
+	if state := s.Prepare(); state != Ready {
+		t.Fatalf("Prepare once loaded = %v", state)
+	}
 }

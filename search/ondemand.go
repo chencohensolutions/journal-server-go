@@ -15,7 +15,20 @@ import (
 // it only to search (NewOnDemandService): 1.15 GB of memory, against about 4 s to load it again.
 var IdleRelease = 10 * time.Minute
 
-// onDemand is the model's text half, loaded at the first search and released after IdleRelease without one.
+// ModelState is whether a search's words can be read at once (prepareSearch, searchModel).
+type ModelState int
+
+const (
+	// Ready: the text half is loaded, a search answers at once.
+	Ready ModelState = iota
+	// Loading: the text half is being loaded, about 4 s; a search now waits for it.
+	Loading
+	// Unloaded: the text half isn't loaded; the next search, or Prepare, loads it.
+	Unloaded
+)
+
+// onDemand is the model's text half, loaded at the first search (or Prepare) and released after IdleRelease without
+// one.
 type onDemand struct {
 	rt      *onnx.Runtime
 	folder  string
@@ -24,6 +37,8 @@ type onDemand struct {
 
 	mu       sync.Mutex
 	model    *Model
+	loading  chan struct{} // closed when the load in progress ends; nil when none is
+	loadErr  error         // why the last load failed
 	inUse    int
 	lastUsed time.Time
 	timer    *time.Timer
@@ -59,21 +74,19 @@ func NewOnDemandService(rt *onnx.Runtime, folder string, threads int, library *m
 // vector is text's vector, loading the text half first if it isn't loaded.
 func (o *onDemand) vector(text string) ([]float32, error) {
 	o.mu.Lock()
-	if o.model == nil {
-		started := time.Now()
-		m, err := LoadTextModel(o.rt, o.folder, o.threads)
-		if err != nil {
+	for o.model == nil {
+		if o.loading == nil {
+			o.startLoad("a search")
+		}
+		loading := o.loading
+		o.mu.Unlock()
+		<-loading
+		o.mu.Lock()
+		if o.model == nil && o.loading == nil {
+			err := o.loadErr
 			o.mu.Unlock()
 			return nil, err
 		}
-		if d := o.dim(); d != 0 && d != m.Dim {
-			m.Close()
-			o.mu.Unlock()
-			return nil, fmt.Errorf("%s makes vectors of %d numbers, the photos' have %d", m.Name, m.Dim, d)
-		}
-		o.model = m
-		log.Printf("search: %s's text half loaded in %s for a search; released after %s without one", m.Name,
-			time.Since(started).Round(time.Millisecond), IdleRelease)
 	}
 	o.inUse++
 	m := o.model
@@ -83,14 +96,76 @@ func (o *onDemand) vector(text string) ([]float32, error) {
 
 	o.mu.Lock()
 	o.inUse--
+	o.used()
+	o.mu.Unlock()
+	return vector, err
+}
+
+// prepare starts loading the text half if it isn't loaded or loading, so the search that follows (an app opening
+// its search screen) doesn't wait, and keeps it loaded IdleRelease longer. It returns the state at once.
+func (o *onDemand) prepare() ModelState {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	switch {
+	case o.model != nil:
+		o.used()
+		return Ready
+	case o.loading == nil:
+		o.startLoad("an app about to search")
+	}
+	return Loading
+}
+
+// state is whether the text half is loaded, being loaded, or neither.
+func (o *onDemand) state() ModelState {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	switch {
+	case o.model != nil:
+		return Ready
+	case o.loading != nil:
+		return Loading
+	}
+	return Unloaded
+}
+
+// startLoad loads the text half in the background; o.mu is held. Whoever waits on o.loading finds o.model set, or
+// o.loadErr.
+func (o *onDemand) startLoad(why string) {
+	loading := make(chan struct{})
+	o.loading = loading
+	go func() {
+		started := time.Now()
+		m, err := LoadTextModel(o.rt, o.folder, o.threads)
+		if err == nil {
+			if d := o.dim(); d != 0 && d != m.Dim {
+				err = fmt.Errorf("%s makes vectors of %d numbers, the photos' have %d", m.Name, m.Dim, d)
+				m.Close()
+				m = nil
+			}
+		}
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		o.model, o.loadErr, o.loading = m, err, nil
+		close(loading)
+		if err != nil {
+			log.Printf("search: the text half could not be loaded for %s: %v", why, err)
+			return
+		}
+		o.used()
+		log.Printf("search: %s's text half loaded in %s for %s; released after %s without a search", m.Name,
+			time.Since(started).Round(time.Millisecond), why, IdleRelease)
+	}()
+}
+
+// used notes a use now, so the text half is kept IdleRelease longer; o.mu is held.
+func (o *onDemand) used() {
 	o.lastUsed = time.Now()
 	if o.timer == nil {
 		o.timer = time.AfterFunc(IdleRelease, o.releaseIfIdle)
 	} else {
 		o.timer.Reset(IdleRelease)
 	}
-	o.mu.Unlock()
-	return vector, err
 }
 
 // releaseIfIdle releases the text half when no search has come for IdleRelease.
@@ -106,8 +181,4 @@ func (o *onDemand) releaseIfIdle() {
 }
 
 // loaded reports whether the text half is loaded now.
-func (o *onDemand) loaded() bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.model != nil
-}
+func (o *onDemand) loaded() bool { return o.state() == Ready }

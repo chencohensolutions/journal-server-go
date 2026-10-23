@@ -16,6 +16,14 @@ import (
 	"github.com/journal/server-go/search"
 )
 
+// PrepareSearch is the resolver for the prepareSearch field.
+func (r *mutationResolver) PrepareSearch(ctx context.Context) (model.SearchModelState, error) {
+	if r.Search == nil {
+		return model.SearchModelStateOff, nil
+	}
+	return searchModelState(r.Search.Prepare()), nil
+}
+
 // SearchMedia is the resolver for the searchMedia field.
 func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error) {
 	v, err := r.view(ctx)
@@ -113,4 +121,12 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []
 		}
 	}
 	return result, nil
+}
+
+// SearchModel is the resolver for the searchModel field.
+func (r *queryResolver) SearchModel(ctx context.Context) (model.SearchModelState, error) {
+	if r.Search == nil {
+		return model.SearchModelStateOff, nil
+	}
+	return searchModelState(r.Search.State()), nil
 }

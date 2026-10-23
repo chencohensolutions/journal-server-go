@@ -631,6 +631,71 @@ func (e MediaKind) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Whether the server can read a search's words at once. A server set to index once a day loads the model's text half
+// only to search, and lets it go 10 minutes after the last search; loading it takes a few seconds (about 4).
+type SearchModelState string
+
+const (
+	// Loaded: a search answers at once.
+	SearchModelStateReady SearchModelState = "READY"
+	// Being loaded, a few seconds; a search now waits for it. Apps say so ("Getting search ready…").
+	SearchModelStateLoading SearchModelState = "LOADING"
+	// Not loaded: the next search, or prepareSearch, loads it.
+	SearchModelStateUnloaded SearchModelState = "UNLOADED"
+	// Text search is off on this server (serverInfo.search); words find only text in photos, if that is on.
+	SearchModelStateOff SearchModelState = "OFF"
+)
+
+var AllSearchModelState = []SearchModelState{
+	SearchModelStateReady,
+	SearchModelStateLoading,
+	SearchModelStateUnloaded,
+	SearchModelStateOff,
+}
+
+func (e SearchModelState) IsValid() bool {
+	switch e {
+	case SearchModelStateReady, SearchModelStateLoading, SearchModelStateUnloaded, SearchModelStateOff:
+		return true
+	}
+	return false
+}
+
+func (e SearchModelState) String() string {
+	return string(e)
+}
+
+func (e *SearchModelState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SearchModelState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SearchModelState", str)
+	}
+	return nil
+}
+
+func (e SearchModelState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SearchModelState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SearchModelState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type UploadRejectedReason string
 
 const (

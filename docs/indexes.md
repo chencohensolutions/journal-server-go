@@ -78,6 +78,11 @@ day, and the server keeps only what queries need, so it takes far less memory.
     4 s (3.5–4.7 s measured, the file in the system's cache; longer after a restart of the PC). It is released 10
     minutes after the last search (`search.IdleRelease`). Searches meanwhile answer as before (60–90 ms for the
     text).
+    - **Apps load it ahead:** `prepareSearch` (sent when the user opens the search screen) starts the load in the
+      background and answers at once: `LOADING`, or `READY` when it was loaded already. Apps show that search is
+      getting ready and ask `searchModel` every second or so until it says `READY`; a search sent meanwhile waits for
+      the same load. `prepareSearch` keeps the model 10 minutes longer, as a search does. A server in `"server"`
+      mode always answers `READY`, and one without text search `OFF`.
   - the caches, opened **read-only**, never cut or written. It reads what a run added when the run ends, when told
     (`indexesUpdated`), and every 10 minutes as a safety net. Faces then group the new faces, and similar finds the
     new duplicates in the background.

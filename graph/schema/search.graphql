@@ -62,3 +62,33 @@ extend type Query {
   """
   searchMedia(text: String, people: [ID!], limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
 }
+
+"""
+Whether the server can read a search's words at once. A server set to index once a day loads the model's text half
+only to search, and lets it go 10 minutes after the last search; loading it takes a few seconds (about 4).
+"""
+enum SearchModelState {
+  "Loaded: a search answers at once."
+  READY
+  "Being loaded, a few seconds; a search now waits for it. Apps say so (\"Getting search ready…\")."
+  LOADING
+  "Not loaded: the next search, or prepareSearch, loads it."
+  UNLOADED
+  "Text search is off on this server (serverInfo.search); words find only text in photos, if that is on."
+  OFF
+}
+
+extend type Query {
+  "Whether the search model is loaded, to show while prepareSearch's load goes on (ask again every second or so)."
+  searchModel: SearchModelState!
+}
+
+extend type Mutation {
+  """
+  Gets the search model ready for a search about to come: apps call it when the user opens the search screen, so the
+  first search doesn't wait for the model to load. Answers at once with the state: LOADING while it loads in the
+  background (searchModel says when it is READY; a search sent meanwhile waits for it), READY when it was loaded
+  already. Keeps the model loaded 10 minutes longer, as a search does.
+  """
+  prepareSearch: SearchModelState!
+}

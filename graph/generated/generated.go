@@ -160,6 +160,7 @@ type ComplexityRoot struct {
 		MergePeople          func(childComplexity int, into string, from []string) int
 		MoveFace             func(childComplexity int, face string, to *string) int
 		NamePerson           func(childComplexity int, id string, name string) int
+		PrepareSearch        func(childComplexity int) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
 		StartUpload          func(childComplexity int, input model.StartUploadInput) int
@@ -201,6 +202,7 @@ type ComplexityRoot struct {
 		MissingMedia      func(childComplexity int, hashes []string) int
 		People            func(childComplexity int, includeGroups *bool, includePrivate *bool) int
 		SearchMedia       func(childComplexity int, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
+		SearchModel       func(childComplexity int) int
 		ServerInfo        func(childComplexity int) int
 		SimilarFaces      func(childComplexity int, face string, limit *int, offset *int, includePrivate *bool) int
 		SimilarMedia      func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
@@ -272,6 +274,7 @@ type MutationResolver interface {
 	MergePeople(ctx context.Context, into string, from []string) (model.PersonResult, error)
 	MoveFace(ctx context.Context, face string, to *string) (model.FaceResult, error)
 	ForgetPerson(ctx context.Context, id string) (bool, error)
+	PrepareSearch(ctx context.Context) (model.SearchModelState, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -284,6 +287,7 @@ type QueryResolver interface {
 	People(ctx context.Context, includeGroups *bool, includePrivate *bool) (*model.People, error)
 	SimilarFaces(ctx context.Context, face string, limit *int, offset *int, includePrivate *bool) ([]*model.FaceHit, error)
 	SearchMedia(ctx context.Context, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error)
+	SearchModel(ctx context.Context) (model.SearchModelState, error)
 	SimilarMedia(ctx context.Context, sha256 string, limit *int, offset *int, includePrivate *bool) ([]*model.SimilarHit, error)
 	Duplicates(ctx context.Context, limit *int, offset *int, includePrivate *bool) ([]*model.DuplicateGroup, error)
 }
@@ -792,6 +796,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.NamePerson(childComplexity, args["id"].(string), args["name"].(string)), true
+	case "Mutation.prepareSearch":
+		if e.ComplexityRoot.Mutation.PrepareSearch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.PrepareSearch(childComplexity), true
 	case "Mutation.setHiddenCollections":
 		if e.ComplexityRoot.Mutation.SetHiddenCollections == nil {
 			break
@@ -1004,6 +1014,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.SearchMedia(childComplexity, args["text"].(*string), args["people"].([]string), args["limit"].(*int), args["offset"].(*int), args["years"].([]int), args["area"].(*model.GeoAreaInput), args["includePrivate"].(*bool)), true
+	case "Query.searchModel":
+		if e.ComplexityRoot.Query.SearchModel == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.SearchModel(childComplexity), true
 	case "Query.serverInfo":
 		if e.ComplexityRoot.Query.ServerInfo == nil {
 			break
@@ -1846,6 +1862,36 @@ extend type Query {
   when neither text nor people is given, and when a person is not found (load the people again).
   """
   searchMedia(text: String, people: [ID!], limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
+}
+
+"""
+Whether the server can read a search's words at once. A server set to index once a day loads the model's text half
+only to search, and lets it go 10 minutes after the last search; loading it takes a few seconds (about 4).
+"""
+enum SearchModelState {
+  "Loaded: a search answers at once."
+  READY
+  "Being loaded, a few seconds; a search now waits for it. Apps say so (\"Getting search ready…\")."
+  LOADING
+  "Not loaded: the next search, or prepareSearch, loads it."
+  UNLOADED
+  "Text search is off on this server (serverInfo.search); words find only text in photos, if that is on."
+  OFF
+}
+
+extend type Query {
+  "Whether the search model is loaded, to show while prepareSearch's load goes on (ask again every second or so)."
+  searchModel: SearchModelState!
+}
+
+extend type Mutation {
+  """
+  Gets the search model ready for a search about to come: apps call it when the user opens the search screen, so the
+  first search doesn't wait for the model to load. Answers at once with the state: LOADING while it loads in the
+  background (searchModel says when it is READY; a search sent meanwhile waits for it), READY when it was loaded
+  already. Keeps the model loaded 10 minutes longer, as a search does.
+  """
+  prepareSearch: SearchModelState!
 }
 `, BuiltIn: false},
 	{Name: "../schema/similar.graphql", Input: `# --- Similar photos and duplicates -------------------------------------------
@@ -4920,6 +4966,29 @@ func (ec *executionContext) fieldContext_Mutation_forgetPerson(ctx context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_prepareSearch(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_prepareSearch(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().PrepareSearch(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.SearchModelState) graphql.Marshaler {
+			return ec.marshalNSearchModelState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSearchModelState(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_prepareSearch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type SearchModelState does not have child fields"))
+}
+
 func (ec *executionContext) _NotFound_id(ctx context.Context, field graphql.CollectedField, obj *model.NotFound) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5698,6 +5767,29 @@ func (ec *executionContext) fieldContext_Query_searchMedia(ctx context.Context, 
 		return fc, err
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _Query_searchModel(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_searchModel(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().SearchModel(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.SearchModelState) graphql.Marshaler {
+			return ec.marshalNSearchModelState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSearchModelState(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_searchModel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Query", field, true, true, errors.New("field of type SearchModelState does not have child fields"))
 }
 
 func (ec *executionContext) _Query_similarMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -9094,6 +9186,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "prepareSearch":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_prepareSearch(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -9549,6 +9648,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_searchMedia(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "searchModel":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_searchModel(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -10836,6 +10957,16 @@ func (ec *executionContext) marshalNSearchHit2ᚖgithubᚗcomᚋjournalᚋserver
 		return graphql.Null
 	}
 	return ec._SearchHit(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNSearchModelState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSearchModelState(ctx context.Context, v any) (model.SearchModelState, error) {
+	var res model.SearchModelState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNSearchModelState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSearchModelState(ctx context.Context, sel ast.SelectionSet, v model.SearchModelState) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) marshalNServerInfo2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐServerInfo(ctx context.Context, sel ast.SelectionSet, v model.ServerInfo) graphql.Marshaler {

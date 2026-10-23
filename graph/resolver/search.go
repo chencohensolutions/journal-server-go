@@ -11,6 +11,17 @@ import (
 	"github.com/journal/server-go/search"
 )
 
+// searchModelState is the schema's name for a search model's state.
+func searchModelState(state search.ModelState) model.SearchModelState {
+	switch state {
+	case search.Ready:
+		return model.SearchModelStateReady
+	case search.Loading:
+		return model.SearchModelStateLoading
+	}
+	return model.SearchModelStateUnloaded
+}
+
 // page is a search's limit (default 100) and offset (default 0), checked.
 func page(limit, offset *int) (n, skip int, err error) {
 	n = 100

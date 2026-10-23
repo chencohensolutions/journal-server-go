@@ -28,6 +28,22 @@ func TestSearchIsOffWithoutAModel(t *testing.T) {
 	if len(resp.Errors) != 1 || !strings.Contains(resp.Errors[0].Message, "text search is off") {
 		t.Fatalf("errors = %+v", resp.Errors)
 	}
+	if got := searchModelState(t, env, "mutation { prepareSearch }"); got != "OFF" {
+		t.Errorf("prepareSearch = %s", got)
+	}
+}
+
+// searchModelState is the state a prepareSearch or searchModel request answers.
+func searchModelState(t *testing.T, env *testEnv, request string) string {
+	t.Helper()
+	resp := env.graphql(t, env.enrolledClient(t), request, nil)
+	if len(resp.Errors) > 0 {
+		t.Fatalf("%s: %+v", request, resp.Errors)
+	}
+	for _, state := range resp.Data {
+		return strings.Trim(string(state), `"`)
+	}
+	return ""
 }
 
 func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
@@ -43,6 +59,10 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 	tablet := env.enrolledClient(t)
 	if _, err := env.enrollment.Registry.SetWithholdPrivate(env.enrollment.Registry.List("hen")[1].Serial, true); err != nil {
 		t.Fatal(err)
+	}
+	// A server that reads files itself keeps the whole model loaded.
+	if got := searchModelState(t, env, "mutation { prepareSearch }"); got != "READY" {
+		t.Errorf("prepareSearch = %s", got)
 	}
 	red := env.uploadPhoto(t, phone, plainJPEG(t, color.RGBA{220, 20, 20, 255}), "RED.jpg")
 	blue := env.uploadPhoto(t, phone, plainJPEG(t, color.RGBA{20, 40, 220, 255}), "BLUE.jpg")

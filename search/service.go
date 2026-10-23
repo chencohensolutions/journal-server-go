@@ -48,6 +48,23 @@ func (s *Service) Refresh() error {
 	return nil
 }
 
+// Prepare gets the model ready for a search that is about to come (an app opening its search screen): a server that
+// loads the text half only to search starts loading it now, in the background. It returns the state at once.
+func (s *Service) Prepare() ModelState {
+	if s.onDemand == nil {
+		return Ready
+	}
+	return s.onDemand.prepare()
+}
+
+// State is whether a search's words can be read at once.
+func (s *Service) State() ModelState {
+	if s.onDemand == nil {
+		return Ready
+	}
+	return s.onDemand.state()
+}
+
 // Model is the name of the model searches use.
 func (s *Service) Model() string { return s.model.Name }
 
