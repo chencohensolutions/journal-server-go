@@ -202,7 +202,7 @@ type ComplexityRoot struct {
 		MissingMedia      func(childComplexity int, hashes []string) int
 		People            func(childComplexity int, includeGroups *bool, includePrivate *bool) int
 		SearchMedia       func(childComplexity int, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
-		SearchModel       func(childComplexity int) int
+		SearchModel       func(childComplexity int, wait *bool) int
 		ServerInfo        func(childComplexity int) int
 		SimilarFaces      func(childComplexity int, face string, limit *int, offset *int, includePrivate *bool) int
 		SimilarMedia      func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
@@ -287,7 +287,7 @@ type QueryResolver interface {
 	People(ctx context.Context, includeGroups *bool, includePrivate *bool) (*model.People, error)
 	SimilarFaces(ctx context.Context, face string, limit *int, offset *int, includePrivate *bool) ([]*model.FaceHit, error)
 	SearchMedia(ctx context.Context, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error)
-	SearchModel(ctx context.Context) (model.SearchModelState, error)
+	SearchModel(ctx context.Context, wait *bool) (model.SearchModelState, error)
 	SimilarMedia(ctx context.Context, sha256 string, limit *int, offset *int, includePrivate *bool) ([]*model.SimilarHit, error)
 	Duplicates(ctx context.Context, limit *int, offset *int, includePrivate *bool) ([]*model.DuplicateGroup, error)
 }
@@ -1019,7 +1019,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			break
 		}
 
-		return e.ComplexityRoot.Query.SearchModel(childComplexity), true
+		args, err := ec.field_Query_searchModel_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.SearchModel(childComplexity, args["wait"].(*bool)), true
 	case "Query.serverInfo":
 		if e.ComplexityRoot.Query.ServerInfo == nil {
 			break
@@ -1880,15 +1885,19 @@ enum SearchModelState {
 }
 
 extend type Query {
-  "Whether the search model is loaded, to show while prepareSearch's load goes on (ask again every second or so)."
-  searchModel: SearchModelState!
+  """
+  Whether the search model is loaded. With wait, while it is LOADING the answer waits until the load ends (READY, or
+  UNLOADED when it failed), at most 30 seconds: apps ask this way after prepareSearch, once, rather than asking
+  again and again. Asked again after 30 seconds of LOADING, it waits again.
+  """
+  searchModel(wait: Boolean = false): SearchModelState!
 }
 
 extend type Mutation {
   """
   Gets the search model ready for a search about to come: apps call it when the user opens the search screen, so the
   first search doesn't wait for the model to load. Answers at once with the state: LOADING while it loads in the
-  background (searchModel says when it is READY; a search sent meanwhile waits for it), READY when it was loaded
+  background (searchModel(wait: true) answers when it is READY; a search sent meanwhile waits for it), READY when it was loaded
   already. Keeps the model loaded 10 minutes longer, as a search does.
   """
   prepareSearch: SearchModelState!
@@ -2713,6 +2722,20 @@ func (ec *executionContext) field_Query_searchMedia_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["includePrivate"] = arg6
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_searchModel_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "wait",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["wait"] = arg0
 	return args, nil
 }
 
@@ -5778,7 +5801,8 @@ func (ec *executionContext) _Query_searchModel(ctx context.Context, field graphq
 			return ec.fieldContext_Query_searchModel(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Query().SearchModel(ctx)
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().SearchModel(ctx, fc.Args["wait"].(*bool))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v model.SearchModelState) graphql.Marshaler {
@@ -5788,8 +5812,28 @@ func (ec *executionContext) _Query_searchModel(ctx context.Context, field graphq
 		true,
 	)
 }
-func (ec *executionContext) fieldContext_Query_searchModel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Query", field, true, true, errors.New("field of type SearchModelState does not have child fields"))
+func (ec *executionContext) fieldContext_Query_searchModel(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type SearchModelState does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_searchModel_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Query_similarMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {

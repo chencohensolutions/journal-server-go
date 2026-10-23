@@ -30,7 +30,8 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   `includePrivate: true` (it does while it shows private media); a device set to withhold them never finds them. The answer also says how many files are read so far (`indexed` of `total`), so an app can say
   that search is still catching up.
 - **Getting ready.** `prepareSearch`, sent when the user opens the search screen, gets the model ready before the
-  first search, and `searchModel` says whether it is (`READY`, `LOADING`, `UNLOADED`, `OFF`). A server that indexes
+  first search, and `searchModel` says whether it is (`READY`, `LOADING`, `UNLOADED`, `OFF`); with `wait: true` it
+  answers when a load in progress ends (at most 30 s). A server that indexes
   once a day loads the text half only to search, about 4 s ([indexes.md](indexes.md)); one that reads files itself
   is always `READY`.
 - **Pages.** `offset` skips the first hits for the next page (offset + limit at most 10000). The hits before it are

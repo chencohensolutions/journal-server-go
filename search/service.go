@@ -65,6 +65,15 @@ func (s *Service) State() ModelState {
 	return s.onDemand.state()
 }
 
+// WaitWhileLoading waits for a load in progress (Prepare, or a search's) to end, or for ctx to end, and returns the
+// state then: an app waits for the model this way rather than asking again and again.
+func (s *Service) WaitWhileLoading(ctx context.Context) ModelState {
+	if s.onDemand == nil {
+		return Ready
+	}
+	return s.onDemand.wait(ctx)
+}
+
 // Model is the name of the model searches use.
 func (s *Service) Model() string { return s.model.Name }
 

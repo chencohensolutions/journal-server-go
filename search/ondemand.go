@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -127,6 +128,20 @@ func (o *onDemand) state() ModelState {
 		return Loading
 	}
 	return Unloaded
+}
+
+// wait waits for a load in progress to end, or for ctx to end, and returns the state then.
+func (o *onDemand) wait(ctx context.Context) ModelState {
+	o.mu.Lock()
+	loading := o.loading
+	o.mu.Unlock()
+	if loading != nil {
+		select {
+		case <-loading:
+		case <-ctx.Done():
+		}
+	}
+	return o.state()
 }
 
 // startLoad loads the text half in the background; o.mu is held. Whoever waits on o.loading finds o.model set, or

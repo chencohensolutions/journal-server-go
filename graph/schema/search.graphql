@@ -79,15 +79,19 @@ enum SearchModelState {
 }
 
 extend type Query {
-  "Whether the search model is loaded, to show while prepareSearch's load goes on (ask again every second or so)."
-  searchModel: SearchModelState!
+  """
+  Whether the search model is loaded. With wait, while it is LOADING the answer waits until the load ends (READY, or
+  UNLOADED when it failed), at most 30 seconds: apps ask this way after prepareSearch, once, rather than asking
+  again and again. Asked again after 30 seconds of LOADING, it waits again.
+  """
+  searchModel(wait: Boolean = false): SearchModelState!
 }
 
 extend type Mutation {
   """
   Gets the search model ready for a search about to come: apps call it when the user opens the search screen, so the
   first search doesn't wait for the model to load. Answers at once with the state: LOADING while it loads in the
-  background (searchModel says when it is READY; a search sent meanwhile waits for it), READY when it was loaded
+  background (searchModel(wait: true) answers when it is READY; a search sent meanwhile waits for it), READY when it was loaded
   already. Keeps the model loaded 10 minutes longer, as a search does.
   """
   prepareSearch: SearchModelState!

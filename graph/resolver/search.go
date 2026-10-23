@@ -5,11 +5,16 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/search"
 )
+
+// maxSearchModelWait is the longest searchModel(wait: true) waits for the model to load (about 4 s, longer on a
+// cold disk); well inside /query's 2 minutes to answer.
+const maxSearchModelWait = 30 * time.Second
 
 // searchModelState is the schema's name for a search model's state.
 func searchModelState(state search.ModelState) model.SearchModelState {

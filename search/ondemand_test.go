@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,5 +82,17 @@ func TestTheTextHalfIsLoadedOnlyWhileSearching(t *testing.T) {
 	}
 	if state := s.Prepare(); state != Ready {
 		t.Fatalf("Prepare once loaded = %v", state)
+	}
+
+	// Waited for: the wait ends with the load, or sooner when the caller gives up.
+	time.Sleep(IdleRelease + 300*time.Millisecond)
+	s.Prepare()
+	gaveUp, cancel := context.WithCancel(context.Background())
+	cancel()
+	if state := s.WaitWhileLoading(gaveUp); state != Loading {
+		t.Fatalf("wait given up = %v", state)
+	}
+	if state := s.WaitWhileLoading(context.Background()); state != Ready {
+		t.Fatalf("wait = %v", state)
 	}
 }

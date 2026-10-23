@@ -136,7 +136,7 @@ func mustTime(t *testing.T, s string) time.Time {
 }
 
 // In a daily server, an app opening its search screen has the text half loaded in the background (prepareSearch),
-// and sees it ready (searchModel) before its first search.
+// and is told when it is ready (searchModel(wait: true)) before its first search.
 func TestADailyServerPreparesTheSearchModel(t *testing.T) {
 	model, _ := filepath.Abs(auth.DefaultSearchModel)
 	if _, err := os.Stat(filepath.Join(model, "text_model.onnx")); err != nil {
@@ -153,14 +153,8 @@ func TestADailyServerPreparesTheSearchModel(t *testing.T) {
 	if got := searchModelState(t, env, "mutation { prepareSearch }"); got != "LOADING" {
 		t.Fatalf("prepareSearch = %s", got)
 	}
-	for deadline := time.Now().Add(time.Minute); ; time.Sleep(100 * time.Millisecond) {
-		got := searchModelState(t, env, "{ searchModel }")
-		if got == "READY" {
-			break
-		}
-		if got != "LOADING" || time.Now().After(deadline) {
-			t.Fatalf("searchModel = %s", got)
-		}
+	if got := searchModelState(t, env, "{ searchModel(wait: true) }"); got != "READY" {
+		t.Fatalf("searchModel(wait: true) = %s", got)
 	}
 	if got := searchModelState(t, env, "mutation { prepareSearch }"); got != "READY" {
 		t.Errorf("prepareSearch once loaded = %s", got)

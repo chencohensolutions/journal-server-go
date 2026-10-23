@@ -124,9 +124,14 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []
 }
 
 // SearchModel is the resolver for the searchModel field.
-func (r *queryResolver) SearchModel(ctx context.Context) (model.SearchModelState, error) {
+func (r *queryResolver) SearchModel(ctx context.Context, wait *bool) (model.SearchModelState, error) {
 	if r.Search == nil {
 		return model.SearchModelStateOff, nil
+	}
+	if wait != nil && *wait {
+		ctx, cancel := context.WithTimeout(ctx, maxSearchModelWait)
+		defer cancel()
+		return searchModelState(r.Search.WaitWhileLoading(ctx)), nil
 	}
 	return searchModelState(r.Search.State()), nil
 }
