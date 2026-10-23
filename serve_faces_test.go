@@ -324,7 +324,7 @@ func TestFacesAreFoundInUploadedPhotos(t *testing.T) {
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { env.faces.Run(ctx); close(done) }()
+	go func() { env.reader.Run(ctx); close(done) }()
 	t.Cleanup(func() { stop(); <-done })
 	for deadline := time.Now().Add(time.Minute); ; time.Sleep(50 * time.Millisecond) {
 		if read, _ := env.faces.Counts("hen", func(media.Item) bool { return false }); read == len(shas) {

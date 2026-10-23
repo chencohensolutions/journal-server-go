@@ -37,6 +37,16 @@ type AppConfig struct {
 	AdminTokenFile string `json:"admin_token_file"`
 	// Path of the libvips `vips` program, used for previews; found on the PATH or in Homebrew when empty.
 	Vips string `json:"vips"`
+	// Path of the libvips library to load into the server (libvips-42.dll, libvips.42.dylib, libvips.so.42); the one
+	// beside the vips program, or the system's, when empty.
+	LibVips string `json:"libvips"`
+	// Keep libvips out of the server: previews and the indexes' pictures are made by the vips programs, as before
+	// libvips was loaded in (each start of them costs about 350 ms on Windows). A crash in libvips can't take the
+	// server down then.
+	VipsAsProgram bool `json:"vips_as_program"`
+	// How many files are decoded ahead of the indexes (nudity, faces, search) while they read the one before
+	// (default 2).
+	ReaderPrepare int `json:"reader_prepare"`
 	// Path of the ffmpeg program, used for video posters (ffprobe beside it); found on the PATH or in Homebrew when empty.
 	FFmpeg string `json:"ffmpeg"`
 	// Most space the previews of one user may take before the least recently used are deleted (default 50).
@@ -119,6 +129,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.NudityModel == "" {
 		c.NudityModel = DefaultNudityModel
+	}
+	if c.ReaderPrepare <= 0 {
+		c.ReaderPrepare = 2
 	}
 	if c.SearchThreads <= 0 {
 		c.SearchThreads = max(1, runtime.NumCPU()/2)

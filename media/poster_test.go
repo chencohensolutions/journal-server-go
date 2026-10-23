@@ -30,55 +30,57 @@ func rotatedVideo(t *testing.T, ffmpeg string) []byte {
 }
 
 func TestVideoPreviewsComeFromAnUprightPosterFrame(t *testing.T) {
-	vips, header, err := FindVips("")
-	if err != nil {
-		t.Skip("libvips not installed")
-	}
-	ffmpeg, ffprobe, err := FindFFmpeg("")
-	if err != nil {
-		t.Skip("ffmpeg not installed")
-	}
-	video := rotatedVideo(t, ffmpeg)
-	f := newFixture(t)
-	req := photoRequest(video, "VID.mp4")
-	req.Kind, req.MimeType = KindVideo, "video/mp4"
-	duration := int64(2000)
-	req.DurationMs = &duration
-	f.start(req)
-	result, err := f.chunk(video, 0, int64(len(video)))
-	if err != nil || result.Item == nil {
-		t.Fatalf("upload: %v", err)
-	}
-	item := *result.Item
-	spec, err := ParsePreviewSpec(url.Values{"w": {"100"}, "h": {"200"}, "fit": {"contain"}, "fmt": {"jpeg"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Without ffmpeg there is no poster.
-	if _, _, err := NewPreviews(vips, header).Get(context.Background(), f.store, item, spec); err != ErrPostersUnavailable {
-		t.Fatalf("without ffmpeg: %v", err)
-	}
-
-	previews := NewPreviews(vips, header).WithFFmpeg(ffmpeg, ffprobe)
-	for _, cache := range []bool{false, true} {
-		f.store.CachePreviews = cache
-		path, release, err := previews.Get(context.Background(), f.store, item, spec)
+	bothWays(t, func(t *testing.T, inProcess bool) {
+		vips, header, err := FindVips("")
 		if err != nil {
-			t.Fatalf("cache %v: %v", cache, err)
+			t.Skip("libvips not installed")
 		}
-		img := decodeJPEG(t, path)
-		release()
-		if b := img.Bounds(); b.Dx() != 100 || b.Dy() != 200 {
-			t.Fatalf("cache %v: size %v (not upright?)", cache, b)
+		ffmpeg, ffprobe, err := FindFFmpeg("")
+		if err != nil {
+			t.Skip("ffmpeg not installed")
 		}
-		top, bottom := img.At(50, 20), img.At(50, 180)
-		if !(isRed(top) && isBlue(bottom)) && !(isBlue(top) && isRed(bottom)) {
-			t.Fatalf("cache %v: halves not on top of each other: %v %v", cache, top, bottom)
+		video := rotatedVideo(t, ffmpeg)
+		f := newFixture(t)
+		req := photoRequest(video, "VID.mp4")
+		req.Kind, req.MimeType = KindVideo, "video/mp4"
+		duration := int64(2000)
+		req.DurationMs = &duration
+		f.start(req)
+		result, err := f.chunk(video, 0, int64(len(video)))
+		if err != nil || result.Item == nil {
+			t.Fatalf("upload: %v", err)
 		}
-		_, err = os.Stat(filepath.Join(f.store.previewDir(item.Sha256()), posterName))
-		if cache != (err == nil) {
-			t.Errorf("cache %v: poster.jpg kept = %v", cache, err == nil)
+		item := *result.Item
+		spec, err := ParsePreviewSpec(url.Values{"w": {"100"}, "h": {"200"}, "fit": {"contain"}, "fmt": {"jpeg"}})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+
+		// Without ffmpeg there is no poster.
+		if _, _, err := withLib(t, NewPreviews(vips, header), inProcess).Get(context.Background(), f.store, item, spec); err != ErrPostersUnavailable {
+			t.Fatalf("without ffmpeg: %v", err)
+		}
+
+		previews := withLib(t, NewPreviews(vips, header), inProcess).WithFFmpeg(ffmpeg, ffprobe)
+		for _, cache := range []bool{false, true} {
+			f.store.CachePreviews = cache
+			path, release, err := previews.Get(context.Background(), f.store, item, spec)
+			if err != nil {
+				t.Fatalf("cache %v: %v", cache, err)
+			}
+			img := decodeJPEG(t, path)
+			release()
+			if b := img.Bounds(); b.Dx() != 100 || b.Dy() != 200 {
+				t.Fatalf("cache %v: size %v (not upright?)", cache, b)
+			}
+			top, bottom := img.At(50, 20), img.At(50, 180)
+			if !(isRed(top) && isBlue(bottom)) && !(isBlue(top) && isRed(bottom)) {
+				t.Fatalf("cache %v: halves not on top of each other: %v %v", cache, top, bottom)
+			}
+			_, err = os.Stat(filepath.Join(f.store.previewDir(item.Sha256()), posterName))
+			if cache != (err == nil) {
+				t.Errorf("cache %v: poster.jpg kept = %v", cache, err == nil)
+			}
+		}
+	})
 }

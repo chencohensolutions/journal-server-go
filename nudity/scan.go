@@ -2,24 +2,14 @@ package nudity
 
 import (
 	"context"
-	"errors"
 	"image"
 	_ "image/jpeg"
-	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/reading"
 )
-
-// How often the users' stores are looked through for files not scanned yet (imports; uploads wake the scan).
-const rescanEvery = 30 * time.Second
-
-// Scanning many files logs its progress after each this many.
-const progressEvery = 1000
 
 // ToScan is store's files not scanned by this model yet (all of them with rescan), newest upload first: what was
 // just uploaded is hidden soonest. Files skip reports true for are left out.
@@ -84,106 +74,53 @@ func Scan(ctx context.Context, m *Model, store *media.Store, previews *media.Pre
 	}
 }
 
-// preview is the picture of item the model reads: the 640 px one search reads too (a video's poster frame).
+// Picture is what the model reads of a file, made from its original (a video's poster frame): the photo fitted in
+// 320×320, the model's own square (Model.Score pads it with black, as NudeNet does).
+var Picture = media.PreviewSpec{Width: side, Height: side, Fit: "contain"}
+
+// preview is the picture of item the model reads, decoded from the original.
 func preview(ctx context.Context, store *media.Store, previews *media.Previews, item media.Item) (image.Image, error) {
-	path, release, err := previews.Get(ctx, store, item, media.ModelPreview)
+	o, err := previews.Open(ctx, store, item, side)
 	if err != nil {
 		return nil, err
 	}
-	defer release()
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	img, _, err := image.Decode(f)
-	return img, err
+	defer o.Close()
+	return o.Picture(Picture)
 }
 
-// Service scans the users' new files as they come, in the server.
+// Service scans the users' new files as they come, in the server: an index of package reading, which reads each
+// file once for every index and calls Read.
 type Service struct {
-	model    *Model
-	library  *media.Library
-	previews *media.Previews
-	wake     chan struct{}
+	model *Model
 }
 
-// NewService scans the files of library's users with model.
-func NewService(model *Model, library *media.Library, previews *media.Previews) *Service {
-	return &Service{model: model, library: library, previews: previews, wake: make(chan struct{}, 1)}
+// NewService scans with model.
+func NewService(model *Model) *Service { return &Service{model: model} }
+
+func (s *Service) Name() string { return "nudity" }
+
+// Order: first, so that a new photo is hidden before it can be found.
+func (s *Service) Order() int { return 0 }
+
+func (s *Service) Wants() reading.Wants {
+	return reading.Wants{Kinds: []media.Kind{media.KindPhoto, media.KindVideo}, Pictures: []media.PreviewSpec{Picture}}
 }
 
-// Wake has Run look for new files now rather than at its next look: after an upload.
-func (s *Service) Wake() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
+// Needs reports whether item hasn't been scanned by this model.
+func (s *Service) Needs(user string, item media.Item) bool {
+	d := item.Sidecar.Detected
+	return d == nil || d.Nudity == nil || d.Nudity.Model != ModelName
 }
 
-// Run scans the files not scanned yet, newest upload first, and then looks for new ones after each upload (Wake)
-// and every rescanEvery (imports), until ctx ends. A file that can't be scanned is tried again after the server
-// restarts.
-func (s *Service) Run(ctx context.Context) {
-	failed := map[string]bool{}
-	for {
-		for _, user := range s.library.Users() {
-			s.scanNew(ctx, user, failed)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.wake:
-		case <-time.After(rescanEvery):
-		}
+// Read scores the file and writes the answer into its sidecar (Store.SetNudity, in a turn).
+func (s *Service) Read(ctx context.Context, user string, in reading.Input) error {
+	result, err := s.model.Score(in.Pictures[Picture])
+	if err != nil {
+		return err
 	}
+	return in.Store.SetNudity(in.Item.Sha256(), media.Detection{Score: result.Score, Model: ModelName})
 }
 
-func (s *Service) scanNew(ctx context.Context, user string, failed map[string]bool) {
-	store := s.library.Store(user)
-	todo := ToScan(store, false, func(item media.Item) bool { return failed[item.Sha256()] })
-	if len(todo) == 0 {
-		return
-	}
-	if len(todo) > 1 {
-		log.Printf("nudity: scanning %d files of %s with %s", len(todo), user, ModelName)
-	}
-	var scanned, unreadable, flagged int
-	started := time.Now()
-	failures := media.NewFailureLog(store, "nudity", "nudity", ModelName+".failed.log")
-	defer failures.Close()
-	if err := os.MkdirAll(filepath.Dir(failures.Path), 0o755); err != nil {
-		log.Printf("nudity: %v", err)
-	}
-	Scan(ctx, s.model, store, s.previews, todo, 2, func(item media.Item, result Result, err error) {
-		switch {
-		case err == nil:
-			scanned++
-			if result.Score >= media.DefaultNudityFrom {
-				flagged++
-			}
-		case ctx.Err() != nil:
-		default:
-			failed[item.Sha256()] = true
-			unreadable++
-			failures.Add(item, err)
-			// Without libvips or ffmpeg every file (or video) fails alike; the server said so at start.
-			if !errors.Is(err, media.ErrPreviewsUnavailable) && !errors.Is(err, media.ErrPostersUnavailable) {
-				log.Printf("nudity: %s: %v", item.Path, err)
-			}
-		}
-		if done := scanned + unreadable; done%progressEvery == 0 {
-			rate := float64(done) / time.Since(started).Seconds()
-			left := time.Duration(float64(len(todo)-done)/rate) * time.Second
-			log.Printf("nudity: %d of %d files of %s scanned (%.1f/s, about %s left)", done, len(todo), user, rate,
-				left.Round(time.Minute))
-		}
-	})
-	if len(todo) > 1 || unreadable > 0 {
-		log.Printf("nudity: scanned %d files of %s in %s, %d scored %.1f or more; %d could not be scanned", scanned, user,
-			time.Since(started).Round(time.Second), flagged, media.DefaultNudityFrom, unreadable)
-	}
-	if unreadable > 0 {
-		log.Printf("nudity: the files that could not be scanned are listed in %s", failures.Path)
-	}
-}
+func (s *Service) Finish(user string) {}
+
+func (s *Service) FailureLog() (folder, name string) { return "nudity", ModelName + ".failed.log" }

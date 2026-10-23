@@ -18,9 +18,15 @@ import (
 	"time"
 )
 
-// Previews makes previews with libvips and keeps them in each store's .cache/previews/.
+// Previews makes previews with libvips and keeps them in each store's .cache/previews/. libvips runs inside the
+// server when it can be loaded (LoadLibrary, vipslib.go), else, and for a file it failed on there, as the vips and
+// vipsheader programs.
 type Previews struct {
 	vips, vipsheader string
+	// libvips loaded into the server; nil when it runs only as programs.
+	lib *vipsLib
+	// sha256s of files the library failed on: they go to the programs from then on (until a restart).
+	libFailed sync.Map
 	// Take video posters (see poster.go); empty without ffmpeg.
 	ffmpeg, ffprobe string
 	// Running vips is heavy; this many at once.
@@ -53,6 +59,37 @@ func FindVips(configured string) (vips, vipsheader string, err error) {
 // NewPreviews uses the given programs; empty ones make every preview fail with ErrPreviewsUnavailable.
 func NewPreviews(vips, vipsheader string) *Previews {
 	return &Previews{vips: vips, vipsheader: vipsheader, slots: make(chan struct{}, max(1, runtime.NumCPU()/2))}
+}
+
+// LoadLibrary loads libvips into the server (vipslib.go): the library beside the vips program found, or configured
+// (config.json "libvips"), letting it use up to threads threads for each operation. It returns libvips's version.
+// Without it, previews are made by the programs as before.
+func (p *Previews) LoadLibrary(configured string, threads int) (version string, err error) {
+	if p.vips == "" && configured == "" {
+		return "", ErrPreviewsUnavailable
+	}
+	l, err := loadVipsLib(vipsLibraries(p.vips, configured), threads)
+	if err != nil {
+		return "", err
+	}
+	p.lib = l
+	return l.Version, nil
+}
+
+// inProcess reports whether the pictures of the file sha are made by libvips in the server: it is loaded, and
+// hasn't failed on that file.
+func (p *Previews) inProcess(sha string) bool {
+	if p.lib == nil {
+		return false
+	}
+	_, failed := p.libFailed.Load(sha)
+	return !failed
+}
+
+// libFailedOn notes that libvips in the server could not make sha's picture: the programs try from then on.
+func (p *Previews) libFailedOn(sha, path string, err error) {
+	p.libFailed.Store(sha, true)
+	log.Printf("media: libvips in the server: %s: %v; the vips program makes its pictures from now on", path, err)
 }
 
 // Available reports whether previews can be made (libvips was found).
@@ -144,6 +181,30 @@ func (p *Previews) make(ctx context.Context, store *Store, item Item, spec Previ
 		if err != nil {
 			return "", fmt.Errorf("reading %s as DNG: %w", item.Path, err)
 		}
+		// In the server: developed in memory and made into the preview from there. With CachePreviews the
+		// developed image is kept, as developed does, and the next preview is made from it instead.
+		kept := filepath.Join(store.previewDir(item.Sha256()), developedName)
+		_, keptErr := os.Stat(kept)
+		if d != nil && p.inProcess(item.Sha256()) && !(store.CachePreviews && keptErr == nil) {
+			out := filepath.Join(work, "out."+spec.Format)
+			err := p.lib.onThread(func() error {
+				img, err := p.developedImage(d, original)
+				if err != nil {
+					return err
+				}
+				defer img.Release()
+				if store.CachePreviews {
+					if err := p.keepDeveloped(img, kept); err != nil {
+						return err
+					}
+				}
+				return p.renderImage(img, out, spec)
+			})
+			if err == nil {
+				return out, nil
+			}
+			p.libFailedOn(item.Sha256(), item.Path, err)
+		}
 		if d != nil {
 			if source, err = p.developed(ctx, store, item, d, original, work); err != nil {
 				return "", err
@@ -154,8 +215,18 @@ func (p *Previews) make(ctx context.Context, store *Store, item Item, spec Previ
 	return p.render(ctx, sizeKey, source, work, spec)
 }
 
-// render makes the preview of source (sizeKey caches its upright size) in work, and returns its path.
+// render makes the preview of source (sizeKey, the sha256 and what source is of it, caches its upright size) in
+// work, and returns its path.
 func (p *Previews) render(ctx context.Context, sizeKey, source, work string, spec PreviewSpec) (string, error) {
+	sha, _, _ := strings.Cut(sizeKey, "/")
+	if p.inProcess(sha) {
+		out := filepath.Join(work, "out."+spec.Format)
+		err := p.lib.onThread(func() error { return p.renderFile(sizeKey, source, out, spec) })
+		if err == nil {
+			return out, nil
+		}
+		p.libFailedOn(sha, source, err)
+	}
 	width, height, err := p.uprightSize(ctx, sizeKey, source)
 	if err != nil {
 		return "", err
@@ -180,6 +251,86 @@ func (p *Previews) render(ctx context.Context, sizeKey, source, work string, spe
 		}
 	}
 	return out, nil
+}
+
+// renderFile makes the preview of the file source in out with libvips in the server, as render does with the
+// programs: scaled in one step (a JPEG is decoded already shrunk), then cut, then saved in spec's format.
+func (p *Previews) renderFile(sizeKey, source, out string, spec PreviewSpec) error {
+	width, height, ok := p.knownSize(sizeKey)
+	if !ok {
+		img, err := p.lib.load(source)
+		if err != nil {
+			return err
+		}
+		width, height = uprightOf(img)
+		img.Release()
+		p.sizes.Store(sizeKey, [2]int{width, height})
+	}
+	pl := planPreview(spec, width, height)
+	scaled, err := p.lib.thumbnailFile(source, pl.scaledW, pl.scaledH, vipsSizeForce)
+	if err != nil {
+		return err
+	}
+	defer scaled.Release()
+	return p.cutAndSave(scaled, pl, out, spec)
+}
+
+// keepDeveloped saves a developed DNG as path (a JPEG at Q=95 carrying its orientation, as developed keeps it),
+// written beside and renamed so a reader never sees half of it.
+func (p *Previews) keepDeveloped(img *vipsImage, path string) error {
+	unlock := p.locks.Lock(path)
+	defer unlock()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	partial := path + ".partial.jpg"
+	if err := p.lib.save(img, partial, "[Q=95]"); err != nil {
+		os.Remove(partial)
+		return err
+	}
+	return rename(partial, path)
+}
+
+// renderImage makes the preview of img (a developed DNG, in memory) in out, as renderFile does.
+func (p *Previews) renderImage(img *vipsImage, out string, spec PreviewSpec) error {
+	width, height := uprightOf(img)
+	pl := planPreview(spec, width, height)
+	scaled, err := p.lib.thumbnail(img, pl.scaledW, pl.scaledH, vipsSizeForce)
+	if err != nil {
+		return err
+	}
+	defer scaled.Release()
+	return p.cutAndSave(scaled, pl, out, spec)
+}
+
+// cutAndSave cuts pl's area out of scaled, when the plan has one, and saves it in out.
+func (p *Previews) cutAndSave(scaled *vipsImage, pl plan, out string, spec PreviewSpec) error {
+	if pl.needsCut() {
+		cut, err := p.lib.extractArea(scaled, pl.left, pl.top, pl.outW, pl.outH)
+		if err != nil {
+			return err
+		}
+		defer cut.Release()
+		scaled = cut
+	}
+	return p.lib.save(scaled, out, spec.saveOptions())
+}
+
+// uprightOf is img's size as shown, after its EXIF orientation.
+func uprightOf(img *vipsImage) (width, height int) {
+	width, height = img.size()
+	if img.orientation() >= 5 {
+		width, height = height, width
+	}
+	return width, height
+}
+
+func (p *Previews) knownSize(key string) (width, height int, ok bool) {
+	if size, ok := p.sizes.Load(key); ok {
+		s := size.([2]int)
+		return s[0], s[1], true
+	}
+	return 0, 0, false
 }
 
 // uprightSize is the original's size as shown, after its EXIF orientation (HEIC files are already

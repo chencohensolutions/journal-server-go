@@ -18,13 +18,16 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server.
 - [docs/faces.md](docs/faces.md): face search: YuNet and SFace on the same runtime, groups of alike faces, people
   the user names (`people.json`), `people`, `similarFaces`, `searchMedia(people:)`.
+- [docs/indexes.md](docs/indexes.md): the reader that feeds every index (nudity, faces, search) from one decode of
+  each original, and how to add an index.
 
 Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
 
 **Platforms.** The owner's server is a Windows PC (search runs there since Oct 22, 2026), development happens on a
 Mac, and the owner plans to distribute the server to the community on Windows, macOS and Linux (Oct 21, 2026). So: no cgo, Windows-safe file names (compared ignoring
-case), per-OS files for file locks and disk-free checks (`*_unix.go`, `*_windows.go`, `*_other.go`), and image/video
-tools run as separate programs. The one library loaded into the process is ONNX Runtime, through purego.
+case), per-OS files for file locks, disk-free checks and loading libraries (`*_unix.go`, `*_windows.go`,
+`*_other.go`), and ffmpeg runs as a separate program. Two libraries are loaded into the process through purego:
+ONNX Runtime, and libvips (since Oct 23, 2026; `"vips_as_program": true` keeps libvips out).
 
 ## Commands
 
@@ -99,9 +102,11 @@ the feed, and notes and stories can join later), `library.go` the per-user map, 
 sidecar format and the only code that rewrites one (`rewriteSidecar`; a rewrite clients must see sets a time that
 `Sidecar.ChangedAt` counts). `source.go` tells a file's source from its path and name. HTTP handlers for
 upload/original/preview/verify are in `http.go` and `verify.go`. Previews: `previewspec.go` parses and plans a
-request (`ModelPreview` is the 640 px picture the scan and search read instead of originals), `preview.go` runs
-libvips (NumCPU/2 at once), `poster.go` ffmpeg, `dng.go`/`develop.go` develop Samsung's JPEG XL DNGs that libvips
-can't. Previews are kept on disk only with the user's `preview_cache`; otherwise each is made, sent and deleted.
+request, `preview.go` makes previews with libvips (NumCPU/2 at once), inside the server through `vipslib*.go`
+(purego, fixed-argument calls only: an operation built by name and its properties; `vips.exe` as the fallback for
+what it fails on), `original.go` decodes an original once for the indexes and makes each model's exact picture
+from it, `poster.go` ffmpeg, `dng.go`/`develop.go` develop Samsung's JPEG XL DNGs that libvips can't (in memory when
+libvips is in the server). Previews are kept on disk only with the user's `preview_cache`; otherwise each is made, sent and deleted.
 That default is the owner's choice (Oct 22, 2026): the server has several users, each with their own data folder,
 and a user's phone keeps every preview it asks for and is usually the only device reading that folder, so a server
 cache would hold copies of what the phone already has. Don't propose turning it on.
@@ -111,19 +116,23 @@ cache would hold copies of what the phone already has. Don't propose turning it 
 `.cache/write.lock` only for the milliseconds it takes to place a file or rewrite a sidecar, and appends to
 `.cache/write-journal.tsv` so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside
-`Store.Turn` (the store's own write methods already do). The exceptions are `.cache/search/` and `.cache/faces/`,
-which only the server writes.
+`Store.Turn` (the store's own write methods already do). The exceptions are `.cache/search/`, `.cache/faces/` and
+the indexes' failure lists, which only the server writes.
 
-**External tools are separate programs, found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and
-`vips/bin` first), or at `vips` / `ffmpeg` in `config.json`. Without them the server still runs and the affected
-endpoints answer 503. No Python: the owner asked to avoid it (Oct 23, 2026). ONNX Runtime (package `onnx`, loaded once by `loadRuntime` in `library.go` and shared):
+**External tools are found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and `vips/bin` first), or
+at `vips` / `ffmpeg` in `config.json`; libvips's library is then loaded from beside `vips` (on Windows its folder is
+searched first for DLLs, so another libvips on the PATH is never mixed in). Without them the server still runs and
+the affected endpoints answer 503. No Python: the owner asked to avoid it (Oct 23, 2026). ONNX Runtime (package `onnx`, loaded once by `loadRuntime` in `library.go` and shared):
 `ort.go` calls its C function table through purego by fixed places counted in `onnxruntime_c_api.h`, so add a
 function by its place there; `onnx.FindRuntime` looks in `onnxruntime/`, then Homebrew. Text search (package
 `search`) keeps vectors in `.cache/search/<model>.vectors`; face search (package `faces`) keeps the faces of each
 file in `.cache/faces/<model>.faces`, and the people the user named in `people.json` (`media/people.go`); the nudity
 scan (package `nudity`, NudeNet's 320n detector, the same steps as NudeNet's Python) writes each score into the
-sidecar (`Store.SetNudity`), shared with `scripts/scan-nudity`. All three read new files in the background, newest
-upload first; without the runtime or a model, that one is off (search queries answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
+sidecar (`Store.SetNudity`), shared with `scripts/scan-nudity`. All three are `reading.Index`es of one
+`reading.Reader` (`newReader` in `library.go`): it decodes each original once, gives every index exactly the picture
+its model reads, in order (nudity, faces, search), prepares the next files while the models read this one, and
+keeps each index's failure list (docs/indexes.md). Without the runtime or a model, that index is off (search queries
+answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
 `Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
 `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).

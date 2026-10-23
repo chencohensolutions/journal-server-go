@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/onnx"
 )
 
@@ -70,15 +71,29 @@ type Face struct {
 
 // Faces finds the faces in img and reads each into a vector.
 func (m *Model) Faces(img image.Image) ([]Face, error) {
-	rgba := toRGBA(img)
-	found, err := m.detect(rgba)
+	return m.FacesFrom(nil, toRGBA(img), nil)
+}
+
+// Region cuts a part of the photo's original (fractions of the upright photo) at width×height: reading.Source's.
+type Region func(box media.Rect, width, height int) (*image.RGBA, error)
+
+// FacesFrom finds the faces in a photo and reads each into a vector. small and large are the photo fitted in 640 and
+// in 1280 px (small nil: made from large), each made from the original. Each face found is then cut from the
+// original itself by region (nil: from large), at the scale SFace's template wants, so a small face in the
+// background is read from the original's own pixels.
+func (m *Model) FacesFrom(small, large *image.RGBA, region Region) ([]Face, error) {
+	found, err := m.detect(small, large)
 	if err != nil {
 		return nil, err
 	}
-	w, h := float32(rgba.Bounds().Dx()), float32(rgba.Bounds().Dy())
+	w, h := float32(large.Bounds().Dx()), float32(large.Bounds().Dy())
 	faces := make([]Face, 0, len(found))
 	for _, d := range found {
-		vector, err := m.vector(align(rgba, d.landmarks))
+		pixels, ok := alignFromOriginal(region, d, large.Bounds().Dx(), large.Bounds().Dy())
+		if !ok {
+			pixels = align(large, d.landmarks)
+		}
+		vector, err := m.vector(pixels)
 		if err != nil {
 			return nil, err
 		}

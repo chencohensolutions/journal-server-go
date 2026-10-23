@@ -49,7 +49,7 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { env.search.Run(ctx); close(done) }()
+	go func() { env.reader.Run(ctx); close(done) }()
 	t.Cleanup(func() { stop(); <-done })
 	for deadline := time.Now().Add(time.Minute); indexed(env) < 2; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(deadline) {

@@ -25,6 +25,7 @@ import (
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
+	"github.com/journal/server-go/reading"
 	"github.com/journal/server-go/search"
 )
 
@@ -36,6 +37,7 @@ type testEnv struct {
 	config     auth.AppConfig
 	search     *search.Service
 	faces      *faces.Service
+	reader     *reading.Reader
 }
 
 // fakeFaceModel as config.FaceModel gives a test env face search without the models: the test writes the faces
@@ -99,10 +101,10 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		t.Fatal(err)
 	}
 	previews := newPreviews(config)
-	// Text search is off unless a test names a model folder: loading one takes seconds. The test runs its Run.
+	// Text search is off unless a test names a model folder: loading one takes seconds. The test runs the reader.
 	var searcher *search.Service
 	if config.SearchModel != auth.DefaultSearchModel {
-		if searcher = newSearch(config, library, previews); searcher == nil {
+		if searcher = newSearch(config, library); searcher == nil {
 			t.Fatalf("no text search with %s", config.SearchModel)
 		}
 		t.Cleanup(searcher.Close)
@@ -112,23 +114,28 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	switch config.FaceModel {
 	case auth.DefaultFaceModel:
 	case fakeFaceModel:
-		if facer, err = faces.NewService(&faces.Model{Name: fakeFaceModel}, library, previews); err != nil {
+		if facer, err = faces.NewService(&faces.Model{Name: fakeFaceModel}, library); err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(facer.Close)
 	default:
-		if facer = newFaces(config, library, previews); facer == nil {
+		if facer = newFaces(config, library); facer == nil {
 			t.Fatalf("no face search with %s", config.FaceModel)
 		}
 		t.Cleanup(facer.Close)
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher, facer, nil))
+	// The reader of the indexes on, which a test runs itself (never with fakeFaceModel: no models to read with).
+	var reader *reading.Reader
+	if config.FaceModel != fakeFaceModel {
+		reader = newReader(config, library, previews, nil, facer, searcher)
+	}
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher, facer, nil, reader))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
-		config: config, search: searcher, faces: facer}
+		config: config, search: searcher, faces: facer, reader: reader}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {

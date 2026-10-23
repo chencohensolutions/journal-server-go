@@ -23,24 +23,24 @@ same person.
 
 ## How it works
 
-- **Reading files.** In the background the server reads every photo and video it hasn't read yet, newest upload
-  first. An upload is read as soon as it finishes, and an import within 30 seconds.
-  - Each file is read from a 1280 px JPEG preview, `media.FacePreview`, bigger than search's 640 px so that faces at
-    the back of a group are still clear. A video is read from its poster frame.
-  - YuNet takes 640×640 only. So the whole picture is searched shrunk to 640, for the big faces. It is then searched
-    again in overlapping 640 px tiles at full size (up to 3 × 3), for the small ones.
+- **Reading files.** The server's reader ([indexes.md](indexes.md)) reads every photo and video faces hasn't read
+  yet, newest upload first, decoding each original once for the nudity scan, faces and search together. An upload is
+  read as soon as it finishes, and an import within 30 seconds.
+  - Faces gets two pictures, each made from the original: the photo fitted in **640** (YuNet's size) and in **1280**
+    (`media.FacePreview`, big enough for faces at the back of a group). A video is read from its poster frame.
+  - YuNet takes 640×640 only. So the whole photo is searched in the 640 picture, for the big faces. It is then
+    searched again in overlapping 640 px tiles of the 1280 one (up to 3 × 3), for the small ones.
   - A face cut by a tile's inner edge is left to the tile beside it or to the whole picture. Boxes that overlap by
     more than 0.3 are one face, and the surest is kept.
   - Faces the detector is less than 0.6 sure of are dropped, and so are faces narrower than 16 px.
-  - Each face is turned and scaled so its five points sit on SFace's template (`faces/align.go`, plain Go), then read
-    into a vector of length 1.
+  - Each face is cut **from the original itself** (`Original.Region`): a square 2.5 times the face, at the scale
+    where its eyes are as far apart as SFace's template wants, so a small face in the background keeps the
+    original's detail instead of the 1280 picture's. It is then turned onto the template (`faces/align.go`, plain
+    Go) and read into a vector of length 1.
   - It takes about 0.15 s for a photo of a few people on the owner's PC with 4 threads, plus the preview. A crowd of
     a hundred faces takes 1.3 s, because each face is read on its own (Oct 23, 2026). A file that can't be read is
-    logged and tried again after a restart. It is also listed in `.cache/faces/<model>.failed.log`, one tab-separated
-    line each: when (UTC), sha256, path in the data folder, and why. Every failure is listed, including those not
-    logged one by one: without libvips or ffmpeg every file or video fails alike, and the console only says so once at
-    start. The list is appended to on each run, so a file that keeps failing appears once per restart. It can be
-    deleted. Text search keeps the same list (`media.FailureLog`).
+    logged, tried again after a restart, and listed in `.cache/faces/<model>.failed.log` (see
+    [indexes.md](indexes.md)).
 - **Groups.** Faces no one is named for are put together, in the order taken, so that a day's photos of someone
   meet (`faces/people.go`).
   - A face joins the first group whose mean it is at least 0.45 like; otherwise it starts a group.

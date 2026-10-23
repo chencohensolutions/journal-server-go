@@ -11,6 +11,7 @@ import (
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/nudity"
 	"github.com/journal/server-go/onnx"
+	"github.com/journal/server-go/reading"
 	"github.com/journal/server-go/search"
 )
 
@@ -37,15 +38,26 @@ func openLibrary(config auth.AppConfig) (*media.Library, error) {
 }
 
 // newPreviews finds libvips and ffmpeg; without them the server runs, but previews (or video posters)
-// answer 503.
+// answer 503. libvips is loaded into the server (unless "vips_as_program"), with the vips programs kept for what
+// it fails on.
 func newPreviews(config auth.AppConfig) *media.Previews {
 	vips, vipsheader, err := media.FindVips(config.Vips)
 	if err != nil {
 		log.Printf("Previews are off: %v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
-	} else {
-		log.Printf("Previews made with %s", vips)
 	}
 	previews := media.NewPreviews(vips, vipsheader)
+	switch {
+	case err != nil:
+	case config.VipsAsProgram:
+		log.Printf("Previews made with %s (\"vips_as_program\")", vips)
+	default:
+		if version, err := previews.LoadLibrary(config.LibVips, config.SearchThreads); err != nil {
+			log.Printf("Previews made with %s: libvips can't be loaded into the server: %v", vips, err)
+		} else {
+			log.Printf("Previews made with libvips %s inside the server (%d threads), and %s for what it can't make", version,
+				config.SearchThreads, vips)
+		}
+	}
 	ffmpeg, ffprobe, err := media.FindFFmpeg(config.FFmpeg)
 	if err != nil {
 		log.Printf("Video posters are off: %v (brew install ffmpeg; on Windows winget install Gyan.FFmpeg; or set \"ffmpeg\" in config.json)", err)
@@ -74,8 +86,8 @@ func loadRuntime(config auth.AppConfig) (*onnx.Runtime, error) {
 }
 
 // newSearch loads ONNX Runtime and the search model and opens each user's vectors; nil (search off) when either
-// is missing. Its Run reads the files that have no vector yet.
-func newSearch(config auth.AppConfig, library *media.Library, previews *media.Previews) *search.Service {
+// is missing. The reader (newReader) reads the files that have no vector yet.
+func newSearch(config auth.AppConfig, library *media.Library) *search.Service {
 	if _, err := os.Stat(config.SearchModel); err != nil {
 		log.Printf("Text search is off: no model in %s (go run ./scripts/bundle-onnx, or set \"search_model\" in config.json)", config.SearchModel)
 		return nil
@@ -91,7 +103,7 @@ func newSearch(config auth.AppConfig, library *media.Library, previews *media.Pr
 		log.Printf("Text search is off: %s: %v", config.SearchModel, err)
 		return nil
 	}
-	service, err := search.NewService(model, library, previews)
+	service, err := search.NewService(model, library)
 	if err != nil {
 		log.Printf("Text search is off: %v", err)
 		return nil
@@ -102,8 +114,8 @@ func newSearch(config auth.AppConfig, library *media.Library, previews *media.Pr
 }
 
 // newFaces loads ONNX Runtime and the face models and opens each user's faces and people; nil (face search off)
-// when either is missing. Its Run reads the files not read yet.
-func newFaces(config auth.AppConfig, library *media.Library, previews *media.Previews) *faces.Service {
+// when either is missing. The reader (newReader) reads the files not read yet.
+func newFaces(config auth.AppConfig, library *media.Library) *faces.Service {
 	if _, err := os.Stat(config.FaceModel); err != nil {
 		log.Printf("Face search is off: no models in %s (go run ./scripts/bundle-onnx, or set \"face_model\" in config.json)", config.FaceModel)
 		return nil
@@ -118,7 +130,7 @@ func newFaces(config auth.AppConfig, library *media.Library, previews *media.Pre
 		log.Printf("Face search is off: %s: %v", config.FaceModel, err)
 		return nil
 	}
-	service, err := faces.NewService(model, library, previews)
+	service, err := faces.NewService(model, library)
 	if err != nil {
 		log.Printf("Face search is off: %v", err)
 		return nil
@@ -127,9 +139,9 @@ func newFaces(config auth.AppConfig, library *media.Library, previews *media.Pre
 	return service
 }
 
-// newNudity loads ONNX Runtime and NudeNet's detector; nil (no nudity scan) when either is missing. Its Run scans
-// the files not scanned yet.
-func newNudity(config auth.AppConfig, library *media.Library, previews *media.Previews) *nudity.Service {
+// newNudity loads ONNX Runtime and NudeNet's detector; nil (no nudity scan) when either is missing. The reader
+// (newReader) scans the files not scanned yet.
+func newNudity(config auth.AppConfig) *nudity.Service {
 	if _, err := os.Stat(config.NudityModel); err != nil {
 		log.Printf("The nudity scan is off: no model at %s (go run ./scripts/bundle-onnx, or set \"nudity_model\" in config.json)", config.NudityModel)
 		return nil
@@ -145,7 +157,28 @@ func newNudity(config auth.AppConfig, library *media.Library, previews *media.Pr
 		return nil
 	}
 	log.Printf("Nudity scan with %s on ONNX Runtime %s (%d threads)", nudity.ModelName, rt.Version, config.SearchThreads)
-	return nudity.NewService(model, library, previews)
+	return nudity.NewService(model)
+}
+
+// newReader reads the users' files for the indexes that are on (nil ones are off): each file decoded once and given
+// to all of them. nil when none is on.
+func newReader(config auth.AppConfig, library *media.Library, previews *media.Previews, scanner *nudity.Service,
+	facer *faces.Service, searcher *search.Service) *reading.Reader {
+	r := reading.New(library, reading.Previews{Previews: previews}, config.ReaderPrepare)
+	if scanner != nil {
+		r.Add(scanner)
+	}
+	if facer != nil {
+		r.Add(facer.Index())
+	}
+	if searcher != nil {
+		r.Add(searcher)
+	}
+	if len(r.Names()) == 0 {
+		return nil
+	}
+	log.Printf("Reading new files for %v, %d ahead", r.Names(), config.ReaderPrepare)
+	return r
 }
 
 // maintainLibrary deletes expired uploads, trims the preview caches and refreshes the index caches, once an hour.

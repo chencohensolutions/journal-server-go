@@ -12,12 +12,9 @@ import (
 // MaxPreviewSide is the largest width or height a preview may be asked for.
 const MaxPreviewSide = 4096
 
-// ModelPreview is the picture models read instead of an original (scripts/scan-nudity, search): small, and the
-// same for each of them, so one kept preview serves them all.
-var ModelPreview = PreviewSpec{Width: 640, Height: 640, Fit: "contain", Format: "jpeg", Quality: "high"}
-
-// FacePreview is the picture face search reads (package faces): bigger than ModelPreview, so that faces in the
-// background of a group photo are still big enough to tell apart.
+// FacePreview is the largest picture face search reads (package faces): 1280 px, so that faces at the back of a
+// group are big enough to find. The indexes' pictures are made from the original at exactly their size
+// (Original.Picture); this one also gives faces' boxes their scale.
 var FacePreview = PreviewSpec{Width: 1280, Height: 1280, Fit: "contain", Format: "jpeg", Quality: "high"}
 
 // PreviewSpec is the exact picture a client will draw: Width×Height physical pixels.

@@ -1,6 +1,11 @@
 package faces
 
-import "image"
+import (
+	"image"
+	"math"
+
+	"github.com/journal/server-go/media"
+)
 
 // SFace reads a face 112×112, turned and scaled so that its five points sit where ArcFace's training put them (the
 // template OpenCV's FaceRecognizerSF.alignCrop uses).
@@ -92,4 +97,41 @@ func floor(v float32) float32 {
 		i--
 	}
 	return i
+}
+
+// The template's distance between the eyes, in its pixels.
+var templateEyes = float32(math.Hypot(float64(template[2]-template[0]), float64(template[3]-template[1])))
+
+// alignFromOriginal is the face d (found in a w×h picture of the photo) aligned for SFace from a part of the original
+// cut by region: around the face with a margin, at the scale where its eyes are as far apart as the template's, so
+// the alignment only turns it. false when there is no region, or it can't be cut.
+func alignFromOriginal(region Region, d detection, w, h int) ([]float32, bool) {
+	eyes := float32(math.Hypot(float64(d.landmarks[2]-d.landmarks[0]), float64(d.landmarks[3]-d.landmarks[1])))
+	if region == nil || eyes < 1 {
+		return nil, false
+	}
+	// A square 2.5 times the face, kept inside the picture.
+	side := 2.5 * max(d.box[2], d.box[3])
+	cx, cy := d.box[0]+d.box[2]/2, d.box[1]+d.box[3]/2
+	left, top := max(0, cx-side/2), max(0, cy-side/2)
+	right, bottom := min(float32(w), cx+side/2), min(float32(h), cy+side/2)
+	if right-left < 1 || bottom-top < 1 {
+		return nil, false
+	}
+	scale := templateEyes / eyes // the region's pixels per pixel of the picture
+	outW := min(1024, max(1, int(math.Round(float64((right-left)*scale)))))
+	outH := min(1024, max(1, int(math.Round(float64((bottom-top)*scale)))))
+	crop, err := region(media.Rect{X: float64(left) / float64(w), Y: float64(top) / float64(h),
+		W: float64(right-left) / float64(w), H: float64(bottom-top) / float64(h)}, outW, outH)
+	if err != nil {
+		return nil, false
+	}
+	// The five points in the crop's pixels.
+	sx, sy := float32(outW)/(right-left), float32(outH)/(bottom-top)
+	var points [10]float32
+	for i := range 5 {
+		points[2*i] = (d.landmarks[2*i] - left) * sx
+		points[2*i+1] = (d.landmarks[2*i+1] - top) * sy
+	}
+	return align(crop, points), true
 }

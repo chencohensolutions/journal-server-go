@@ -4,8 +4,9 @@
 // hides what scores at the user's choice or more (Hidden collections), and devices learn of it on their next sync.
 //
 // The server scans new files by itself; this is for scanning a data folder while the server isn't running, or all
-// of it again (--rescan) after the model changed. Each file is read from a 640 px JPEG preview of it (a video's
-// poster frame), made with libvips (and ffmpeg), never from the original (media.ModelPreview). Files already
+// of it again (--rescan) after the model changed. Each file is read as the model's own 320 px picture, made from the
+// original (a video's poster frame) with libvips in the scan, or the vips program when it can't be loaded (and
+// ffmpeg). Files already
 // scanned by the same model are skipped, so running again continues where it stopped (Ctrl+C finishes the files in
 // hand).
 //
@@ -56,6 +57,13 @@ func main() {
 		log.Fatalf("%v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
 	}
 	previews := media.NewPreviews(vips, vipsheader)
+	if !config.VipsAsProgram {
+		if version, err := previews.LoadLibrary(config.LibVips, config.SearchThreads); err != nil {
+			log.Printf("libvips can't be loaded into the scan (%v): the vips program makes the pictures", err)
+		} else {
+			log.Printf("Pictures made with libvips %s inside the scan", version)
+		}
+	}
 	withVideos := true
 	if ffmpeg, ffprobe, err := media.FindFFmpeg(config.FFmpeg); err == nil {
 		previews = previews.WithFFmpeg(ffmpeg, ffprobe)

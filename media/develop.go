@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"unsafe"
 )
 
 // Developing a DNG whose raw data is demosaiced and compressed with JPEG XL (Samsung's Expert RAW and
@@ -120,12 +121,33 @@ func developPPM(in, out string, d *linearDNG) error {
 	if err != nil {
 		return err
 	}
+	developed, err := develop(width, height, pixels, d)
+	if err != nil {
+		return err
+	}
+	file, err := os.Create(out)
+	if err != nil {
+		return err
+	}
+	bw := bufio.NewWriter(file)
+	fmt.Fprintf(bw, "P6\n%d %d\n255\n", d.cropW, d.cropH)
+	bw.Write(developed)
+	if err := bw.Flush(); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+// develop is the decoded raw data (width×height, 16-bit RGB) developed: 8-bit sRGB, cut to the DNG's default crop
+// (cropW×cropH).
+func develop(width, height int, pixels []uint16, d *linearDNG) ([]byte, error) {
 	if width < d.cropX+d.cropW || height < d.cropY+d.cropH {
-		return fmt.Errorf("decoded raw data is %dx%d, the DNG says %dx%d", width, height, d.width, d.height)
+		return nil, fmt.Errorf("decoded raw data is %dx%d, the DNG says %dx%d", width, height, d.width, d.height)
 	}
 	transform, err := d.cameraToSRGB()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	exposure := math.Exp2(d.baselineExposure)
 	var scale, black [3]float64
@@ -169,19 +191,67 @@ func developPPM(in, out string, d *linearDNG) error {
 		})
 	}
 	wg.Wait()
+	return developed, nil
+}
 
-	file, err := os.Create(out)
+// developedImage is a linear DNG developed by libvips in the server, in memory, with the DNG's orientation (which
+// thumbnail turns it by): each JPEG XL piece decoded from the file's bytes, the tiles joined and cut to the raw
+// size, then developed as developPPM does. No temporary files, no programs. Runs on a libvips thread.
+func (p *Previews) developedImage(d *linearDNG, original string) (*vipsImage, error) {
+	f, err := os.Open(original)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	bw := bufio.NewWriter(file)
-	fmt.Fprintf(bw, "P6\n%d %d\n255\n", w, h)
-	bw.Write(developed)
-	if err := bw.Flush(); err != nil {
-		file.Close()
-		return err
+	var tiles []*vipsImage
+	defer func() {
+		for _, t := range tiles {
+			t.Release()
+		}
+	}()
+	for _, piece := range d.pieces {
+		data := make([]byte, piece.length)
+		if _, err := f.ReadAt(data, piece.offset); err != nil {
+			f.Close()
+			return nil, fmt.Errorf("reading the raw data: %w", err)
+		}
+		tile, err := p.lib.loadJXL(data)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("decoding the JPEG XL raw data: %w", err)
+		}
+		tiles = append(tiles, tile)
 	}
-	return file.Close()
+	f.Close()
+	if len(tiles) == 0 {
+		return nil, errors.New("the DNG has no raw data")
+	}
+	raw := tiles[0]
+	if len(tiles) > 1 {
+		joined, err := p.lib.arrayJoin(tiles, (d.width+d.tileWidth-1)/d.tileWidth)
+		if err != nil {
+			return nil, err
+		}
+		defer joined.Release()
+		if raw, err = p.lib.extractArea(joined, 0, 0, d.width, d.height); err != nil {
+			return nil, err
+		}
+		defer raw.Release()
+	}
+	width, height, pixels, err := p.lib.rgb16(raw)
+	if err != nil {
+		return nil, err
+	}
+	developed, err := develop(width, height, pixels, d)
+	if err != nil {
+		return nil, err
+	}
+	img, err := p.lib.fromMemory(unsafe.Pointer(&developed[0]), uintptr(len(developed)), d.cropW, d.cropH, 3, vipsFormatUchar)
+	runtime.KeepAlive(developed)
+	if err != nil {
+		return nil, err
+	}
+	p.lib.setOrientation(img, d.orientation)
+	return img, nil
 }
 
 // readPPM16 reads a binary PPM with 16-bit samples, as libvips writes it (comments allowed).

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/reading"
 )
 
 // importPhotos puts n JPEGs (gradients, so that libvips can read them) into a new library's data folder of hen.
@@ -53,14 +54,14 @@ func importPhotos(t *testing.T, n int) (*media.Library, []string) {
 	return library, shas
 }
 
-// Every file that can't be scanned is listed in .cache/nudity/<model>.failed.log, also when the reason (no libvips)
-// is not logged file by file, and it is tried again only after a restart.
+// Every file that can't be scanned is listed in .cache/nudity/<model>.failed.log (by the reader), also when the
+// reason (no libvips) is not logged file by file, and it is tried again only after a restart.
 func TestFilesThatCantBeScannedAreListed(t *testing.T) {
 	library, shas := importPhotos(t, 2)
-	s := NewService(&Model{}, library, media.NewPreviews("", ""))
-	failed := map[string]bool{}
-	s.scanNew(context.Background(), "hen", failed)
-	s.scanNew(context.Background(), "hen", failed)
+	r := reading.New(library, reading.Previews{Previews: media.NewPreviews("", "")}, 2)
+	r.Add(NewService(&Model{}))
+	r.ReadNew(context.Background(), "hen")
+	r.ReadNew(context.Background(), "hen")
 
 	store := library.Store("hen")
 	data, err := os.ReadFile(filepath.Join(store.Root(), ".cache", "nudity", ModelName+".failed.log"))
@@ -90,8 +91,9 @@ func TestScanWritesTheScore(t *testing.T) {
 		t.Skip("no libvips")
 	}
 	library, shas := importPhotos(t, 3)
-	s := NewService(m, library, media.NewPreviews(vips, vipsheader))
-	s.scanNew(context.Background(), "hen", map[string]bool{})
+	r := reading.New(library, reading.Previews{Previews: media.NewPreviews(vips, vipsheader)}, 2)
+	r.Add(NewService(m))
+	r.ReadNew(context.Background(), "hen")
 
 	store := library.Store("hen")
 	for _, sha := range shas {

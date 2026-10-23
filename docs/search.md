@@ -10,13 +10,14 @@ SigLIP 2 has two halves trained together. The **vision half** turns a picture in
 base model), and the **text half** turns a description into a vector in the same space. The better a description
 fits a picture, the closer their vectors point; the closeness is their cosine similarity.
 
-- **Reading files.** In the background, the server reads every photo and video that has no vector yet, newest upload
-  first: it makes the 640 px JPEG preview, `media.ModelPreview` (with libvips; a video's poster frame with ffmpeg; the same preview
-  `scripts/scan-nudity` reads), squeezes it to 256×256 and runs the vision half. An upload is read as soon as it
-  finishes, an import within 30 seconds. A file that can't be read is logged and tried again after the server restarts.
-  It is also listed in `.cache/search/<model>.failed.log`, one tab-separated line each: when (UTC), sha256, path in
-  the data folder, and why. Every failure is listed, including those the console doesn't show one by one (no libvips
-  or ffmpeg). The list is appended to on each run (`media.FailureLog`, shared with faces) and can be deleted.
+- **Reading files.** The server's reader ([indexes.md](indexes.md)) reads every photo and video that has no vector
+  yet, newest upload first, decoding each original once for the nudity scan, faces and search together. Search gets
+  the original squeezed straight to the model's square (256×256, read from `preprocessor_config.json`), as SigLIP was
+  trained, and runs the vision half. A video is read from its poster frame. An upload is read as soon as it
+  finishes, an import within 30 seconds. A file that can't be read is logged, tried again after the server restarts,
+  and listed in `.cache/search/<model>.failed.log`.
+  Vectors read before Oct 23, 2026 came from a 640 px preview squeezed in Go; they are kept, since the difference is
+  small, and only new files get the new input.
 - **Searching.** `searchMedia(text, limit)` lowercases the text, turns it into 64 tokens and runs the text half
   (about 50 ms), then compares it with every vector in memory (a few milliseconds for tens of thousands of files)
   and returns the closest, best first. With `years` and `area` (a box of latitudes and longitudes: the server has no

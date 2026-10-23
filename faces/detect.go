@@ -38,20 +38,23 @@ type detection struct {
 	landmarks [10]float32
 }
 
-// detect finds the faces in img. YuNet takes 640×640 only, so the whole picture is searched shrunk to 640 (for the
-// big faces), and then, when it is bigger, in overlapping 640 px tiles at its own size (for the small ones in the
-// background). A face cut by a tile's inner edge is left to the tile beside it or to the whole picture.
-func (m *Model) detect(img *image.RGBA) ([]detection, error) {
+// detect finds the faces in img, in its pixels. YuNet takes 640×640 only, so the whole picture is searched at 640
+// (small: img fitted in 640, made from the original by the reader; nil: shrunk here) for the big faces, and then,
+// when img is bigger, in overlapping 640 px tiles at img's own size for the small ones in the background. A face cut
+// by a tile's inner edge is left to the tile beside it or to the whole picture.
+func (m *Model) detect(small, img *image.RGBA) ([]detection, error) {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	side := max(w, h)
 	var all []detection
 
-	scale := min(1, float32(detectorSide)/float32(side))
-	small := img
-	if scale < 1 {
-		small = image.NewRGBA(image.Rect(0, 0, max(1, int(float32(w)*scale)), max(1, int(float32(h)*scale))))
-		xdraw.ApproxBiLinear.Scale(small, small.Bounds(), img, img.Bounds(), xdraw.Src, nil)
+	if small == nil {
+		small = img
+		if s := min(1, float32(detectorSide)/float32(side)); s < 1 {
+			small = image.NewRGBA(image.Rect(0, 0, max(1, int(float32(w)*s)), max(1, int(float32(h)*s))))
+			xdraw.ApproxBiLinear.Scale(small, small.Bounds(), img, img.Bounds(), xdraw.Src, nil)
+		}
 	}
+	scale := float32(small.Bounds().Dx()) / float32(w)
 	whole, err := m.runDetector(small, small.Bounds())
 	if err != nil {
 		return nil, err

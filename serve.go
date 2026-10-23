@@ -24,6 +24,7 @@ import (
 	"github.com/journal/server-go/graph/resolver"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/nudity"
+	"github.com/journal/server-go/reading"
 	"github.com/journal/server-go/search"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -55,22 +56,17 @@ func serve(config auth.AppConfig) {
 	go maintainLibrary(config, library)
 	go serveAdmin(config, enrollment)
 	previews := newPreviews(config)
-	searcher := newSearch(config, library, previews)
-	if searcher != nil {
-		go searcher.Run(context.Background())
-	}
-	facer := newFaces(config, library, previews)
-	if facer != nil {
-		go facer.Run(context.Background())
-	}
-	scanner := newNudity(config, library, previews)
-	if scanner != nil {
-		go scanner.Run(context.Background())
+	searcher := newSearch(config, library)
+	facer := newFaces(config, library)
+	scanner := newNudity(config)
+	reader := newReader(config, library, previews, scanner, facer, searcher)
+	if reader != nil {
+		go reader.Run(context.Background())
 	}
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
-		Handler:   newMux(config, enrollment, library, previews, searcher, facer, scanner),
+		Handler:   newMux(config, enrollment, library, previews, searcher, facer, scanner, reader),
 		TLSConfig: tlsConfig,
 		HTTP2:     &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow},
 		// No overall read or write timeout: uploads and video streams take as long as they take.
@@ -171,7 +167,7 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
 // anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
-func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, searcher *search.Service, facer *faces.Service, scanner *nudity.Service) *http.ServeMux {
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, searcher *search.Service, facer *faces.Service, scanner *nudity.Service, reader *reading.Reader) *http.ServeMux {
 	registry := enrollment.Registry
 	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
 	userStore := func(r *http.Request) *media.Store {
@@ -185,16 +181,10 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
 		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, searcher, facer, scanner)))))
-	// Search, faces and the nudity scan read a finished upload right away.
+	// The nudity scan, faces and search read a finished upload right away.
 	var wake []func()
-	if searcher != nil {
-		wake = append(wake, searcher.Wake)
-	}
-	if facer != nil {
-		wake = append(wake, facer.Wake)
-	}
-	if scanner != nil {
-		wake = append(wake, scanner.Wake)
+	if reader != nil {
+		wake = append(wake, reader.Wake)
 	}
 	upload := withUser(then(media.UploadHandler(userStore), wake...))
 	mux.Handle("PUT /upload/{sha256}", upload)

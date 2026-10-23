@@ -41,7 +41,7 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   .cache/previews/<sha[:2]>/<sha256>/1080x1440-cover.webp   ← previews made so far
   .cache/search/<model>.vectors             ← text search's vectors (search.md)
   .cache/faces/<model>.faces                ← the faces found in each file (faces.md)
-  .cache/{search,faces}/<model>.failed.log  ← files those readers could not read, one line each
+  .cache/{nudity,faces,search}/<model>.failed.log  ← files those indexes could not read, one line each
 ```
 
 - The month folder is from `takenAt` in the photo's own local time (the offset the device sent).
@@ -163,17 +163,32 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
 | `fmt` | `webp` (default), `jpeg`, `heif` (HEVC, 4:2:0 so phones decode it), `avif` (AV1, 4:2:0) or `jxl` (JPEG XL). |
 | `q` | `low`, `medium`, `high` (default) or `max`: libvips Q 50, 70, 85, 95. |
 
-- Made with libvips in one scaling step from the original (`vips thumbnail`, then `extract_area` when
+- Made with libvips in one scaling step from the original (`thumbnail`, then `extract_area` when
   something is cut off). EXIF orientation is applied, and the colour profile (Display P3) is kept;
   other metadata is dropped. Quality 90.
+- **libvips runs inside the server** (`media/vipslib*.go`, since Oct 23, 2026). It is loaded once at start, the
+  same library `vips.exe` runs (`libvips-42.dll` in `vips/bin`, Homebrew's `libvips.42.dylib`, or Linux's
+  `libvips.so.42`), and called through purego like ONNX Runtime, with no cgo.
+  - **Why:** starting `vips.exe` and `vipsheader.exe` cost about 350 ms each on Windows before any work. On 20 of
+    the owner's photos, a grid preview went from 365 to 219 ms (JPEG) and 827 to 673 ms (HEIC).
+  - **Only fixed-argument calls are used:** an operation is made by name, its properties set one by one, then
+    built, because variadic C calls break on Apple Silicon.
+  - **On Windows the server searches `vips/bin` for DLLs first**, so libvips's HEIF and JPEG XL modules (loaded
+    later) never pick up another libvips on the PATH, such as the official build, whose libheif has no HEVC.
+  - **The programs stay as the fallback:** when the library can't be loaded, and for a file it failed on (until a
+    restart).
+  - **The risk:** a crash in libvips now takes the server down. `"vips_as_program": true` in config.json keeps
+    libvips out of the server, and `"libvips"` names the library's path.
 - **DNG (RAW)** previews show the raw data, never the JPEG a DNG carries. Most DNGs are read by libvips
   (LibRaw). Samsung's Expert RAW and Pro mode DNGs (DNG 1.7: demosaiced "linear" data compressed with JPEG XL,
   which LibRaw can't unpack) are developed by the server (`media/develop.go`): libvips decodes the JPEG XL, then
   the DNG's own colour processing is applied (black and white levels, white balance and its ColorMatrix /
   ForwardMatrix to sRGB, BaselineExposure, the ProfileGainTableMap that lifts the shadows, a soft roll-off of
-  highlights, its default crop and orientation). The result is kept full size as `developed.jpg` beside the
-  photo's previews when the user's `preview_cache` is on (about 2.5 s for a 24 MP photo, so with the cache off
-  every preview of such a DNG takes that long).
+  highlights, its default crop and orientation). Inside the server this happens in memory: each JPEG XL tile is
+  decoded from the DNG's own bytes, the tiles are joined, and the developed pixels go straight into the preview,
+  with no temporary files. The result is kept full size as `developed.jpg` beside the photo's previews when the
+  user's `preview_cache` is on (about 2.5 s for a 24 MP photo, so with the cache off every preview of such a DNG
+  takes that long).
   libvips needs JPEG XL support for this: Homebrew's has it, and so does the Windows bundle.
 - **Never scaled up.** When the box is bigger than the photo, the preview keeps the box's shape at the
   photo's own resolution (so it's smaller than asked); the client scales it on screen.
@@ -242,12 +257,13 @@ no Python (package `nudity`). `go run ./scripts/bundle-onnx` downloads it to `mo
 - **The server hides what scores high** on every device, like a hidden collection (see
   [Hidden collections](#hidden-collections)): from 0.5 until the user chooses another score or turns it off. A file
   not scanned yet isn't hidden, so a new file shows until the scan has read it.
-- **It runs by itself**, in the background like search and faces: the files not scanned yet, newest upload first,
-  then each upload as soon as it finishes and imports within 30 seconds. A file that can't be scanned is tried again
-  after the server restarts, and listed in `.cache/nudity/nudenet-320n.failed.log` (when, sha256, path, why).
-- It reads the 640 px JPEG preview search reads too (a video's poster frame), never the original, and does what
-  NudeNet's own `detect` does: pads it with black to a square at the right or bottom, shrinks it to 320×320
-  (bilinear, as OpenCV), gives it as blue, green and red planes of 0 to 1 (NudeNet's order), keeps each box whose
+- **It runs by itself**, the first index of the server's reader ([indexes.md](indexes.md)): the files not scanned
+  yet, newest upload first, then each upload as soon as it finishes and imports within 30 seconds. A file that can't
+  be scanned is tried again after the server restarts, and listed in `.cache/nudity/nudenet-320n.failed.log` (when,
+  sha256, path, why).
+- It reads the photo fitted in 320×320, made from the original (a video's poster frame), and does what NudeNet's own
+  `detect` does: pads it with black to a square at the right or bottom (320×320, so NudeNet's own resize changes
+  nothing), gives it as blue, green and red planes of 0 to 1 (NudeNet's order), keeps each box whose
   surest label reaches 0.2, and of boxes that overlap by more than 0.45, whatever their labels, the surest over 0.25.
 - `go run ./scripts/scan-nudity --user hen` scans a data folder without the server (or beside it: see "Several
   processes on one data folder"), and prints what scores 0.5 or more. Files already scanned by the same `model` are

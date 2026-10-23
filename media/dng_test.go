@@ -242,85 +242,100 @@ func linearPPM(width, height int, dark, bright [3]uint16) []byte {
 }
 
 func TestPreviewsOfALinearDNGAreDevelopedFromItsRawData(t *testing.T) {
-	vips, header, err := FindVips("")
-	if err != nil {
-		t.Skip("libvips not installed")
-	}
-	previews := NewPreviews(vips, header)
-	dir := t.TempDir()
-	// Camera values of the shot's neutral at 10% and 60% of white, after the DNG's +3 EV.
-	camera := func(level float64) (v [3]uint16) {
-		for c := range v {
-			v[c] = uint16(math.Round(s25Neutral[c] * level / 8 * 65535))
-		}
-		return v
-	}
-	ppm := filepath.Join(dir, "linear.ppm")
-	if err := os.WriteFile(ppm, linearPPM(400, 200, camera(0.1), camera(0.6)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	jxl := filepath.Join(dir, "linear.jxl")
-	if err := previews.run(context.Background(), "copy", ppm, jxl+"[lossless]"); err != nil {
-		t.Skipf("libvips can't write JPEG XL: %v", err)
-	}
-	stream, err := os.ReadFile(jxl)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	f := newFixture(t)
-	f.store.CachePreviews = true
-	spec, err := ParsePreviewSpec(url.Values{"w": {"100"}, "h": {"200"}, "fit": {"contain"}, "fmt": {"jpeg"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	luma := func(c color.Color) float64 {
-		r, g, b, _ := c.RGBA()
-		return (float64(r) + float64(g) + float64(b)) / 3 / 257
-	}
-	grey := func(c color.Color) bool {
-		r, g, b, _ := c.RGBA()
-		return max(r, g, b)-min(r, g, b) < 6*257
-	}
-	var plain float64
-	for _, c := range []struct {
-		name string
-		gain []byte
-	}{{"plain.dng", nil}, {"lifted.dng", flatGainTable(2)}} {
-		dng := s25DNG(400, 200, stream, 6, c.gain)
-		req := photoRequest(dng, c.name)
-		req.MimeType = "image/x-adobe-dng"
-		f.start(req)
-		result, err := f.chunk(dng, 0, int64(len(dng)))
-		if err != nil || result.Item == nil {
-			t.Fatalf("upload %s: %v", c.name, err)
-		}
-		path, _, err := previews.Get(context.Background(), f.store, *result.Item, spec)
+	bothWays(t, func(t *testing.T, inProcess bool) {
+		vips, header, err := FindVips("")
 		if err != nil {
-			t.Fatalf("%s: %v", c.name, err)
+			t.Skip("libvips not installed")
 		}
-		img := decodeJPEG(t, path)
-		if b := img.Bounds(); b.Dx() != 100 || b.Dy() != 200 {
-			t.Fatalf("%s: size = %v (not upright?)", c.name, b)
-		}
-		top, bottom := img.At(50, 20), img.At(50, 180)
-		if !grey(top) || !grey(bottom) {
-			t.Fatalf("%s: the shot's neutral isn't grey: %v %v", c.name, top, bottom)
-		}
-		if luma(top) >= luma(bottom) {
-			t.Fatalf("%s: dark half (orientation 6 puts it on top) %v, bright %v", c.name, top, bottom)
-		}
-		if c.gain == nil {
-			// 10% linear is about 89 in sRGB.
-			if l := luma(top); l < 80 || l > 98 {
-				t.Errorf("10%% grey developed to %.0f", l)
+		previews := withLib(t, NewPreviews(vips, header), inProcess)
+		dir := t.TempDir()
+		// Camera values of the shot's neutral at 10% and 60% of white, after the DNG's +3 EV.
+		camera := func(level float64) (v [3]uint16) {
+			for c := range v {
+				v[c] = uint16(math.Round(s25Neutral[c] * level / 8 * 65535))
 			}
-			plain = luma(top)
-		} else if luma(top) <= plain+20 {
-			t.Errorf("the gain table didn't lift the shadows: %.0f vs %.0f", luma(top), plain)
+			return v
 		}
-		if _, err := os.Stat(filepath.Join(f.store.previewDir(result.Item.Sha256()), developedName)); err != nil {
-			t.Errorf("%s: developed image not kept: %v", c.name, err)
+		ppm := filepath.Join(dir, "linear.ppm")
+		if err := os.WriteFile(ppm, linearPPM(400, 200, camera(0.1), camera(0.6)), 0o644); err != nil {
+			t.Fatal(err)
 		}
-	}
+		jxl := filepath.Join(dir, "linear.jxl")
+		if err := previews.run(context.Background(), "copy", ppm, jxl+"[lossless]"); err != nil {
+			t.Skipf("libvips can't write JPEG XL: %v", err)
+		}
+		stream, err := os.ReadFile(jxl)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		f := newFixture(t)
+		f.store.CachePreviews = true
+		spec, err := ParsePreviewSpec(url.Values{"w": {"100"}, "h": {"200"}, "fit": {"contain"}, "fmt": {"jpeg"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		luma := func(c color.Color) float64 {
+			r, g, b, _ := c.RGBA()
+			return (float64(r) + float64(g) + float64(b)) / 3 / 257
+		}
+		grey := func(c color.Color) bool {
+			r, g, b, _ := c.RGBA()
+			return max(r, g, b)-min(r, g, b) < 6*257
+		}
+		var plain float64
+		for _, c := range []struct {
+			name string
+			gain []byte
+		}{{"plain.dng", nil}, {"lifted.dng", flatGainTable(2)}} {
+			dng := s25DNG(400, 200, stream, 6, c.gain)
+			req := photoRequest(dng, c.name)
+			req.MimeType = "image/x-adobe-dng"
+			f.start(req)
+			result, err := f.chunk(dng, 0, int64(len(dng)))
+			if err != nil || result.Item == nil {
+				t.Fatalf("upload %s: %v", c.name, err)
+			}
+			path, _, err := previews.Get(context.Background(), f.store, *result.Item, spec)
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			img := decodeJPEG(t, path)
+			if b := img.Bounds(); b.Dx() != 100 || b.Dy() != 200 {
+				t.Fatalf("%s: size = %v (not upright?)", c.name, b)
+			}
+			top, bottom := img.At(50, 20), img.At(50, 180)
+			if !grey(top) || !grey(bottom) {
+				t.Fatalf("%s: the shot's neutral isn't grey: %v %v", c.name, top, bottom)
+			}
+			if luma(top) >= luma(bottom) {
+				t.Fatalf("%s: dark half (orientation 6 puts it on top) %v, bright %v", c.name, top, bottom)
+			}
+			if c.gain == nil {
+				// 10% linear is about 89 in sRGB.
+				if l := luma(top); l < 80 || l > 98 {
+					t.Errorf("10%% grey developed to %.0f", l)
+				}
+				plain = luma(top)
+			} else if luma(top) <= plain+20 {
+				t.Errorf("the gain table didn't lift the shadows: %.0f vs %.0f", luma(top), plain)
+			}
+			if _, err := os.Stat(filepath.Join(f.store.previewDir(result.Item.Sha256()), developedName)); err != nil {
+				t.Errorf("%s: developed image not kept: %v", c.name, err)
+			}
+			// The indexes' original is the developed image too, upright.
+			o, err := previews.Open(context.Background(), f.store, *result.Item, 200)
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			pic, err := o.Picture(PreviewSpec{Width: 100, Height: 200, Fit: "contain"})
+			o.Close()
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			if b := pic.Bounds(); b.Dx() != 100 || b.Dy() != 200 || luma(pic.At(50, 20)) >= luma(pic.At(50, 180)) {
+				t.Errorf("%s: the original's picture is %v, top %v bottom %v", c.name, b, pic.At(50, 20), pic.At(50, 180))
+			}
+		}
+	})
 }
