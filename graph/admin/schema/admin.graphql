@@ -6,6 +6,12 @@ scalar Time
 type Query {
   "Enrolled devices, oldest first; all users when user is omitted."
   devices(user: String): [Device!]!
+  """
+  The copies of the users' data folders (config.json "copies"; all users when user is omitted): how each is doing,
+  and what it lacks now, found by comparing the data folder with the copy without copying anything. With paths,
+  the files it lacks are listed too.
+  """
+  copyReport(user: String, paths: Boolean = false): [CopyReport!]!
 }
 
 type Mutation {
@@ -20,6 +26,52 @@ type Mutation {
   server reads files itself ("index": "server") and has nothing to read.
   """
   indexesUpdated: Boolean!
+  """
+  Starts a full pass of the user's copies now (all users' when user is omitted), in the background; a copy already
+  running is left to finish. Returns the copies started.
+  """
+  startCopy(user: String): [CopyReport!]!
+}
+
+type CopyReport {
+  user: String!
+  folder: String!
+  "The daily pass, \"15:04\"."
+  at: String!
+  realtime: Boolean!
+  "The copy is on the data folder's disk."
+  sameDisk: Boolean!
+  "A pass under way."
+  running: CopyProgress
+  "How the last full pass since the server started ended."
+  lastPass: CopyPass
+  "Why the copy couldn't be compared (folder out of reach); the counts below are then 0."
+  error: String
+  "Originals not in the copy, and their bytes."
+  originals: Int!
+  originalBytes: Float!
+  "Sidecars, people.json and settings.json that differ from the copy's."
+  sidecars: Int!
+  "Originals in the copy that the data folder no longer has; they are kept."
+  inCopyOnly: Int!
+  "With paths: the files the copy lacks, relative to the data folder."
+  paths: [String!]
+}
+
+type CopyProgress {
+  startedAt: Time!
+  files: Int!
+  bytes: Float!
+}
+
+type CopyPass {
+  startedAt: Time!
+  finishedAt: Time!
+  files: Int!
+  bytes: Float!
+  failed: Int!
+  "What stopped the pass (folder out of reach, disk full)."
+  error: String
 }
 
 type EnrollmentCode {

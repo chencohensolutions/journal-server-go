@@ -22,10 +22,12 @@ import (
 type turns struct {
 	mu      sync.Mutex // this process's turn; the file lock is per process
 	pending []string   // journal lines of the turn in progress
+	written []Item     // the files placed and sidecars rewritten in the turn in progress, for onWrite
 
 	journalMu sync.Mutex
-	offset    int64      // how much of the journal this store has read
-	onNew     func(Item) // see OnCatchUp
+	offset    int64        // how much of the journal this store has read
+	onNew     func(Item)   // see OnCatchUp
+	onWrite   func([]Item) // see OnWrite
 }
 
 func (s *Store) lockPath() string    { return filepath.Join(s.root, ".cache", "write.lock") }
@@ -36,6 +38,22 @@ func (s *Store) OnCatchUp(fn func(Item)) {
 	s.turns.journalMu.Lock()
 	s.turns.onNew = fn
 	s.turns.journalMu.Unlock()
+}
+
+// OnWrite is called after each of this process's turns with the files it placed and the sidecars it rewrote (none
+// for a turn that wrote only people.json or settings.json), and as this store learns of other processes' writes,
+// with those files. It only reads: the copies (package copies) use it to copy a change soon after it is made. fn
+// must not call the store, and should return at once.
+func (s *Store) OnWrite(fn func([]Item)) {
+	s.turns.journalMu.Lock()
+	s.turns.onWrite = fn
+	s.turns.journalMu.Unlock()
+}
+
+func (s *Store) writeHook() func([]Item) {
+	s.turns.journalMu.Lock()
+	defer s.turns.journalMu.Unlock()
+	return s.turns.onWrite
 }
 
 // Turn runs fn while this process alone changes the data folder, after catching up with the others. The
@@ -56,11 +74,15 @@ func (s *Store) Turn(fn func() error) error {
 
 	s.CatchUp()
 	s.turns.pending = s.turns.pending[:0]
+	s.turns.written = s.turns.written[:0]
 	err = fn()
 	if len(s.turns.pending) > 0 {
 		if jerr := s.appendJournal(strings.Join(s.turns.pending, "")); jerr != nil && err == nil {
 			err = jerr
 		}
+	}
+	if hook := s.writeHook(); hook != nil {
+		hook(append([]Item(nil), s.turns.written...))
 	}
 	return err
 }
@@ -68,6 +90,7 @@ func (s *Store) Turn(fn func() error) error {
 // wrote notes, during a turn, a file placed or a sidecar rewritten, for the other processes.
 func (s *Store) wrote(item *Item) {
 	s.turns.pending = append(s.turns.pending, fmt.Sprintf("%s\t%s\n", item.Sidecar.Sha256, item.Path))
+	s.turns.written = append(s.turns.written, *item)
 	s.indexStale.Store(true)
 }
 
@@ -116,6 +139,7 @@ func (s *Store) CatchUp() {
 		return
 	}
 	s.turns.offset += int64(end + 1)
+	var written []Item
 	for line := range strings.SplitSeq(string(data[:end]), "\n") {
 		sha, path, ok := strings.Cut(line, "\t")
 		if !ok {
@@ -126,9 +150,16 @@ func (s *Store) CatchUp() {
 			log.Printf("media: %s: %v", s.journalPath(), err)
 			continue
 		}
-		if item, ok := s.Get(sha); ok && !known && s.turns.onNew != nil {
+		item, ok := s.Get(sha)
+		if ok && !known && s.turns.onNew != nil {
 			s.turns.onNew(item)
 		}
+		if ok {
+			written = append(written, item)
+		}
+	}
+	if len(written) > 0 && s.turns.onWrite != nil {
+		s.turns.onWrite(written)
 	}
 }
 

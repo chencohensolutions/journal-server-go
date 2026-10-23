@@ -22,6 +22,9 @@ const usage = `usage:
   journal-server index --only nudity,faces
                                       the same, with only the indexes named (nudity, faces, ocr, search,
                                       similar, aesthetic), to bring those up to date first
+  journal-server copy [user]          start a full pass of the user's copies now (config.json "copies")
+  journal-server copy report [user] [--list]
+                                      how each copy is doing, and what it lacks now
 `
 
 func main() {

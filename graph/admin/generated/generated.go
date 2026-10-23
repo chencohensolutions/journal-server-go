@@ -38,6 +38,37 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	CopyPass struct {
+		Bytes      func(childComplexity int) int
+		Error      func(childComplexity int) int
+		Failed     func(childComplexity int) int
+		Files      func(childComplexity int) int
+		FinishedAt func(childComplexity int) int
+		StartedAt  func(childComplexity int) int
+	}
+
+	CopyProgress struct {
+		Bytes     func(childComplexity int) int
+		Files     func(childComplexity int) int
+		StartedAt func(childComplexity int) int
+	}
+
+	CopyReport struct {
+		At            func(childComplexity int) int
+		Error         func(childComplexity int) int
+		Folder        func(childComplexity int) int
+		InCopyOnly    func(childComplexity int) int
+		LastPass      func(childComplexity int) int
+		OriginalBytes func(childComplexity int) int
+		Originals     func(childComplexity int) int
+		Paths         func(childComplexity int) int
+		Realtime      func(childComplexity int) int
+		Running       func(childComplexity int) int
+		SameDisk      func(childComplexity int) int
+		Sidecars      func(childComplexity int) int
+		User          func(childComplexity int) int
+	}
+
 	Device struct {
 		ExpiresAt       func(childComplexity int) int
 		KeyProtection   func(childComplexity int) int
@@ -61,10 +92,12 @@ type ComplexityRoot struct {
 		IndexesUpdated       func(childComplexity int) int
 		RevokeDevice         func(childComplexity int, serial string) int
 		SetWithholdPrivate   func(childComplexity int, serial string, withhold bool) int
+		StartCopy            func(childComplexity int, user *string) int
 	}
 
 	Query struct {
-		Devices func(childComplexity int, user *string) int
+		CopyReport func(childComplexity int, user *string, paths *bool) int
+		Devices    func(childComplexity int, user *string) int
 	}
 }
 
@@ -73,9 +106,11 @@ type MutationResolver interface {
 	RevokeDevice(ctx context.Context, serial string) (*enroll.Device, error)
 	SetWithholdPrivate(ctx context.Context, serial string, withhold bool) (*enroll.Device, error)
 	IndexesUpdated(ctx context.Context) (bool, error)
+	StartCopy(ctx context.Context, user *string) ([]*model.CopyReport, error)
 }
 type QueryResolver interface {
 	Devices(ctx context.Context, user *string) ([]*enroll.Device, error)
+	CopyReport(ctx context.Context, user *string, paths *bool) ([]*model.CopyReport, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -91,6 +126,141 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "CopyPass.bytes":
+		if e.ComplexityRoot.CopyPass.Bytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.Bytes(childComplexity), true
+	case "CopyPass.error":
+		if e.ComplexityRoot.CopyPass.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.Error(childComplexity), true
+	case "CopyPass.failed":
+		if e.ComplexityRoot.CopyPass.Failed == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.Failed(childComplexity), true
+	case "CopyPass.files":
+		if e.ComplexityRoot.CopyPass.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.Files(childComplexity), true
+	case "CopyPass.finishedAt":
+		if e.ComplexityRoot.CopyPass.FinishedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.FinishedAt(childComplexity), true
+	case "CopyPass.startedAt":
+		if e.ComplexityRoot.CopyPass.StartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.StartedAt(childComplexity), true
+
+	case "CopyProgress.bytes":
+		if e.ComplexityRoot.CopyProgress.Bytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.Bytes(childComplexity), true
+	case "CopyProgress.files":
+		if e.ComplexityRoot.CopyProgress.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.Files(childComplexity), true
+	case "CopyProgress.startedAt":
+		if e.ComplexityRoot.CopyProgress.StartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.StartedAt(childComplexity), true
+
+	case "CopyReport.at":
+		if e.ComplexityRoot.CopyReport.At == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.At(childComplexity), true
+	case "CopyReport.error":
+		if e.ComplexityRoot.CopyReport.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Error(childComplexity), true
+	case "CopyReport.folder":
+		if e.ComplexityRoot.CopyReport.Folder == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Folder(childComplexity), true
+	case "CopyReport.inCopyOnly":
+		if e.ComplexityRoot.CopyReport.InCopyOnly == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.InCopyOnly(childComplexity), true
+	case "CopyReport.lastPass":
+		if e.ComplexityRoot.CopyReport.LastPass == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.LastPass(childComplexity), true
+	case "CopyReport.originalBytes":
+		if e.ComplexityRoot.CopyReport.OriginalBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.OriginalBytes(childComplexity), true
+	case "CopyReport.originals":
+		if e.ComplexityRoot.CopyReport.Originals == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Originals(childComplexity), true
+	case "CopyReport.paths":
+		if e.ComplexityRoot.CopyReport.Paths == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Paths(childComplexity), true
+	case "CopyReport.realtime":
+		if e.ComplexityRoot.CopyReport.Realtime == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Realtime(childComplexity), true
+	case "CopyReport.running":
+		if e.ComplexityRoot.CopyReport.Running == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Running(childComplexity), true
+	case "CopyReport.sameDisk":
+		if e.ComplexityRoot.CopyReport.SameDisk == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.SameDisk(childComplexity), true
+	case "CopyReport.sidecars":
+		if e.ComplexityRoot.CopyReport.Sidecars == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.Sidecars(childComplexity), true
+	case "CopyReport.user":
+		if e.ComplexityRoot.CopyReport.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyReport.User(childComplexity), true
 
 	case "Device.expiresAt":
 		if e.ComplexityRoot.Device.ExpiresAt == nil {
@@ -205,7 +375,29 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetWithholdPrivate(childComplexity, args["serial"].(string), args["withhold"].(bool)), true
+	case "Mutation.startCopy":
+		if e.ComplexityRoot.Mutation.StartCopy == nil {
+			break
+		}
 
+		args, err := ec.field_Mutation_startCopy_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.StartCopy(childComplexity, args["user"].(*string)), true
+
+	case "Query.copyReport":
+		if e.ComplexityRoot.Query.CopyReport == nil {
+			break
+		}
+
+		args, err := ec.field_Query_copyReport_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.CopyReport(childComplexity, args["user"].(*string), args["paths"].(*bool)), true
 	case "Query.devices":
 		if e.ComplexityRoot.Query.Devices == nil {
 			break
@@ -308,6 +500,12 @@ scalar Time
 type Query {
   "Enrolled devices, oldest first; all users when user is omitted."
   devices(user: String): [Device!]!
+  """
+  The copies of the users' data folders (config.json "copies"; all users when user is omitted): how each is doing,
+  and what it lacks now, found by comparing the data folder with the copy without copying anything. With paths,
+  the files it lacks are listed too.
+  """
+  copyReport(user: String, paths: Boolean = false): [CopyReport!]!
 }
 
 type Mutation {
@@ -322,6 +520,52 @@ type Mutation {
   server reads files itself ("index": "server") and has nothing to read.
   """
   indexesUpdated: Boolean!
+  """
+  Starts a full pass of the user's copies now (all users' when user is omitted), in the background; a copy already
+  running is left to finish. Returns the copies started.
+  """
+  startCopy(user: String): [CopyReport!]!
+}
+
+type CopyReport {
+  user: String!
+  folder: String!
+  "The daily pass, \"15:04\"."
+  at: String!
+  realtime: Boolean!
+  "The copy is on the data folder's disk."
+  sameDisk: Boolean!
+  "A pass under way."
+  running: CopyProgress
+  "How the last full pass since the server started ended."
+  lastPass: CopyPass
+  "Why the copy couldn't be compared (folder out of reach); the counts below are then 0."
+  error: String
+  "Originals not in the copy, and their bytes."
+  originals: Int!
+  originalBytes: Float!
+  "Sidecars, people.json and settings.json that differ from the copy's."
+  sidecars: Int!
+  "Originals in the copy that the data folder no longer has; they are kept."
+  inCopyOnly: Int!
+  "With paths: the files the copy lacks, relative to the data folder."
+  paths: [String!]
+}
+
+type CopyProgress {
+  startedAt: Time!
+  files: Int!
+  bytes: Float!
+}
+
+type CopyPass {
+  startedAt: Time!
+  finishedAt: Time!
+  files: Int!
+  bytes: Float!
+  failed: Int!
+  "What stopped the pass (folder out of reach, disk full)."
+  error: String
 }
 
 type EnrollmentCode {
@@ -350,6 +594,68 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // childFields_* functions provide shared child field context lookups.
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
+
+func (ec *executionContext) childFields_CopyPass(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "startedAt":
+		return ec.fieldContext_CopyPass_startedAt(ctx, field)
+	case "finishedAt":
+		return ec.fieldContext_CopyPass_finishedAt(ctx, field)
+	case "files":
+		return ec.fieldContext_CopyPass_files(ctx, field)
+	case "bytes":
+		return ec.fieldContext_CopyPass_bytes(ctx, field)
+	case "failed":
+		return ec.fieldContext_CopyPass_failed(ctx, field)
+	case "error":
+		return ec.fieldContext_CopyPass_error(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type CopyPass", field.Name)
+}
+
+func (ec *executionContext) childFields_CopyProgress(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "startedAt":
+		return ec.fieldContext_CopyProgress_startedAt(ctx, field)
+	case "files":
+		return ec.fieldContext_CopyProgress_files(ctx, field)
+	case "bytes":
+		return ec.fieldContext_CopyProgress_bytes(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type CopyProgress", field.Name)
+}
+
+func (ec *executionContext) childFields_CopyReport(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "user":
+		return ec.fieldContext_CopyReport_user(ctx, field)
+	case "folder":
+		return ec.fieldContext_CopyReport_folder(ctx, field)
+	case "at":
+		return ec.fieldContext_CopyReport_at(ctx, field)
+	case "realtime":
+		return ec.fieldContext_CopyReport_realtime(ctx, field)
+	case "sameDisk":
+		return ec.fieldContext_CopyReport_sameDisk(ctx, field)
+	case "running":
+		return ec.fieldContext_CopyReport_running(ctx, field)
+	case "lastPass":
+		return ec.fieldContext_CopyReport_lastPass(ctx, field)
+	case "error":
+		return ec.fieldContext_CopyReport_error(ctx, field)
+	case "originals":
+		return ec.fieldContext_CopyReport_originals(ctx, field)
+	case "originalBytes":
+		return ec.fieldContext_CopyReport_originalBytes(ctx, field)
+	case "sidecars":
+		return ec.fieldContext_CopyReport_sidecars(ctx, field)
+	case "inCopyOnly":
+		return ec.fieldContext_CopyReport_inCopyOnly(ctx, field)
+	case "paths":
+		return ec.fieldContext_CopyReport_paths(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type CopyReport", field.Name)
+}
 
 func (ec *executionContext) childFields_Device(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
@@ -553,6 +859,20 @@ func (ec *executionContext) field_Mutation_setWithholdPrivate_args(ctx context.C
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_startCopy_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -564,6 +884,28 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 		return nil, err
 	}
 	args["name"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_copyReport_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "paths",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["paths"] = arg1
 	return args, nil
 }
 
@@ -644,6 +986,530 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _CopyPass_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_startedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_startedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _CopyPass_finishedAt(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_finishedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FinishedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_finishedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _CopyPass_files(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyPass_bytes(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Bytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _CopyPass_failed(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_failed(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Failed, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_failed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyPass_error(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_startedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_startedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_files(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_bytes(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Bytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_user(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_user(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_folder(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_folder(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Folder, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_folder(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_at(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_at(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.At, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_at(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_realtime(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_realtime(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Realtime, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_realtime(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_sameDisk(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_sameDisk(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SameDisk, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_sameDisk(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_running(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_running(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Running, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CopyProgress) graphql.Marshaler {
+			return ec.marshalOCopyProgress2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyProgress(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_running(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CopyReport",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CopyProgress(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CopyReport_lastPass(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_lastPass(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastPass, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CopyPass) graphql.Marshaler {
+			return ec.marshalOCopyPass2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyPass(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_lastPass(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CopyReport",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CopyPass(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CopyReport_error(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_originals(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_originals(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Originals, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_originals(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_originalBytes(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_originalBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.OriginalBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_originalBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_sidecars(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_sidecars(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Sidecars, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_sidecars(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_inCopyOnly(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_inCopyOnly(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InCopyOnly, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_inCopyOnly(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyReport_paths(ctx context.Context, field graphql.CollectedField, obj *model.CopyReport) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyReport_paths(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Paths, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalOString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CopyReport_paths(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyReport", field, false, false, errors.New("field of type String does not have child fields"))
+}
 
 func (ec *executionContext) _Device_serial(ctx context.Context, field graphql.CollectedField, obj *enroll.Device) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -1076,6 +1942,50 @@ func (ec *executionContext) fieldContext_Mutation_indexesUpdated(_ context.Conte
 	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _Mutation_startCopy(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_startCopy(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().StartCopy(ctx, fc.Args["user"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.CopyReport) graphql.Marshaler {
+			return ec.marshalNCopyReport2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyReportᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_startCopy(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CopyReport(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_startCopy_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_devices(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1114,6 +2024,50 @@ func (ec *executionContext) fieldContext_Query_devices(ctx context.Context, fiel
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_devices_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_copyReport(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_copyReport(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().CopyReport(ctx, fc.Args["user"].(*string), fc.Args["paths"].(*bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.CopyReport) graphql.Marshaler {
+			return ec.marshalNCopyReport2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyReportᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_copyReport(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CopyReport(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_copyReport_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -2263,6 +3217,203 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** object.gotpl ****************************
 
+var copyPassImplementors = []string{"CopyPass"}
+
+func (ec *executionContext) _CopyPass(ctx context.Context, sel ast.SelectionSet, obj *model.CopyPass) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, copyPassImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CopyPass")
+		case "startedAt":
+			out.Values[i] = ec._CopyPass_startedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "finishedAt":
+			out.Values[i] = ec._CopyPass_finishedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._CopyPass_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "bytes":
+			out.Values[i] = ec._CopyPass_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "failed":
+			out.Values[i] = ec._CopyPass_failed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._CopyPass_error(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var copyProgressImplementors = []string{"CopyProgress"}
+
+func (ec *executionContext) _CopyProgress(ctx context.Context, sel ast.SelectionSet, obj *model.CopyProgress) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, copyProgressImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CopyProgress")
+		case "startedAt":
+			out.Values[i] = ec._CopyProgress_startedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._CopyProgress_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "bytes":
+			out.Values[i] = ec._CopyProgress_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var copyReportImplementors = []string{"CopyReport"}
+
+func (ec *executionContext) _CopyReport(ctx context.Context, sel ast.SelectionSet, obj *model.CopyReport) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, copyReportImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CopyReport")
+		case "user":
+			out.Values[i] = ec._CopyReport_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "folder":
+			out.Values[i] = ec._CopyReport_folder(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "at":
+			out.Values[i] = ec._CopyReport_at(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "realtime":
+			out.Values[i] = ec._CopyReport_realtime(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sameDisk":
+			out.Values[i] = ec._CopyReport_sameDisk(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "running":
+			out.Values[i] = ec._CopyReport_running(ctx, field, obj)
+		case "lastPass":
+			out.Values[i] = ec._CopyReport_lastPass(ctx, field, obj)
+		case "error":
+			out.Values[i] = ec._CopyReport_error(ctx, field, obj)
+		case "originals":
+			out.Values[i] = ec._CopyReport_originals(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "originalBytes":
+			out.Values[i] = ec._CopyReport_originalBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sidecars":
+			out.Values[i] = ec._CopyReport_sidecars(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inCopyOnly":
+			out.Values[i] = ec._CopyReport_inCopyOnly(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "paths":
+			out.Values[i] = ec._CopyReport_paths(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var deviceImplementors = []string{"Device"}
 
 func (ec *executionContext) _Device(ctx context.Context, sel ast.SelectionSet, obj *enroll.Device) graphql.Marshaler {
@@ -2432,6 +3583,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "startCopy":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_startCopy(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -2484,6 +3642,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_devices(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "copyReport":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_copyReport(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -2878,6 +4058,32 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
+func (ec *executionContext) marshalNCopyReport2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyReportᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.CopyReport) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNCopyReport2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyReport(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNCopyReport2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyReport(ctx context.Context, sel ast.SelectionSet, v *model.CopyReport) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CopyReport(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNDevice2githubᚗcomᚋjournalᚋserverᚑgoᚋenrollᚐDevice(ctx context.Context, sel ast.SelectionSet, v enroll.Device) graphql.Marshaler {
 	return ec._Device(ctx, sel, &v)
 }
@@ -2920,6 +4126,38 @@ func (ec *executionContext) marshalNEnrollmentCode2ᚖgithubᚗcomᚋjournalᚋs
 		return graphql.Null
 	}
 	return ec._EnrollmentCode(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
+}
+
+func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
+	res, err := graphql.UnmarshalInt(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.SelectionSet, v int) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalInt(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
@@ -3123,6 +4361,56 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	_ = ctx
 	res := graphql.MarshalBoolean(*v)
 	return res
+}
+
+func (ec *executionContext) marshalOCopyPass2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyPass(ctx context.Context, sel ast.SelectionSet, v *model.CopyPass) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._CopyPass(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOCopyProgress2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐCopyProgress(ctx context.Context, sel ast.SelectionSet, v *model.CopyProgress) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._CopyProgress(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOString2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]string, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNString2string(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOString2ᚕstringᚄ(ctx context.Context, sel ast.SelectionSet, v []string) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNString2string(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalOString2ᚖstring(ctx context.Context, v any) (*string, error) {

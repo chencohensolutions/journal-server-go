@@ -6,6 +6,47 @@ import (
 	"time"
 )
 
+type CopyPass struct {
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	Files      int       `json:"files"`
+	Bytes      float64   `json:"bytes"`
+	Failed     int       `json:"failed"`
+	// What stopped the pass (folder out of reach, disk full).
+	Error *string `json:"error,omitempty"`
+}
+
+type CopyProgress struct {
+	StartedAt time.Time `json:"startedAt"`
+	Files     int       `json:"files"`
+	Bytes     float64   `json:"bytes"`
+}
+
+type CopyReport struct {
+	User   string `json:"user"`
+	Folder string `json:"folder"`
+	// The daily pass, "15:04".
+	At       string `json:"at"`
+	Realtime bool   `json:"realtime"`
+	// The copy is on the data folder's disk.
+	SameDisk bool `json:"sameDisk"`
+	// A pass under way.
+	Running *CopyProgress `json:"running,omitempty"`
+	// How the last full pass since the server started ended.
+	LastPass *CopyPass `json:"lastPass,omitempty"`
+	// Why the copy couldn't be compared (folder out of reach); the counts below are then 0.
+	Error *string `json:"error,omitempty"`
+	// Originals not in the copy, and their bytes.
+	Originals     int     `json:"originals"`
+	OriginalBytes float64 `json:"originalBytes"`
+	// Sidecars, people.json and settings.json that differ from the copy's.
+	Sidecars int `json:"sidecars"`
+	// Originals in the copy that the data folder no longer has; they are kept.
+	InCopyOnly int `json:"inCopyOnly"`
+	// With paths: the files the copy lacks, relative to the data folder.
+	Paths []string `json:"paths,omitempty"`
+}
+
 type EnrollmentCode struct {
 	Code      string    `json:"code"`
 	User      string    `json:"user"`

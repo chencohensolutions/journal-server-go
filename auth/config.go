@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -18,6 +20,19 @@ type UserConfig struct {
 	// Keep the previews made for this user's devices (and developed DNGs) in the data folder's .cache, so
 	// asking again is instant. Off by default: devices keep the previews they asked for themselves.
 	PreviewCache bool `json:"preview_cache"`
+	// Folders on other disks that keep a plain copy of this user's data folder (docs/copies.md); none by default.
+	Copies []CopyConfig `json:"copies"`
+}
+
+// CopyConfig is one copy of a user's data folder: a folder, kept up to date daily and, if asked, as files arrive.
+type CopyConfig struct {
+	// The copy's folder, which must exist (an unplugged disk is then noticed, not written around). Outside the
+	// data folder, and best on another disk.
+	Folder string `json:"folder"`
+	// The local time of the daily full pass, "15:04" (default "03:30").
+	At string `json:"at"`
+	// Also copy each file a few seconds after it arrives or its sidecar changes, and once when the server starts.
+	Realtime bool `json:"realtime"`
 }
 
 type AppConfig struct {
@@ -100,6 +115,7 @@ const (
 	DefaultAestheticModel = "models/clip-vit-large-patch14-laion"
 	IndexInServer         = "server"
 	IndexDaily            = "daily"
+	DefaultCopyAt         = "03:30"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -129,6 +145,11 @@ func LoadConfig(path string) (AppConfig, error) {
 	}
 	if _, err := time.Parse("15:04", config.IndexAt); err != nil {
 		return AppConfig{}, fmt.Errorf("%s: index_at is a time like \"03:00\", not %q", path, config.IndexAt)
+	}
+	for _, user := range config.Users {
+		if err := user.checkCopies(); err != nil {
+			return AppConfig{}, fmt.Errorf("%s: user %s: %w", path, user.Username, err)
+		}
 	}
 	return config, nil
 }
@@ -180,7 +201,58 @@ func (c AppConfig) WithDefaults() AppConfig {
 	if c.SearchThreads <= 0 {
 		c.SearchThreads = max(1, runtime.NumCPU()/2)
 	}
+	users := make([]UserConfig, len(c.Users))
+	for i, user := range c.Users {
+		user.Copies = append([]CopyConfig(nil), user.Copies...)
+		for j := range user.Copies {
+			if user.Copies[j].At == "" {
+				user.Copies[j].At = DefaultCopyAt
+			}
+		}
+		users[i] = user
+	}
+	c.Users = users
 	return c
+}
+
+// checkCopies refuses copies that can't work: no folder, a bad time, or a folder inside the data folder (the copy
+// would be copied into itself, and copies never write into the data folder) or holding it.
+func (u UserConfig) checkCopies() error {
+	seen := map[string]bool{}
+	for _, cp := range u.Copies {
+		if cp.Folder == "" {
+			return fmt.Errorf("a copy has no folder")
+		}
+		if _, err := time.Parse("15:04", cp.At); err != nil {
+			return fmt.Errorf("copy %s: at is a time like \"03:30\", not %q", cp.Folder, cp.At)
+		}
+		folder, err := filepath.Abs(cp.Folder)
+		if err != nil {
+			return err
+		}
+		if seen[strings.ToLower(folder)] {
+			return fmt.Errorf("copy %s appears twice", cp.Folder)
+		}
+		seen[strings.ToLower(folder)] = true
+		if u.DataFolder == "" {
+			return fmt.Errorf("copy %s: the user has no data_folder", cp.Folder)
+		}
+		data, err := filepath.Abs(u.DataFolder)
+		if err != nil {
+			return err
+		}
+		if within(folder, data) || within(data, folder) {
+			return fmt.Errorf("copy %s and data_folder %s are one inside the other", cp.Folder, u.DataFolder)
+		}
+	}
+	return nil
+}
+
+// within reports whether path is dir or inside it, ignoring case (file names are compared that way on Windows and
+// macOS).
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(strings.ToLower(dir), strings.ToLower(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (c AppConfig) FindUser(username string) *UserConfig {

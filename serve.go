@@ -20,6 +20,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/copies"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/graph/generated"
 	"github.com/journal/server-go/graph/resolver"
@@ -58,9 +59,11 @@ func serve(config auth.AppConfig) {
 	if ix.daily {
 		refreshIndexes = ix.refresh
 	}
-	go serveAdmin(config, enrollment, refreshIndexes)
 	readerDone := make(chan struct{})
 	running, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	copiers := newCopiers(config, library)
+	startCopies(running, library, copiers)
+	go serveAdmin(config, enrollment, refreshIndexes, copiers, func(c *copies.Copier) { runCopy(running, c) })
 	switch {
 	case ix.daily:
 		go func() { indexDaily(running, config, ix); close(readerDone) }()

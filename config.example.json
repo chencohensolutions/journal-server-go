@@ -7,7 +7,10 @@
   "users": [
     {
       "username": "alice",
-      "data_folder": "journal/alice"
+      "data_folder": "journal/alice",
+      "copies": [
+        { "folder": "E:/Journal copy/alice", "realtime": true, "at": "03:30" }
+      ]
     }
   ]
 }

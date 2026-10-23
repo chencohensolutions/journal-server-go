@@ -55,6 +55,22 @@ func (r *mutationResolver) IndexesUpdated(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+// StartCopy is the resolver for the startCopy field.
+func (r *mutationResolver) StartCopy(ctx context.Context, user *string) ([]*model.CopyReport, error) {
+	copiers := r.copiersOf(user)
+	if len(copiers) == 0 {
+		return nil, noCopies(user)
+	}
+	reports := []*model.CopyReport{}
+	for _, c := range copiers {
+		if running, _ := c.Status(); running == nil {
+			go r.RunCopy(c)
+		}
+		reports = append(reports, copyReport(ctx, c, false, false))
+	}
+	return reports, nil
+}
+
 // Devices is the resolver for the devices field.
 func (r *queryResolver) Devices(ctx context.Context, user *string) ([]*enroll.Device, error) {
 	filter := ""
@@ -67,6 +83,18 @@ func (r *queryResolver) Devices(ctx context.Context, user *string) ([]*enroll.De
 		result[i] = &devices[i]
 	}
 	return result, nil
+}
+
+// CopyReport is the resolver for the copyReport field.
+func (r *queryResolver) CopyReport(ctx context.Context, user *string, paths *bool) ([]*model.CopyReport, error) {
+	if user != nil && r.Config.FindUser(*user) == nil {
+		return nil, fmt.Errorf("unknown user %q", *user)
+	}
+	reports := []*model.CopyReport{}
+	for _, c := range r.copiersOf(user) {
+		reports = append(reports, copyReport(ctx, c, true, paths != nil && *paths))
+	}
+	return reports, nil
 }
 
 // Mutation returns generated.MutationResolver implementation.

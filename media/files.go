@@ -59,3 +59,9 @@ func rename(from, to string) error {
 	}
 	return err
 }
+
+// Rename is rename for other packages (copies): it retries on Windows while another program holds the file.
+func Rename(from, to string) error { return rename(from, to) }
+
+// FreeBytes is the space available to this process on the disk holding path; unknown platforms report no limit.
+func FreeBytes(path string) (uint64, error) { return freeBytes(path) }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/copies"
 	"github.com/skip2/go-qrcode"
 )
 
@@ -27,6 +28,10 @@ func runAdminCommand(config auth.AppConfig, command string, args []string) error
 		return revokeCommand(config, args[0])
 	case command == "private" && len(args) == 2 && (args[1] == "withhold" || args[1] == "allow"):
 		return privateCommand(config, args[0], args[1] == "withhold")
+	case command == "copy" && len(args) >= 1 && args[0] == "report":
+		return copyReportCommand(config, args[1:])
+	case command == "copy" && len(args) <= 1:
+		return startCopyCommand(config, args)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command or wrong arguments: %s", command)
@@ -165,6 +170,132 @@ func privateCommand(config auth.AppConfig, serial string, withhold bool) error {
 		fmt.Printf("Private files are sent to %q of user %s again (it hides them unless Show private media is on)\n", d.Name, d.User)
 	}
 	return nil
+}
+
+type adminCopy struct {
+	User     string `json:"user"`
+	Folder   string `json:"folder"`
+	At       string `json:"at"`
+	Realtime bool   `json:"realtime"`
+	SameDisk bool   `json:"sameDisk"`
+	Running  *struct {
+		StartedAt time.Time `json:"startedAt"`
+		Files     int       `json:"files"`
+		Bytes     float64   `json:"bytes"`
+	} `json:"running"`
+	LastPass *struct {
+		StartedAt  time.Time `json:"startedAt"`
+		FinishedAt time.Time `json:"finishedAt"`
+		Files      int       `json:"files"`
+		Bytes      float64   `json:"bytes"`
+		Failed     int       `json:"failed"`
+		Error      *string   `json:"error"`
+	} `json:"lastPass"`
+	Error         *string  `json:"error"`
+	Originals     int      `json:"originals"`
+	OriginalBytes float64  `json:"originalBytes"`
+	Sidecars      int      `json:"sidecars"`
+	InCopyOnly    int      `json:"inCopyOnly"`
+	Paths         []string `json:"paths"`
+}
+
+const copyFields = `user folder at realtime sameDisk running { startedAt files bytes }
+	lastPass { startedAt finishedAt files bytes failed error } error originals originalBytes sidecars inCopyOnly`
+
+// startCopyCommand is `journal-server copy [user]`: the running server starts a full pass of the copies now.
+func startCopyCommand(config auth.AppConfig, args []string) error {
+	variables := map[string]any{}
+	if len(args) == 1 {
+		variables["user"] = args[0]
+	}
+	var data struct {
+		StartCopy []adminCopy `json:"startCopy"`
+	}
+	if err := adminQuery(config, `mutation($user: String) { startCopy(user: $user) { `+copyFields+` } }`, variables, &data); err != nil {
+		return err
+	}
+	for _, c := range data.StartCopy {
+		if c.Running != nil {
+			fmt.Printf("%s → %s: a pass is already running\n", c.User, c.Folder)
+		} else {
+			fmt.Printf("%s → %s: started\n", c.User, c.Folder)
+		}
+	}
+	fmt.Println("The server's log tells when each pass ends; journal-server copy report shows how far it is.")
+	return nil
+}
+
+// copyReportCommand is `journal-server copy report [user] [--list]`: how each copy is doing and what it lacks.
+func copyReportCommand(config auth.AppConfig, args []string) error {
+	variables := map[string]any{"paths": false}
+	for _, arg := range args {
+		switch {
+		case arg == "--list":
+			variables["paths"] = true
+		case !strings.HasPrefix(arg, "-") && variables["user"] == nil:
+			variables["user"] = arg
+		default:
+			return fmt.Errorf("usage: journal-server copy report [user] [--list]")
+		}
+	}
+	var data struct {
+		CopyReport []adminCopy `json:"copyReport"`
+	}
+	err := adminQuery(config, `query($user: String, $paths: Boolean) { copyReport(user: $user, paths: $paths) { `+copyFields+` paths } }`,
+		variables, &data)
+	if err != nil {
+		return err
+	}
+	if len(data.CopyReport) == 0 {
+		fmt.Println("No copies in config.json.")
+		return nil
+	}
+	for i, c := range data.CopyReport {
+		if i > 0 {
+			fmt.Println()
+		}
+		printCopy(c)
+	}
+	return nil
+}
+
+func printCopy(c adminCopy) {
+	mode := "daily " + c.At
+	if c.Realtime {
+		mode = "realtime, " + mode
+	}
+	fmt.Printf("%s → %s   (%s)\n", c.User, c.Folder, mode)
+	if c.SameDisk {
+		fmt.Printf("  warning:      on the data folder's disk; a failing disk takes both\n")
+	}
+	if r := c.Running; r != nil {
+		fmt.Printf("  running:      since %s, %d files, %s copied\n", r.StartedAt.Local().Format("Jan 2 15:04"), r.Files,
+			copies.Size(int64(r.Bytes)))
+	}
+	switch p := c.LastPass; {
+	case p == nil:
+		fmt.Printf("  last pass:    none since the server started\n")
+	case p.Error != nil:
+		fmt.Printf("  last pass:    %s, stopped: %s (%d files copied)\n", p.StartedAt.Local().Format("Jan 2 15:04"), *p.Error, p.Files)
+	default:
+		fmt.Printf("  last pass:    %s, done in %s, %d files (%s), %d failed\n", p.StartedAt.Local().Format("Jan 2 15:04"),
+			p.FinishedAt.Sub(p.StartedAt).Round(time.Second), p.Files, copies.Size(int64(p.Bytes)), p.Failed)
+	}
+	if c.Error != nil {
+		fmt.Printf("  not copied:   unknown: %s\n", *c.Error)
+		return
+	}
+	if c.Originals == 0 && c.Sidecars == 0 {
+		fmt.Printf("  not copied:   nothing; the copy is up to date\n")
+	} else {
+		fmt.Printf("  not copied:   %d originals (%s), %d sidecars\n", c.Originals, copies.Size(int64(c.OriginalBytes)), c.Sidecars)
+	}
+	if c.InCopyOnly > 0 {
+		fmt.Printf("  in copy only: %d originals (kept; gone from the data folder)\n", c.InCopyOnly)
+	}
+	for _, path := range c.Paths {
+		fmt.Printf("    %s\n", path)
+	}
 }
 
 func adminQuery(config auth.AppConfig, query string, variables map[string]any, out any) error {

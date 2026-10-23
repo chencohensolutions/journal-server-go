@@ -42,6 +42,7 @@ type testEnv struct {
 	search     *search.Service
 	faces      *faces.Service
 	reader     *reading.Reader
+	library    *media.Library
 	// Reads what journal-server index added ("index": "daily"); nil otherwise.
 	refreshIndexes func()
 }
@@ -152,7 +153,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
-		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes}
+		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes, library: library}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {
@@ -294,7 +295,7 @@ func TestEnrolledDeviceCanUseItsCertificateUntilRevoked(t *testing.T) {
 
 func TestAdminAPIRequiresTokenAndCreatesCodes(t *testing.T) {
 	env := newTestEnv(t)
-	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes))
+	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes, nil, nil))
 	defer admin.Close()
 
 	unauthorized, err := http.Post(admin.URL+"/admin/query", "application/json", strings.NewReader(`{"query":"{ devices { serial } }"}`))

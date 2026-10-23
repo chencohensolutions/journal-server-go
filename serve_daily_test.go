@@ -17,7 +17,7 @@ import (
 // adminConfig is config pointed at a test admin server that runs refresh on indexesUpdated.
 func adminConfig(t *testing.T, env *testEnv) auth.AppConfig {
 	t.Helper()
-	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes))
+	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes, nil, nil))
 	t.Cleanup(admin.Close)
 	tokenFile := filepath.Join(t.TempDir(), "admin.token")
 	os.WriteFile(tokenFile, []byte("secret\n"), 0o600)

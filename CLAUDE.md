@@ -21,6 +21,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/indexes.md](docs/indexes.md): the reader that feeds every index from one decode of each original (nudity,
   faces, OCR, search, DINOv2 similar photos and duplicates, LAION aesthetic scores), the models and their costs,
   and how to add an index.
+- [docs/copies.md](docs/copies.md): plain copies of each user's data folder in other folders (another disk), daily
+  and as files arrive (`copies` per user in config.json, `Store.OnWrite`), and `copy` / `copy report`.
 
 Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
 
@@ -45,6 +47,7 @@ go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime +
 go run ./scripts/bundle-vips               # portable libvips for Windows into vips/ (gitignored)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
+go run . copy [user] | copy report [user] [--list]   # start the copies' full pass now; what each copy lacks
 go run . index                             # read new files for every index once and exit ("index": "daily" runs it at "index_at")
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
@@ -120,7 +123,7 @@ cache would hold copies of what the phone already has. Don't propose turning it 
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside
 `Store.Turn` (the store's own write methods already do). The exceptions are `.cache/search/`, `.cache/faces/` and
 the indexes' caches (`.cache/ocr/`, `.cache/similar/`, `.cache/aesthetic/`) and failure lists, which only the
-server writes.
+server writes. Package `copies` never writes into the data folder: it reads it and writes only into the copy folders.
 
 **External tools are found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and `vips/bin` first), or
 at `vips` / `ffmpeg` in `config.json`; libvips's library is then loaded from beside `vips` (on Windows its folder is

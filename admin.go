@@ -15,6 +15,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/copies"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/graph/admin/generated"
 	"github.com/journal/server-go/graph/admin/resolver"
@@ -22,7 +23,7 @@ import (
 
 // serveAdmin runs the admin GraphQL API on a loopback-only listener. Callers prove they can read
 // the token file, which is rewritten (owner-only) on every start.
-func serveAdmin(config auth.AppConfig, enrollment *enroll.Service, refreshIndexes func()) {
+func serveAdmin(config auth.AppConfig, enrollment *enroll.Service, refreshIndexes func(), copiers []*copies.Copier, runCopy func(*copies.Copier)) {
 	if err := requireLoopback(config.AdminAddr); err != nil {
 		log.Fatalf("admin_addr: %v", err)
 	}
@@ -34,15 +35,17 @@ func serveAdmin(config auth.AppConfig, enrollment *enroll.Service, refreshIndexe
 	log.Printf("Admin API listening on http://%s/admin/query", config.AdminAddr)
 	server := &http.Server{
 		Addr:              config.AdminAddr,
-		Handler:           newAdminMux(config, enrollment, token, refreshIndexes),
+		Handler:           newAdminMux(config, enrollment, token, refreshIndexes, copiers, runCopy),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Fatal(server.ListenAndServe())
 }
 
-func newAdminMux(config auth.AppConfig, enrollment *enroll.Service, token string, refreshIndexes func()) *http.ServeMux {
+func newAdminMux(config auth.AppConfig, enrollment *enroll.Service, token string, refreshIndexes func(),
+	copiers []*copies.Copier, runCopy func(*copies.Copier)) *http.ServeMux {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Config: config, Enrollment: enrollment, Now: time.Now, RefreshIndexes: refreshIndexes},
+		Resolvers: &resolver.Resolver{Config: config, Enrollment: enrollment, Now: time.Now, RefreshIndexes: refreshIndexes,
+			Copies: copiers, RunCopy: runCopy},
 	}))
 	srv.AddTransport(transport.POST{})
 
