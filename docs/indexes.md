@@ -73,6 +73,9 @@ day, and the server keeps only what queries need, so it takes far less memory.
   - The server starts it at `"index_at"` (local time, default `"03:00"`) and copies its output into its own log, so
     the `reading:` progress lines show as before.
   - It can also be run by hand at any time; it then tells the server through the admin API (`indexesUpdated`).
+  - `journal-server index --only nudity,faces` loads and reads with only the indexes named (`nudity`, `faces`,
+    `ocr`, `search`, `similar`, `aesthetic`), to bring those up to date first; the next full run catches up with
+    the rest. The VS Code task "server: index nudity and faces now" runs exactly that.
   - Ctrl+C, on it or on the server, finishes the file in hand.
 - **The server keeps:**
   - SigLIP's text half, at full precision (the same model the photos' vectors were made with, so search finds

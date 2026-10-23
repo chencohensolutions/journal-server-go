@@ -267,7 +267,7 @@ func openIndexes(config auth.AppConfig, library *media.Library, previews *media.
 	if config.Index == auth.IndexDaily {
 		return openQueryIndexes(config, library)
 	}
-	return loadIndexes(config, library, previews)
+	return loadIndexes(config, library, previews, nil)
 }
 
 // openQueryIndexes is what queries need of the indexes another process writes (journal-server index): the text
@@ -369,15 +369,31 @@ func (ix indexes) close() {
 	}
 }
 
-// loadIndexes loads every index whose model is there, and the reader for them.
-func loadIndexes(config auth.AppConfig, library *media.Library, previews *media.Previews) indexes {
-	ix := indexes{
-		nudity:    newNudity(config),
-		faces:     newFaces(config, library),
-		ocr:       newOCR(config, library),
-		search:    newSearch(config, library),
-		similar:   newSimilar(config, library),
-		aesthetic: newAesthetic(config, library),
+// indexNames are the indexes by the names journal-server index --only takes, in the order they read a file.
+var indexNames = []string{"nudity", "faces", "ocr", "search", "similar", "aesthetic"}
+
+// loadIndexes loads every index whose model is there, and the reader for them; with only, just the indexes it names
+// (journal-server index --only), so the others' models take no memory.
+func loadIndexes(config auth.AppConfig, library *media.Library, previews *media.Previews, only map[string]bool) indexes {
+	want := func(name string) bool { return only == nil || only[name] }
+	var ix indexes
+	if want("nudity") {
+		ix.nudity = newNudity(config)
+	}
+	if want("faces") {
+		ix.faces = newFaces(config, library)
+	}
+	if want("ocr") {
+		ix.ocr = newOCR(config, library)
+	}
+	if want("search") {
+		ix.search = newSearch(config, library)
+	}
+	if want("similar") {
+		ix.similar = newSimilar(config, library)
+	}
+	if want("aesthetic") {
+		ix.aesthetic = newAesthetic(config, library)
 	}
 	ix.reader = newReader(config, library, previews, ix)
 	return ix

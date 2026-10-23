@@ -55,12 +55,12 @@ func TestTheIndexCommandReadsAndExits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := runIndex(config); !errors.Is(err, media.ErrIndexesLocked) {
+	if err := runIndex(config, nil); !errors.Is(err, media.ErrIndexesLocked) {
 		t.Fatalf("beside another run: %v", err)
 	}
 	unlock()
 
-	if err := runIndex(config); err != nil {
+	if err := runIndex(config, nil); err != nil {
 		t.Fatal(err)
 	}
 	vectors, err := search.OpenVectorsReadOnly(filepath.Join(dir, ".cache", "search", filepath.Base(model)+".vectors"), 0)

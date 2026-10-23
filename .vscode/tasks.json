@@ -75,6 +75,19 @@
 			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
 		},
 		{
+			// The same run with only the nudity scan and faces loaded and reading, to bring those up to date before the
+			// slower indexes (OCR, search, similar, aesthetic); "server: index now" then catches up with the rest.
+			"label": "server: index nudity and faces now",
+			"type": "shell",
+			"command": "go build -o journal-indexer . && ./journal-indexer index --only nudity,faces",
+			"windows": {
+				"command": "go build -o journal-indexer.exe . ; if ($?) { .\\journal-indexer.exe index --only nudity,faces }"
+			},
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": [],
+			"presentation": { "panel": "dedicated", "reveal": "always", "clear": true }
+		},
+		{
 			"label": "adb: devices",
 			"type": "shell",
 			"command": "adb devices -l",

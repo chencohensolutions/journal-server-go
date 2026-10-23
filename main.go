@@ -19,6 +19,9 @@ const usage = `usage:
                                       keep private files from a device, or send them to it again
   journal-server index                read new files for the indexes once, then exit (for "index": "daily";
                                       the server starts it at "index_at")
+  journal-server index --only nudity,faces
+                                      the same, with only the indexes named (nudity, faces, ocr, search,
+                                      similar, aesthetic), to bring those up to date first
 `
 
 func main() {
@@ -31,8 +34,13 @@ func main() {
 		serve(config)
 		return
 	}
-	if os.Args[1] == "index" && len(os.Args) == 2 {
-		if err := runIndex(config); err != nil {
+	if os.Args[1] == "index" {
+		only, err := parseOnly(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(2)
+		}
+		if err := runIndex(config, only); err != nil {
 			log.Fatal(err)
 		}
 		return

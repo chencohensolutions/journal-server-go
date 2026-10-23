@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,8 +21,9 @@ import (
 // and exits, so their models take memory only while it runs. With "index": "daily" the server starts it at
 // "index_at"; it can also be run by hand at any time. It holds each data folder's index lock while it runs, so it
 // refuses to run beside another run, or beside a server that reads in itself ("index": "server"). When done it
-// tells a running server (admin API, indexesUpdated) to read the results; Ctrl+C finishes the file in hand.
-func runIndex(config auth.AppConfig) error {
+// tells a running server (admin API, indexesUpdated) to read the results; Ctrl+C finishes the file in hand. With only
+// (--only nudity,faces), just those indexes are loaded and read, so they can be brought up to date first.
+func runIndex(config auth.AppConfig, only map[string]bool) error {
 	started := time.Now()
 	library, err := openLibrary(config)
 	if err != nil {
@@ -42,7 +45,7 @@ func runIndex(config auth.AppConfig) error {
 		}
 		unlocks = append(unlocks, unlock)
 	}
-	ix := loadIndexes(config, library, newPreviews(config))
+	ix := loadIndexes(config, library, newPreviews(config), only)
 	defer ix.close()
 	if ix.reader == nil {
 		return errors.New("no index has its model: nothing to read (go run ./scripts/bundle-onnx)")
@@ -61,6 +64,26 @@ func runIndex(config auth.AppConfig) error {
 	}
 	notifyServer(config)
 	return nil
+}
+
+// parseOnly reads journal-server index's arguments: none for every index, or --only and a comma-separated list of
+// index names (indexNames). nil means every index.
+func parseOnly(args []string) (map[string]bool, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	if len(args) != 2 || args[0] != "--only" {
+		return nil, fmt.Errorf("usage: journal-server index [--only %s]", strings.Join(indexNames, ","))
+	}
+	only := map[string]bool{}
+	for _, name := range strings.Split(args[1], ",") {
+		name = strings.TrimSpace(name)
+		if !slices.Contains(indexNames, name) {
+			return nil, fmt.Errorf("--only: no index %q (the indexes are %s)", name, strings.Join(indexNames, ", "))
+		}
+		only[name] = true
+	}
+	return only, nil
 }
 
 // notifyServer tells a running server that the indexes' caches changed, so it reads them now; no server, no harm.
