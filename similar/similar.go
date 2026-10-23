@@ -308,6 +308,28 @@ func (u *user) findDuplicates() {
 	})
 }
 
+// CacheFile is user's vectors file; "" for a user with no data folder.
+func (s *Service) CacheFile(user string) string {
+	if u := s.users[user]; u != nil {
+		return u.index.Path()
+	}
+	return ""
+}
+
+// Has reports whether user's file sha has been read.
+func (s *Service) Has(user, sha string) bool {
+	u := s.users[user]
+	return u != nil && u.index.Has(sha)
+}
+
+// Record is user's file sha's record as the vectors file keeps it; nil when it hasn't been read.
+func (s *Service) Record(user, sha string) []byte {
+	if u := s.users[user]; u != nil {
+		return u.index.Record(sha)
+	}
+	return nil
+}
+
 // Counts is how many of user's files have been read, of all of them; files hide reports true for are left out.
 func (s *Service) Counts(user string, hide func(media.Item) bool) (read, total int) {
 	u, store := s.users[user], s.library.Store(user)

@@ -117,3 +117,64 @@ func TestTokensAreLowercasedAndPadded(t *testing.T) {
 		t.Errorf("a long text is %d tokens ending in %d; want %d ending in <eos>", len(long), long[len(long)-1], textLength)
 	}
 }
+
+// The 8-bit text half phones may run (PhoneTextModelQ8) makes vectors close to the full one's, so its searches rank
+// the photos' vectors (read with the full vision half) about the same.
+func TestPhoneTextModel(t *testing.T) {
+	full := loadTestModel(t)
+	folder := filepath.Join("..", "models", "siglip2-base-patch16-256")
+	if _, err := os.Stat(filepath.Join(folder, PhoneTextModelQ8)); err != nil {
+		t.Skipf("%s is missing (go run ./scripts/bundle-onnx)", PhoneTextModelQ8)
+	}
+	rt, err := onnx.LoadRuntime(filepath.Join("..", "onnxruntime", onnx.RuntimeLibrary()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	phone, err := LoadPhoneTextModel(rt, folder, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer phone.Close()
+	colors := map[string]color.RGBA{"red": {220, 20, 20, 255}, "blue": {20, 40, 220, 255}, "green": {30, 180, 40, 255},
+		"yellow": {230, 220, 30, 255}, "black": {10, 10, 10, 255}}
+	pictures := map[string][]float32{}
+	for name, c := range colors {
+		if pictures[name], err = full.ImageVector(plain(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, text := range []string{"a plain red picture", "a dog on the beach at sunset", "קבלה מהסופר", "blue sky"} {
+		a, err := full.TextVector(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := phone.TextVector(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cos := dot(a, b); cos < 0.98 {
+			t.Errorf("%q: the 8-bit vector is %.3f like the full one's, want 0.98 or more", text, cos)
+		}
+	}
+	for name := range colors {
+		text := "a plain " + name + " picture"
+		a, _ := full.TextVector(text)
+		b, _ := phone.TextVector(text)
+		best := func(q []float32) (string, float32) {
+			var top string
+			var score float32 = -2
+			for n, v := range pictures {
+				if s := dot(q, v); s > score {
+					top, score = n, s
+				}
+			}
+			return top, score
+		}
+		if fullBest, _ := best(a); fullBest != name {
+			continue // the full model doesn't find it either
+		}
+		if phoneBest, _ := best(b); phoneBest != name {
+			t.Errorf("%q: the 8-bit text half finds %s first, the full one %s", text, phoneBest, name)
+		}
+	}
+}

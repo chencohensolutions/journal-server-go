@@ -24,6 +24,7 @@ import (
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/graph/generated"
 	"github.com/journal/server-go/graph/resolver"
+	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -210,10 +211,11 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 		return nil
 	}
 
+	local := newLocal(config, library, ix)
 	mux := http.NewServeMux()
 	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix)))))
+		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix, local)))))
 	// The nudity scan, faces and search read a finished upload right away.
 	var wake []func()
 	if ix.reader != nil {
@@ -225,14 +227,19 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux.Handle("GET /media/{sha256}", withUser(hideFromDevice(userStore, media.OriginalHandler(userStore))))
 	mux.Handle("GET /media/{sha256}/preview", withUser(hideFromDevice(userStore, media.PreviewHandler(userStore, previews))))
 	mux.Handle("POST /media/{sha256}/verify", withUser(media.VerifyHandler(userStore)))
+	// Indexes kept on phones (docs/search.md "On the phone"): /index/people is a document, gzipped like the feed; the
+	// streams gzip the text in photos themselves, and the model files go as they are, with Range.
+	mux.Handle("GET /index/people", withUser(gzipped(http.HandlerFunc(local.ServePeople))))
+	mux.Handle("GET /index/{name}", withUser(http.HandlerFunc(local.ServeIndex)))
+	mux.Handle("GET /models/{index}/{name}", withUser(http.HandlerFunc(local.ServeModel)))
 	return mux
 }
 
-func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes) *handler.Server {
+func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes, local *localindex.Server) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Enrollment: enrollment, Library: library, Search: ix.search, Faces: ix.faces,
 			TextInPhotos: ix.ocr, SimilarPhotos: ix.similar, AestheticScores: ix.aesthetic, NudityScan: ix.nudity != nil,
-			Previews: previews, Version: serverVersion()},
+			Previews: previews, Version: serverVersion(), Local: local},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})

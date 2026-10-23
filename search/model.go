@@ -18,6 +18,11 @@ import (
 // SigLIP 2 reads text as 64 tokens: the words, then <eos>, then <pad> to fill.
 const textLength = 64
 
+// PhoneTextModelQ8 is the 8-bit text half that bundle-onnx puts beside the full-precision model, for phones that
+// search themselves (a quarter of text_model.onnx's size); the server never loads it. Its vectors are close to the
+// full model's, so they rank the photos' vectors (read with the full vision half) about the same (TestPhoneTextModel).
+const PhoneTextModelQ8 = "text_model_q8.onnx"
+
 // Model is a SigLIP 2 model, in a folder made by scripts/bundle-onnx. It has two halves: the vision half turns a
 // photo into a vector, the text half turns a description into a vector in the same space, and the better the text
 // describes the photo, the closer the two point.
@@ -31,7 +36,7 @@ type Model struct {
 	tokenizer    *sentencepiece.Processor
 	eos, pad     int
 
-	// The picture the vision half takes: Size×Size, each channel scaled to (value/255 - mean) / std.
+	// The picture the vision half takes: Sizeֳ—Size, each channel scaled to (value/255 - mean) / std.
 	size      int
 	mean, std [3]float32
 }
@@ -45,16 +50,22 @@ type preprocessor struct {
 
 // LoadModel loads the model in folder, run with up to threads CPU threads per half.
 func LoadModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
-	return loadModel(rt, folder, threads, true)
+	return loadModel(rt, folder, threads, true, "text_model.onnx")
 }
 
 // LoadTextModel loads only the text half of the model in folder: what searches need, for a server whose files
 // are read by another process (journal-server index). ImageVector then fails.
 func LoadTextModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
-	return loadModel(rt, folder, threads, false)
+	return loadModel(rt, folder, threads, false, "text_model.onnx")
 }
 
-func loadModel(rt *onnx.Runtime, folder string, threads int, vision bool) (*Model, error) {
+// LoadPhoneTextModel loads the text half phones may run instead (PhoneTextModelQ8, beside the model in folder): to
+// check that it ranks as the full one does, and to give the apps vectors to test against (scripts/local-fixtures).
+func LoadPhoneTextModel(rt *onnx.Runtime, folder string, threads int) (*Model, error) {
+	return loadModel(rt, folder, threads, false, PhoneTextModelQ8)
+}
+
+func loadModel(rt *onnx.Runtime, folder string, threads int, vision bool, textFile string) (*Model, error) {
 	abs, err := filepath.Abs(folder)
 	if err != nil {
 		return nil, err
@@ -94,7 +105,7 @@ func loadModel(rt *onnx.Runtime, folder string, threads int, vision bool) (*Mode
 			return nil, fmt.Errorf("vision_model.onnx: %w", err)
 		}
 	}
-	if m.text, err = rt.NewSession(filepath.Join(folder, "text_model.onnx"), threads); err != nil {
+	if m.text, err = rt.NewSession(filepath.Join(folder, textFile), threads); err != nil {
 		return nil, err
 	}
 	if err := m.text.Use([]string{"input_ids"}, []string{"pooler_output", "text_embeds"}); err != nil {

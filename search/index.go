@@ -224,6 +224,27 @@ func (x *Index) Vector(sha string) []float32 {
 	return slices.Clone(x.vectors[i*x.dim : (i+1)*x.dim])
 }
 
+// Path is the vectors file.
+func (x *Index) Path() string { return x.path }
+
+// Record is sha's record as the file keeps it (its sha256's 32 bytes, then its vector), from memory; nil when it has
+// no vector. Phones that keep the index get records this way (package localindex).
+func (x *Index) Record(sha string) []byte {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	i, ok := x.row[sha]
+	if !ok {
+		return nil
+	}
+	raw, _ := hex.DecodeString(sha)
+	record := make([]byte, 32, x.recordSize())
+	copy(record, raw)
+	for _, v := range x.vectors[i*x.dim : (i+1)*x.dim] {
+		record = binary.LittleEndian.AppendUint32(record, math.Float32bits(v))
+	}
+	return record
+}
+
 // Len is how many files have a vector.
 func (x *Index) Len() int {
 	x.mu.RLock()

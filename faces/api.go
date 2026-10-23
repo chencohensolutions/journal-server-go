@@ -81,6 +81,36 @@ func (p *people) list(keep func(sha string) bool, withGroups bool) []Person {
 	return list
 }
 
+// Member is a named person or a group of alike faces with every face of theirs in files a device may see: what a
+// phone that keeps the faces needs to find people itself (package localindex).
+type Member struct {
+	ID    string
+	Name  string // "" for a group not named
+	Faces []FaceID
+}
+
+// members is the people and groups of list, each with their faces in files keep accepts, in list's order.
+func (p *people) members(keep func(sha string) bool, withGroups bool) []Member {
+	listed := p.list(keep, withGroups)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	members := make([]Member, 0, len(listed))
+	for _, person := range listed {
+		g := p.groups[person.ID]
+		if g == nil { // regrouped between the two locks
+			continue
+		}
+		m := Member{ID: g.ID, Name: g.Name}
+		for _, id := range g.Faces {
+			if keep(id.Sha256) {
+				m.Faces = append(m.Faces, id)
+			}
+		}
+		members = append(members, m)
+	}
+	return members
+}
+
 // facesIn is the faces found in the file sha, biggest first; nil when it hasn't been read or has none.
 func (p *people) facesIn(sha string) []FaceInfo {
 	p.mu.Lock()

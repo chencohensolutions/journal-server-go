@@ -191,6 +191,9 @@ func (v View) key() string {
 	return flag + v.Hidden.Key()
 }
 
+// Key names the view, as the feed's cursors do: two views with the same key leave out the same files.
+func (v View) Key() string { return v.key() }
+
 // Hides reports whether the view leaves item out. A file is hidden with the file it is an edit of or paired with,
 // so the edit of a hidden screenshot is hidden too.
 func (s *Store) Hides(v View, item Item) bool {

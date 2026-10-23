@@ -176,5 +176,8 @@ Then add it to the reader in `newReader` (`library.go`). Where it keeps its resu
 - anything bigger, or derived and rebuildable, goes in `.cache/<name>/` (as faces and search do), written only by the
   server.
 
+For phones to keep the index too ([search.md](search.md) "On the phone"), give its service `CacheFile`, `Has` and
+`Record` (`localindex.Cache`) and add it to `newLocal` (`library.go`), with its cache file's format.
+
 The reader takes care of the rest: picture making, order, the memory budget, failures, progress, wake-ups and
 restarts. An index that reads no picture (only the sidecar, say) costs no decoding.

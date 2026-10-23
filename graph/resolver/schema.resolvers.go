@@ -70,6 +70,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		TextInPhotos: r.TextInPhotos != nil,
 		Similar:      r.SimilarPhotos != nil,
 		Aesthetic:    r.AestheticScores != nil,
+		LocalIndexes: r.Local.On(),
 	}, nil
 }
 

@@ -15,7 +15,9 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/media.md](docs/media.md): the data folder and sidecar format, resumable `PUT /upload/{sha256}`,
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, the change feed, nudity scores, private
   files, hidden collections, imports, turns between processes.
-- [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server.
+- [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
+  "On the phone": the indexes a phone may keep and search itself (`localIndexes`, `/index/{name}` streams,
+  `/index/people`, `/models/…`).
 - [docs/faces.md](docs/faces.md): face search: YuNet and SFace on the same runtime, groups of alike faces, people
   the user names (`people.json`), `people`, `similarFaces`, `searchMedia(people:)`.
 - [docs/indexes.md](docs/indexes.md): the reader that feeds every index from one decode of each original (nudity,
@@ -52,6 +54,7 @@ go run . index                             # read new files for every index once
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
 go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named, screenshots' app
+go run ./scripts/local-fixtures --out <folder>            # made-up cases with the server's answers, for the apps' local search tests
 ```
 
 - **After changing the public schema**, the client must get the copy: in `../journal-client-kmp` run
@@ -144,7 +147,9 @@ loaded at a search and released after 10 idle minutes (`search.NewOnDemandServic
 one writer at a time. Packages `ocr` (Hebrew and English text in photos, found by
 `searchMedia`), `similar` (DINOv2: `similarMedia`, `duplicates`) and `aesthetic` (LAION on CLIP L/14:
 `Media.aesthetic`) are indexes too; logs name indexes by their model (`Index.Model`). Without the runtime or a model, that index is off (search queries
-answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
+answer an error). Package `localindex` gives phones the indexes to keep (`newLocal` in `library.go`): each cache file
+as a stream of what was added since a cursor, filtered by the device's `View`, with records of files whose visibility
+changed dropped or sent again from the index's memory (`Cache.Record`); the people whole; and the text half's files. The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
 `Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
 `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `same.go` (the same-picture check), `recheck.go` (`--recheck`), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).

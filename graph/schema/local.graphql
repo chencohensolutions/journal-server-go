@@ -1,0 +1,46 @@
+# --- Indexes kept on the phone ---------------------------------------------------
+# A phone may keep any of the server's indexes and search them itself (docs/search.md "On the phone"). It reads
+# this manifest, downloads each index it keeps as a stream of what was added since its last look
+# (GET /index/{name}?cursor=…), the people whole (GET /index/people), and the model files it runs
+# (GET /models/{index}/{name}, with Range). Only what this device may see is listed and sent.
+
+extend type Query {
+  "The indexes this device may keep, those of the server that are on."
+  localIndexes: [LocalIndex!]!
+}
+
+extend type ServerInfo {
+  "Phones may keep indexes and search them themselves (localIndexes)."
+  localIndexes: Boolean!
+}
+
+type LocalIndex {
+  "search (text search, SigLIP 2), faces, ocr (text in photos), similar (similar photos and duplicates, DINOv2), aesthetic."
+  name: String!
+  "The index's model: when it changes, the stream starts again with everything (reset)."
+  model: String!
+  """
+  How the stream's records are written: vectors (sha256's 32 bytes, then dim 4-byte floats, little-endian), faces
+  (sha256's 32 bytes, a 2-byte count, then per face 15 floats of box, score and points and dim floats of vector), or
+  jsonl (a JSON line per file: {"sha256", "lines": [{"text", "box", "score"}]}).
+  """
+  format: String!
+  "The vectors' length; 0 for jsonl, and for an index with nothing read yet."
+  dim: Int!
+  "How many files this device may see have been read for the index."
+  files: Int!
+  "About how much a stream from the start sends, in bytes."
+  bytes: Int64!
+  "The files a phone needs to run the index (search: the text half of the model and its tokenizer); none for the others."
+  models: [ModelFile!]!
+}
+
+type ModelFile {
+  name: String!
+  "fp32 or q8 for a model, \"\" for a file every precision needs (the tokenizer). A phone downloads one precision."
+  precision: String!
+  bytes: Int64!
+  sha256: Sha256!
+  "Its path on this server, to GET with Range: /models/{index}/{name}."
+  url: String!
+}

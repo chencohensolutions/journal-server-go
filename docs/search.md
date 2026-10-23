@@ -58,7 +58,8 @@ fits a picture, the closer their vectors point; the closeness is their cosine si
   again. Only the server writes it (no turns needed: it is in `.cache` and no other process touches it).
 - The model folder holds `vision_model.onnx`, `text_model.onnx` (plus `*.onnx_data` for the large model's weights),
   `tokenizer.model` (Gemma's SentencePiece vocabulary, read by github.com/eliben/go-sentencepiece) and
-  `preprocessor_config.json` (picture size and scaling).
+  `preprocessor_config.json` (picture size and scaling). A full-precision folder also has `text_model_q8.onnx`, the
+  8-bit text half, for phones only (below); the server never loads it.
 
 ## Setting it up
 
@@ -93,6 +94,53 @@ again with the new one and leaves the old vectors in place for switching back.
 Languages: SigLIP 2 was trained on many languages, but English works best. On a test set with the base model,
 Hebrew "פרח אדום" (red flower) and "סופת ברקים" (lightning storm) found the right pictures, "משהו מהים" (something
 from the sea) didn't; the large model is better at languages other than English.
+
+## On the phone
+
+A phone may keep any of the indexes and search them itself, each turned on in the app's settings: text search, faces
+(people and similar faces), text in photos, similar photos and duplicates, and aesthetic scores. It then searches
+without the server, offline too, and the server sends only what was added since the phone's last look, daily or
+when the user asks. The package is `localindex/`. Everything below needs a device certificate, and only what the
+device may see is listed or sent, as everywhere else.
+
+- **The manifest.** `localIndexes` lists the indexes that are on: each one's `name`, `model`, record `format`,
+  vector length (`dim`), how many of the device's `files` it has read, about how many `bytes` a download from the
+  start is, and the `models` a phone needs to run it. Only text search needs one: the text half, to turn a query into a
+  vector (`text_model.onnx`, 1.13 GB, the same as the server's; or `text_model_q8.onnx`, about 290 MB, the 8-bit
+  one), and `tokenizer.model` for either. The photos' vectors are the server's, read with the full vision half;
+  `TestPhoneTextModel` checks that the 8-bit text half's vectors are within 0.98 cosine of the full one's and find the
+  same pictures first, so they rank the photos about the same. Faces, text in photos, similar photos and scores need no model on the phone: everything is already
+  read. `serverInfo.localIndexes` says whether there is any.
+- **The stream.** `GET /index/{name}?cursor=…` sends the records the index's cache file has after the cursor (none:
+  all of them). It is a JSON line (`index`, `model`, `format`, `dim`, `reset`), then frames: a kind byte, the length of
+  what follows as 4 bytes little-endian, and that many bytes.
+  - `R` is a record, exactly as the cache file keeps it: `vectors` (the sha256's 32 bytes, then `dim` float32s),
+    `faces` (the sha256, a 2-byte count, then per face 15 float32s of box, score and points, and `dim` of vector) or
+    `jsonl` (the OCR line, without its newline). A file that comes again replaces what the phone had of it.
+  - `D` is a sha256 (32 bytes) to drop.
+  - `C` is a cursor to go on from should the stream break, every 4 MB of the file; `E` is the cursor for next time,
+    and the end (a stream without it broke).
+  - `reset: true` tells the phone to drop what it has of the index first: a new model, a cache file started over (the
+    cursor names the last record it saw, which must still be there), or a cursor this server can't read.
+  - Text in photos is gzipped when the phone accepts it; vectors hardly shrink, and aren't.
+- **What the device may see.** Records of files the device may not see are left out. Before the new records, the
+  stream sends what changed for files sent before: with another view than the cursor's (the user hid or showed a
+  collection, the device was set to withhold private files), every file whose visibility differs, and every file whose
+  sidecar changed since the last look (marked private or not, scored by the nudity scan). Each is dropped (`D`) or sent
+  again from the index's memory (`R`), so hiding WhatsApp doesn't download the index again. Files deleted from the
+  server aren't told here: the change feed tells the phone, which drops them from its indexes too.
+- **People.** `GET /index/people` is the people and groups as `people` lists them (named first), each with every
+  face of theirs in files the device may see, as face ids (`<sha256>:<n>`, n counting the file's faces in its record).
+  Groups live only in the server's memory and are renumbered when the user names, merges or moves, so the document
+  comes whole; its hash is the `ETag`, and `If-None-Match` answers 304 when nothing changed. Naming, merging and moving
+  stay server mutations.
+- **Model files.** `GET /models/{index}/{name}` sends a file the manifest lists, with Range (a gigabyte resumes where
+  it broke) and its sha256 as the ETag. The server hashes them in the background at start and keeps the hashes in
+  `.hashes.json` in the model folder; a file is listed once hashed.
+- **Doing what the server does.** A phone's search must give the server's answers. `go run ./scripts/local-fixtures
+  --out <folder>` writes made-up cases with the server's answers: the tokens and vectors of queries (fp32 and 8-bit),
+  text in photos' words, matches and order, grouping into sets and moments, and the thresholds. The apps test against
+  them.
 
 Not built yet: finding photos like a given one, date and place filters, and captions (a model on another computer
 describing each photo).

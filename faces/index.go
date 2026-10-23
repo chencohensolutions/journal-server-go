@@ -202,6 +202,28 @@ func (x *Index) Faces(sha string) []Face {
 	return x.files[sha]
 }
 
+// Path is the faces file.
+func (x *Index) Path() string { return x.path }
+
+// Record is sha's record as the file keeps it (its sha256's 32 bytes, how many faces, and each face), from memory;
+// nil when it hasn't been read. Phones that keep the faces get records this way (package localindex).
+func (x *Index) Record(sha string) []byte {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	faces, ok := x.files[sha]
+	if !ok {
+		return nil
+	}
+	raw, _ := hex.DecodeString(sha)
+	record := make([]byte, 34, 34+len(faces)*4*(faceFields+Dim))
+	copy(record, raw)
+	binary.LittleEndian.PutUint16(record[32:], uint16(len(faces)))
+	for _, f := range faces {
+		record = encodeFace(record, f)
+	}
+	return record
+}
+
 // Len is how many files have been read, and how many faces were found in them.
 func (x *Index) Len() (files, faces int) {
 	x.mu.RLock()

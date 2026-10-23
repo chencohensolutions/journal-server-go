@@ -118,6 +118,30 @@ func (s *Service) Find(user, query string, keep func(sha string) bool) []string 
 	return nil
 }
 
+// CacheFile is user's texts file; "" for a user with no data folder.
+func (s *Service) CacheFile(user string) string {
+	if t := s.users[user]; t != nil {
+		return t.path
+	}
+	return ""
+}
+
+// Has reports whether user's photo sha has been read for text.
+func (s *Service) Has(user, sha string) bool {
+	t := s.users[user]
+	return t != nil && t.has(sha)
+}
+
+// Record is user's photo sha's line in the texts file, without its newline; nil when it hasn't been read.
+func (s *Service) Record(user, sha string) []byte {
+	t := s.users[user]
+	if t == nil || !t.has(sha) {
+		return nil
+	}
+	data, _ := json.Marshal(record{sha, t.lines(sha)})
+	return data
+}
+
 // Counts is how many of user's photos have been read for text, of all of them; files hide reports true for are left
 // out of both.
 func (s *Service) Counts(user string, hide func(media.Item) bool) (read, total int) {
@@ -404,4 +428,21 @@ func matches(w, q string) bool {
 		}
 	}
 	return true
+}
+
+// Tokenize is text's words as Find compares them: letters and digits, lower case, without niqqud, and Hebrew's
+// final letters as the others. Apps that search the text themselves do the same (scripts/local-fixtures).
+func Tokenize(text string) []string { return tokenize(text) }
+
+// Matches reports whether the word w (from a photo, tokenized) answers the query word q (tokenized), as Find does.
+func Matches(w, q string) bool { return matches(w, q) }
+
+// FindIn is Find over the texts given (by sha256), for apps to check their own search against
+// (scripts/local-fixtures).
+func FindIn(files map[string][]Line, query string) []string {
+	t := &texts{files: map[string][]Line{}, words: map[string]map[string]int{}}
+	for sha, lines := range files {
+		t.put(sha, lines)
+	}
+	return t.find(query, func(string) bool { return true })
 }

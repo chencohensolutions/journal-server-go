@@ -116,6 +116,16 @@ type ComplexityRoot struct {
 		Whatsapp              func(childComplexity int) int
 	}
 
+	LocalIndex struct {
+		Bytes  func(childComplexity int) int
+		Dim    func(childComplexity int) int
+		Files  func(childComplexity int) int
+		Format func(childComplexity int) int
+		Model  func(childComplexity int) int
+		Models func(childComplexity int) int
+		Name   func(childComplexity int) int
+	}
+
 	Media struct {
 		Aesthetic  func(childComplexity int) int
 		App        func(childComplexity int) int
@@ -152,6 +162,14 @@ type ComplexityRoot struct {
 		Indexed func(childComplexity int) int
 		Model   func(childComplexity int) int
 		Total   func(childComplexity int) int
+	}
+
+	ModelFile struct {
+		Bytes     func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Precision func(childComplexity int) int
+		Sha256    func(childComplexity int) int
+		URL       func(childComplexity int) int
 	}
 
 	Mutation struct {
@@ -198,6 +216,7 @@ type ComplexityRoot struct {
 		Duplicates        func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
 		EnrollmentPreview func(childComplexity int, code string) int
 		HiddenCollections func(childComplexity int) int
+		LocalIndexes      func(childComplexity int) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
 		People            func(childComplexity int, includeGroups *bool, includePrivate *bool) int
@@ -220,6 +239,7 @@ type ComplexityRoot struct {
 		API          func(childComplexity int) int
 		Aesthetic    func(childComplexity int) int
 		Faces        func(childComplexity int) int
+		LocalIndexes func(childComplexity int) int
 		NudityScan   func(childComplexity int) int
 		Posters      func(childComplexity int) int
 		Previews     func(childComplexity int) int
@@ -280,6 +300,7 @@ type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 	ServerInfo(ctx context.Context) (*model.ServerInfo, error)
 	HiddenCollections(ctx context.Context) (*model.HiddenCollections, error)
+	LocalIndexes(ctx context.Context) ([]*model.LocalIndex, error)
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
@@ -564,6 +585,49 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.HiddenCollections.Whatsapp(childComplexity), true
 
+	case "LocalIndex.bytes":
+		if e.ComplexityRoot.LocalIndex.Bytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Bytes(childComplexity), true
+	case "LocalIndex.dim":
+		if e.ComplexityRoot.LocalIndex.Dim == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Dim(childComplexity), true
+	case "LocalIndex.files":
+		if e.ComplexityRoot.LocalIndex.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Files(childComplexity), true
+	case "LocalIndex.format":
+		if e.ComplexityRoot.LocalIndex.Format == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Format(childComplexity), true
+	case "LocalIndex.model":
+		if e.ComplexityRoot.LocalIndex.Model == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Model(childComplexity), true
+	case "LocalIndex.models":
+		if e.ComplexityRoot.LocalIndex.Models == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Models(childComplexity), true
+	case "LocalIndex.name":
+		if e.ComplexityRoot.LocalIndex.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LocalIndex.Name(childComplexity), true
+
 	case "Media.aesthetic":
 		if e.ComplexityRoot.Media.Aesthetic == nil {
 			break
@@ -740,6 +804,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.MediaSearch.Total(childComplexity), true
+
+	case "ModelFile.bytes":
+		if e.ComplexityRoot.ModelFile.Bytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ModelFile.Bytes(childComplexity), true
+	case "ModelFile.name":
+		if e.ComplexityRoot.ModelFile.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ModelFile.Name(childComplexity), true
+	case "ModelFile.precision":
+		if e.ComplexityRoot.ModelFile.Precision == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ModelFile.Precision(childComplexity), true
+	case "ModelFile.sha256":
+		if e.ComplexityRoot.ModelFile.Sha256 == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ModelFile.Sha256(childComplexity), true
+	case "ModelFile.url":
+		if e.ComplexityRoot.ModelFile.URL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ModelFile.URL(childComplexity), true
 
 	case "Mutation.enrollDevice":
 		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
@@ -970,6 +1065,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Query.HiddenCollections(childComplexity), true
 
+	case "Query.localIndexes":
+		if e.ComplexityRoot.Query.LocalIndexes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.LocalIndexes(childComplexity), true
 	case "Query.media":
 		if e.ComplexityRoot.Query.Media == nil {
 			break
@@ -1103,6 +1204,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Faces(childComplexity), true
+	case "ServerInfo.localIndexes":
+		if e.ComplexityRoot.ServerInfo.LocalIndexes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.LocalIndexes(childComplexity), true
 	case "ServerInfo.nudityScan":
 		if e.ComplexityRoot.ServerInfo.NudityScan == nil {
 			break
@@ -1410,6 +1517,53 @@ extend type Mutation {
   at their next sync.
   """
   setHiddenCollections(input: HiddenCollectionsInput!): HiddenCollections!
+}
+`, BuiltIn: false},
+	{Name: "../schema/local.graphql", Input: `# --- Indexes kept on the phone ---------------------------------------------------
+# A phone may keep any of the server's indexes and search them itself (docs/search.md "On the phone"). It reads
+# this manifest, downloads each index it keeps as a stream of what was added since its last look
+# (GET /index/{name}?cursor=…), the people whole (GET /index/people), and the model files it runs
+# (GET /models/{index}/{name}, with Range). Only what this device may see is listed and sent.
+
+extend type Query {
+  "The indexes this device may keep, those of the server that are on."
+  localIndexes: [LocalIndex!]!
+}
+
+extend type ServerInfo {
+  "Phones may keep indexes and search them themselves (localIndexes)."
+  localIndexes: Boolean!
+}
+
+type LocalIndex {
+  "search (text search, SigLIP 2), faces, ocr (text in photos), similar (similar photos and duplicates, DINOv2), aesthetic."
+  name: String!
+  "The index's model: when it changes, the stream starts again with everything (reset)."
+  model: String!
+  """
+  How the stream's records are written: vectors (sha256's 32 bytes, then dim 4-byte floats, little-endian), faces
+  (sha256's 32 bytes, a 2-byte count, then per face 15 floats of box, score and points and dim floats of vector), or
+  jsonl (a JSON line per file: {"sha256", "lines": [{"text", "box", "score"}]}).
+  """
+  format: String!
+  "The vectors' length; 0 for jsonl, and for an index with nothing read yet."
+  dim: Int!
+  "How many files this device may see have been read for the index."
+  files: Int!
+  "About how much a stream from the start sends, in bytes."
+  bytes: Int64!
+  "The files a phone needs to run the index (search: the text half of the model and its tokenizer); none for the others."
+  models: [ModelFile!]!
+}
+
+type ModelFile {
+  name: String!
+  "fp32 or q8 for a model, \"\" for a file every precision needs (the tokenizer). A phone downloads one precision."
+  precision: String!
+  bytes: Int64!
+  sha256: Sha256!
+  "Its path on this server, to GET with Range: /models/{index}/{name}."
+  url: String!
 }
 `, BuiltIn: false},
 	{Name: "../schema/media.graphql", Input: `# --- Media --------------------------------------------------------------------
@@ -2083,6 +2237,26 @@ func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, f
 	return nil, fmt.Errorf("no field named %q was found under type HiddenCollections", field.Name)
 }
 
+func (ec *executionContext) childFields_LocalIndex(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_LocalIndex_name(ctx, field)
+	case "model":
+		return ec.fieldContext_LocalIndex_model(ctx, field)
+	case "format":
+		return ec.fieldContext_LocalIndex_format(ctx, field)
+	case "dim":
+		return ec.fieldContext_LocalIndex_dim(ctx, field)
+	case "files":
+		return ec.fieldContext_LocalIndex_files(ctx, field)
+	case "bytes":
+		return ec.fieldContext_LocalIndex_bytes(ctx, field)
+	case "models":
+		return ec.fieldContext_LocalIndex_models(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type LocalIndex", field.Name)
+}
+
 func (ec *executionContext) childFields_Media(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "sha256":
@@ -2149,6 +2323,22 @@ func (ec *executionContext) childFields_MediaSearch(ctx context.Context, field g
 		return ec.fieldContext_MediaSearch_model(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type MediaSearch", field.Name)
+}
+
+func (ec *executionContext) childFields_ModelFile(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_ModelFile_name(ctx, field)
+	case "precision":
+		return ec.fieldContext_ModelFile_precision(ctx, field)
+	case "bytes":
+		return ec.fieldContext_ModelFile_bytes(ctx, field)
+	case "sha256":
+		return ec.fieldContext_ModelFile_sha256(ctx, field)
+	case "url":
+		return ec.fieldContext_ModelFile_url(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ModelFile", field.Name)
 }
 
 func (ec *executionContext) childFields_NudityHiding(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2231,6 +2421,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_similar(ctx, field)
 	case "aesthetic":
 		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
+	case "localIndexes":
+		return ec.fieldContext_ServerInfo_localIndexes(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -3912,6 +4104,176 @@ func (ec *executionContext) fieldContext_HiddenCollections_nudity(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _LocalIndex_name(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LocalIndex", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _LocalIndex_model(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_model(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Model, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_model(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LocalIndex", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _LocalIndex_format(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_format(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Format, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_format(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LocalIndex", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _LocalIndex_dim(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_dim(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Dim, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_dim(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LocalIndex", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _LocalIndex_files(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LocalIndex", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _LocalIndex_bytes(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Bytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LocalIndex", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _LocalIndex_models(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LocalIndex_models(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Models, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.ModelFile) graphql.Marshaler {
+			return ec.marshalNModelFile2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐModelFileᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LocalIndex_models(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LocalIndex",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ModelFile(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Media_sha256(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -4622,6 +4984,121 @@ func (ec *executionContext) _MediaSearch_model(ctx context.Context, field graphq
 }
 func (ec *executionContext) fieldContext_MediaSearch_model(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("MediaSearch", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ModelFile_name(ctx context.Context, field graphql.CollectedField, obj *model.ModelFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ModelFile_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ModelFile_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ModelFile_precision(ctx context.Context, field graphql.CollectedField, obj *model.ModelFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ModelFile_precision(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Precision, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ModelFile_precision(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ModelFile_bytes(ctx context.Context, field graphql.CollectedField, obj *model.ModelFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ModelFile_bytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Bytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ModelFile_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _ModelFile_sha256(ctx context.Context, field graphql.CollectedField, obj *model.ModelFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ModelFile_sha256(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Sha256, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNSha2562string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ModelFile_sha256(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type Sha256 does not have child fields"))
+}
+
+func (ec *executionContext) _ModelFile_url(ctx context.Context, field graphql.CollectedField, obj *model.ModelFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ModelFile_url(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ModelFile_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Mutation_enrollDevice(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -5496,6 +5973,38 @@ func (ec *executionContext) fieldContext_Query_hiddenCollections(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_localIndexes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_localIndexes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().LocalIndexes(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.LocalIndex) graphql.Marshaler {
+			return ec.marshalNLocalIndex2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐLocalIndexᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_localIndexes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_LocalIndex(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_missingMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6328,6 +6837,29 @@ func (ec *executionContext) _ServerInfo_aesthetic(ctx context.Context, field gra
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_aesthetic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_localIndexes(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_localIndexes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LocalIndexes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_localIndexes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -8848,6 +9380,75 @@ func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.Sele
 	return out
 }
 
+var localIndexImplementors = []string{"LocalIndex"}
+
+func (ec *executionContext) _LocalIndex(ctx context.Context, sel ast.SelectionSet, obj *model.LocalIndex) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, localIndexImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("LocalIndex")
+		case "name":
+			out.Values[i] = ec._LocalIndex_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "model":
+			out.Values[i] = ec._LocalIndex_model(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "format":
+			out.Values[i] = ec._LocalIndex_format(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dim":
+			out.Values[i] = ec._LocalIndex_dim(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._LocalIndex_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "bytes":
+			out.Values[i] = ec._LocalIndex_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "models":
+			out.Values[i] = ec._LocalIndex_models(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var mediaImplementors = []string{"Media"}
 
 func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, obj *model.Media) graphql.Marshaler {
@@ -9129,6 +9730,65 @@ func (ec *executionContext) _MediaSearch(ctx context.Context, sel ast.SelectionS
 			}
 		case "model":
 			out.Values[i] = ec._MediaSearch_model(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var modelFileImplementors = []string{"ModelFile"}
+
+func (ec *executionContext) _ModelFile(ctx context.Context, sel ast.SelectionSet, obj *model.ModelFile) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, modelFileImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ModelFile")
+		case "name":
+			out.Values[i] = ec._ModelFile_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "precision":
+			out.Values[i] = ec._ModelFile_precision(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "bytes":
+			out.Values[i] = ec._ModelFile_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sha256":
+			out.Values[i] = ec._ModelFile_sha256(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._ModelFile_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -9553,6 +10213,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "localIndexes":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_localIndexes(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "missingMedia":
 			field := field
 
@@ -9913,6 +10595,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "aesthetic":
 			out.Values[i] = ec._ServerInfo_aesthetic(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "localIndexes":
+			out.Values[i] = ec._ServerInfo_localIndexes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -10867,6 +11554,32 @@ func (ec *executionContext) marshalNKeyProtection2githubᚗcomᚋjournalᚋserve
 	return v
 }
 
+func (ec *executionContext) marshalNLocalIndex2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐLocalIndexᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.LocalIndex) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNLocalIndex2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐLocalIndex(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNLocalIndex2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐLocalIndex(ctx context.Context, sel ast.SelectionSet, v *model.LocalIndex) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._LocalIndex(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Media) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -10915,6 +11628,32 @@ func (ec *executionContext) marshalNMediaSearch2ᚖgithubᚗcomᚋjournalᚋserv
 		return graphql.Null
 	}
 	return ec._MediaSearch(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNModelFile2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐModelFileᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.ModelFile) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNModelFile2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐModelFile(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNModelFile2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐModelFile(ctx context.Context, sel ast.SelectionSet, v *model.ModelFile) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ModelFile(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNNudityHiding2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHiding(ctx context.Context, sel ast.SelectionSet, v *model.NudityHiding) graphql.Marshaler {

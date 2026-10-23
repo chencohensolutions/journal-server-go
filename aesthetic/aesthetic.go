@@ -212,6 +212,28 @@ func (s *Service) Score(user, sha string) (float32, bool) {
 	return 0, false
 }
 
+// CacheFile is user's scores file (a vectors file of one number a file); "" for a user with no data folder.
+func (s *Service) CacheFile(user string) string {
+	if index := s.scores[user]; index != nil {
+		return index.Path()
+	}
+	return ""
+}
+
+// Has reports whether user's file sha has been scored.
+func (s *Service) Has(user, sha string) bool {
+	index := s.scores[user]
+	return index != nil && index.Has(sha)
+}
+
+// Record is user's file sha's record as the scores file keeps it; nil when it hasn't been scored.
+func (s *Service) Record(user, sha string) []byte {
+	if index := s.scores[user]; index != nil {
+		return index.Record(sha)
+	}
+	return nil
+}
+
 // Counts is how many of user's files have been scored, of all of them; files hide reports true for are left out.
 func (s *Service) Counts(user string, hide func(media.Item) bool) (read, total int) {
 	index, store := s.scores[user], s.library.Store(user)

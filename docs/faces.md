@@ -79,6 +79,8 @@ same person.
   search.
 - `similarFaces(face: id)`: "more photos of this face". It returns the files with a face most like it, best first, one
   face a file, leaving out the face's own file. A score of 0.36 or more is likely the same person.
+- A phone that keeps the faces ([search.md](search.md) "On the phone") gets the faces file's records as a stream, and
+  the people and groups with their faces whole (`GET /index/people`). It then finds people and similar faces itself.
 - `namePerson`, `mergePeople` and `moveFace` answer `Person` / `Face`, or `NotFound` when an id is stale (the app's
   list is older than the server's). The app then loads the people again. `forgetPerson` answers whether there was
   such a person.

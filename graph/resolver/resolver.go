@@ -4,6 +4,7 @@ import (
 	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
+	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/ocr"
 	"github.com/journal/server-go/search"
@@ -33,6 +34,8 @@ type Resolver struct {
 	Previews *media.Previews
 	// The server's build, shown by serverInfo.
 	Version string
+	// The indexes phones may keep (localIndexes); nil or with none when none can be.
+	Local *localindex.Server
 }
 
 // APIVersion is serverInfo.api: raised when a change needs newer apps.

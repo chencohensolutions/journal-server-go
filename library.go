@@ -14,6 +14,7 @@ import (
 	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/faces"
+	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/nudity"
 	"github.com/journal/server-go/ocr"
@@ -348,6 +349,36 @@ func (ix indexes) refresh() {
 		log.Printf("Reading the indexes' new results: %v", err)
 	}
 	debug.FreeOSMemory()
+}
+
+// newLocal is what phones may keep of the indexes that are on: each one's cache, the people of the face index, and
+// the files a phone runs text search with (SigLIP's text half, fp32 or q8, and its tokenizer).
+func newLocal(config auth.AppConfig, library *media.Library, ix indexes) *localindex.Server {
+	var sources []localindex.Source
+	var people localindex.Members
+	if ix.search != nil {
+		sources = append(sources, localindex.Source{Name: "search", Format: localindex.FormatVectors, Cache: ix.search,
+			ModelFolder: config.SearchModel, ModelFiles: []localindex.ModelFileSpec{
+				{Name: "text_model.onnx", Precision: "fp32"},
+				{Name: "text_model.onnx_data", Precision: "fp32"}, // only the large model has one
+				{Name: search.PhoneTextModelQ8, Precision: "q8"},
+				{Name: "tokenizer.model"},
+			}})
+	}
+	if ix.faces != nil {
+		sources = append(sources, localindex.Source{Name: "faces", Format: localindex.FormatFaces, Cache: ix.faces})
+		people = ix.faces
+	}
+	if ix.ocr != nil {
+		sources = append(sources, localindex.Source{Name: "ocr", Format: localindex.FormatJSONL, Cache: ix.ocr})
+	}
+	if ix.similar != nil {
+		sources = append(sources, localindex.Source{Name: "similar", Format: localindex.FormatVectors, Cache: ix.similar})
+	}
+	if ix.aesthetic != nil {
+		sources = append(sources, localindex.Source{Name: "aesthetic", Format: localindex.FormatVectors, Cache: ix.aesthetic})
+	}
+	return localindex.New(library, people, sources...)
 }
 
 // close closes the indexes' cache files.

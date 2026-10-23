@@ -98,6 +98,15 @@ func (s *Service) People(user string, keep func(sha string) bool, withGroups boo
 	return p.list(keep, withGroups), nil
 }
 
+// Members is People with each one's faces (only those in files keep accepts).
+func (s *Service) Members(user string, keep func(sha string) bool, withGroups bool) ([]Member, error) {
+	p, err := s.user(user)
+	if err != nil {
+		return nil, err
+	}
+	return p.members(keep, withGroups), nil
+}
+
 // FacesIn is the faces found in user's file sha, biggest first, and whom each is.
 func (s *Service) FacesIn(user, sha string) []FaceInfo {
 	if p := s.users[user]; p != nil {
@@ -158,6 +167,28 @@ func (s *Service) Forget(user, id string) error {
 		return err
 	}
 	return p.forget(id)
+}
+
+// CacheFile is user's faces file; "" for a user with no data folder.
+func (s *Service) CacheFile(user string) string {
+	if p := s.users[user]; p != nil {
+		return p.index.Path()
+	}
+	return ""
+}
+
+// Has reports whether user's file sha has been read for faces.
+func (s *Service) Has(user, sha string) bool {
+	p := s.users[user]
+	return p != nil && p.index.Has(sha)
+}
+
+// Record is user's file sha's record as the faces file keeps it; nil when it hasn't been read.
+func (s *Service) Record(user, sha string) []byte {
+	if p := s.users[user]; p != nil {
+		return p.index.Record(sha)
+	}
+	return nil
 }
 
 // Counts is how many of user's files have been read for faces, of all of them; files hide reports true for are left

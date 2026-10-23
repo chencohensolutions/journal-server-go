@@ -174,6 +174,25 @@ type HiddenCollectionsInput struct {
 	Nudity *NudityHidingInput `json:"nudity,omitempty"`
 }
 
+type LocalIndex struct {
+	// search (text search, SigLIP 2), faces, ocr (text in photos), similar (similar photos and duplicates, DINOv2), aesthetic.
+	Name string `json:"name"`
+	// The index's model: when it changes, the stream starts again with everything (reset).
+	Model string `json:"model"`
+	// How the stream's records are written: vectors (sha256's 32 bytes, then dim 4-byte floats, little-endian), faces
+	// (sha256's 32 bytes, a 2-byte count, then per face 15 floats of box, score and points and dim floats of vector), or
+	// jsonl (a JSON line per file: {"sha256", "lines": [{"text", "box", "score"}]}).
+	Format string `json:"format"`
+	// The vectors' length; 0 for jsonl, and for an index with nothing read yet.
+	Dim int `json:"dim"`
+	// How many files this device may see have been read for the index.
+	Files int `json:"files"`
+	// About how much a stream from the start sends, in bytes.
+	Bytes int64 `json:"bytes"`
+	// The files a phone needs to run the index (search: the text half of the model and its tokenizer); none for the others.
+	Models []*ModelFile `json:"models"`
+}
+
 type Media struct {
 	Sha256 string    `json:"sha256"`
 	Kind   MediaKind `json:"kind"`
@@ -235,6 +254,16 @@ type MediaSearch struct {
 	Total int `json:"total"`
 	// The model that searched, e.g. siglip2-base-patch16-256; empty for a search by people alone.
 	Model string `json:"model"`
+}
+
+type ModelFile struct {
+	Name string `json:"name"`
+	// fp32 or q8 for a model, "" for a file every precision needs (the tokenizer). A phone downloads one precision.
+	Precision string `json:"precision"`
+	Bytes     int64  `json:"bytes"`
+	Sha256    string `json:"sha256"`
+	// Its path on this server, to GET with Range: /models/{index}/{name}.
+	URL string `json:"url"`
 }
 
 type Mutation struct {
@@ -335,6 +364,8 @@ type ServerInfo struct {
 	Similar bool `json:"similar"`
 	// Photos get aesthetic scores (Media.aesthetic).
 	Aesthetic bool `json:"aesthetic"`
+	// Phones may keep indexes and search them themselves (localIndexes).
+	LocalIndexes bool `json:"localIndexes"`
 }
 
 type SimilarHit struct {

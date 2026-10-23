@@ -2,7 +2,8 @@
 // go run ./scripts/bundle-onnx):
 //
 //   - ONNX Runtime, the library that runs the models, into ./onnxruntime (from Microsoft's GitHub releases);
-//   - a SigLIP 2 model, as ONNX files, into ./models/<name> (from Hugging Face's onnx-community);
+//   - a SigLIP 2 model, as ONNX files, into ./models/<name> (from Hugging Face's onnx-community), and beside a
+//     full-precision one its 8-bit text half, for phones that search themselves;
 //   - the face models, YuNet (finds faces, MIT licence) and SFace (tells them apart, Apache 2.0), into
 //     ./models/yunet-sface (from OpenCV's model zoo on Hugging Face). --faces=false leaves them out;
 //   - NudeNet's detector (320n.onnx, AGPL-3.0), into ./models/nudenet (from NudeNet's GitHub releases).
@@ -44,6 +45,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/journal/server-go/search"
 )
 
 // The ONNX Runtime release to download; the server works with 1.16 or later.
@@ -247,6 +250,10 @@ func bundleModel(repo, suffix, out string) {
 		if _, ok := hashes["onnx/"+part+suffix+".onnx_data"]; ok {
 			files["onnx/"+part+suffix+".onnx_data"] = part + suffix + ".onnx_data"
 		}
+	}
+	// Phones that search themselves may take the 8-bit text half instead, a quarter of the size.
+	if suffix == "" {
+		files["onnx/text_model_quantized.onnx"] = search.PhoneTextModelQ8
 	}
 	check(os.MkdirAll(out, 0o755))
 	for from, to := range files {
