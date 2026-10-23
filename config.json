@@ -3,6 +3,8 @@
   "tls_key": "certs/server-key.pem",
   "client_ca": "certs/ca.pem",
   "client_ca_key": "certs/ca-key.pem",
+  "index": "daily",
+  "index_at": "03:00",
   "users": [
     {
       "username": "hen",
