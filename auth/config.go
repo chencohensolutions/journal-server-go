@@ -60,6 +60,15 @@ type AppConfig struct {
 	// Path of NudeNet's detector (320n.onnx) for the nudity scan, downloaded by scripts/bundle-onnx;
 	// models/nudenet/320n.onnx when empty. New files aren't scanned when it isn't there.
 	NudityModel string `json:"nudity_model"`
+	// Folder of DINOv2 for similar photos and duplicates, made by scripts/bundle-onnx; models/dinov2-small when
+	// empty. Off when the folder isn't there.
+	SimilarModel string `json:"similar_model"`
+	// Folder of the OCR models (Hebrew and English) for text in photos, made by scripts/bundle-onnx;
+	// models/paddleocr-hebrew when empty. Off when the folder isn't there.
+	OCRModel string `json:"ocr_model"`
+	// Folder of CLIP ViT-L/14 and LAION's head for aesthetic scores, made by scripts/bundle-onnx;
+	// models/clip-vit-large-patch14-laion when empty. Off when the folder isn't there.
+	AestheticModel string `json:"aesthetic_model"`
 	// Path of the ONNX Runtime library, which runs the search, face and nudity models; the one in ./onnxruntime (scripts/bundle-onnx)
 	// or Homebrew's when empty.
 	OnnxRuntime string `json:"onnxruntime"`
@@ -78,6 +87,9 @@ const (
 	DefaultSearchModel    = "models/siglip2-base-patch16-256"
 	DefaultFaceModel      = "models/yunet-sface"
 	DefaultNudityModel    = "models/nudenet/320n.onnx"
+	DefaultSimilarModel   = "models/dinov2-small"
+	DefaultOCRModel       = "models/paddleocr-hebrew"
+	DefaultAestheticModel = "models/clip-vit-large-patch14-laion"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -129,6 +141,15 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.NudityModel == "" {
 		c.NudityModel = DefaultNudityModel
+	}
+	if c.SimilarModel == "" {
+		c.SimilarModel = DefaultSimilarModel
+	}
+	if c.OCRModel == "" {
+		c.OCRModel = DefaultOCRModel
+	}
+	if c.AestheticModel == "" {
+		c.AestheticModel = DefaultAestheticModel
 	}
 	if c.ReaderPrepare <= 0 {
 		c.ReaderPrepare = 2

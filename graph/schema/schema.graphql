@@ -33,6 +33,14 @@ type ServerInfo {
   (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
   """
   nudityScan: Boolean!
+  "Face search (people, Media.faces, similarFaces) is on."
+  faces: Boolean!
+  "Text in photos is read (Media.text), and searchMedia finds photos by it."
+  textInPhotos: Boolean!
+  "Similar photos (similarMedia) and duplicates are on."
+  similar: Boolean!
+  "Photos get aesthetic scores (Media.aesthetic)."
+  aesthetic: Boolean!
 }
 
 type Mutation {

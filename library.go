@@ -3,16 +3,20 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/nudity"
+	"github.com/journal/server-go/ocr"
 	"github.com/journal/server-go/onnx"
 	"github.com/journal/server-go/reading"
 	"github.com/journal/server-go/search"
+	"github.com/journal/server-go/similar"
 )
 
 // openLibrary opens the data folder of every user that has one configured.
@@ -160,24 +164,136 @@ func newNudity(config auth.AppConfig) *nudity.Service {
 	return nudity.NewService(model)
 }
 
-// newReader reads the users' files for the indexes that are on (nil ones are off): each file decoded once and given
-// to all of them. nil when none is on.
-func newReader(config auth.AppConfig, library *media.Library, previews *media.Previews, scanner *nudity.Service,
-	facer *faces.Service, searcher *search.Service) *reading.Reader {
+// newSimilar loads ONNX Runtime and DINOv2 and opens each user's vectors; nil (similar photos and duplicates off)
+// when either is missing. The reader (newReader) reads the files not read yet.
+func newSimilar(config auth.AppConfig, library *media.Library) *similar.Service {
+	if _, err := os.Stat(config.SimilarModel); err != nil {
+		log.Printf("Similar photos are off: no model in %s (go run ./scripts/bundle-onnx, or set \"similar_model\" in config.json)", config.SimilarModel)
+		return nil
+	}
+	rt, err := loadRuntime(config)
+	if err != nil {
+		log.Printf("Similar photos are off: %v", err)
+		return nil
+	}
+	model, err := similar.LoadModel(rt, config.SimilarModel, config.SearchThreads)
+	if err != nil {
+		log.Printf("Similar photos are off: %s: %v", config.SimilarModel, err)
+		return nil
+	}
+	service, err := similar.NewService(model, library)
+	if err != nil {
+		log.Printf("Similar photos are off: %v", err)
+		return nil
+	}
+	log.Printf("Similar photos and duplicates with %s on ONNX Runtime %s (%d threads)", model.Name, rt.Version, config.SearchThreads)
+	return service
+}
+
+// newOCR loads ONNX Runtime and the OCR models and opens each user's texts; nil (text in photos off) when either is
+// missing. The reader (newReader) reads the photos not read yet.
+func newOCR(config auth.AppConfig, library *media.Library) *ocr.Service {
+	if _, err := os.Stat(config.OCRModel); err != nil {
+		log.Printf("Text in photos is off: no models in %s (go run ./scripts/bundle-onnx, or set \"ocr_model\" in config.json)", config.OCRModel)
+		return nil
+	}
+	rt, err := loadRuntime(config)
+	if err != nil {
+		log.Printf("Text in photos is off: %v", err)
+		return nil
+	}
+	model, err := ocr.LoadModel(rt, config.OCRModel, config.SearchThreads)
+	if err != nil {
+		log.Printf("Text in photos is off: %s: %v", config.OCRModel, err)
+		return nil
+	}
+	service, err := ocr.NewService(model, library)
+	if err != nil {
+		log.Printf("Text in photos is off: %v", err)
+		return nil
+	}
+	log.Printf("Text in photos with %s on ONNX Runtime %s (%d threads)", model.Name, rt.Version, config.SearchThreads)
+	return service
+}
+
+// newAesthetic loads ONNX Runtime, CLIP ViT-L/14 and LAION's head and opens each user's scores; nil (aesthetic
+// scores off) when either is missing. The reader (newReader) reads the files not read yet.
+func newAesthetic(config auth.AppConfig, library *media.Library) *aesthetic.Service {
+	if _, err := os.Stat(config.AestheticModel); err != nil {
+		log.Printf("Aesthetic scores are off: no model in %s (go run ./scripts/bundle-onnx, or set \"aesthetic_model\" in config.json)", config.AestheticModel)
+		return nil
+	}
+	rt, err := loadRuntime(config)
+	if err != nil {
+		log.Printf("Aesthetic scores are off: %v", err)
+		return nil
+	}
+	model, err := aesthetic.LoadModel(rt, config.AestheticModel, config.SearchThreads)
+	if err != nil {
+		log.Printf("Aesthetic scores are off: %s: %v", config.AestheticModel, err)
+		return nil
+	}
+	service, err := aesthetic.NewService(model, library)
+	if err != nil {
+		log.Printf("Aesthetic scores are off: %v", err)
+		return nil
+	}
+	log.Printf("Aesthetic scores with %s on ONNX Runtime %s (%d threads)", model.Name, rt.Version, config.SearchThreads)
+	return service
+}
+
+// indexes is what the server keeps about each file, each nil when it is off (no model), and the reader that reads
+// the files for them.
+type indexes struct {
+	nudity    *nudity.Service
+	faces     *faces.Service
+	ocr       *ocr.Service
+	search    *search.Service
+	similar   *similar.Service
+	aesthetic *aesthetic.Service
+	reader    *reading.Reader
+}
+
+// openIndexes loads every index whose model is there, and the reader for them.
+func openIndexes(config auth.AppConfig, library *media.Library, previews *media.Previews) indexes {
+	ix := indexes{
+		nudity:    newNudity(config),
+		faces:     newFaces(config, library),
+		ocr:       newOCR(config, library),
+		search:    newSearch(config, library),
+		similar:   newSimilar(config, library),
+		aesthetic: newAesthetic(config, library),
+	}
+	ix.reader = newReader(config, library, previews, ix)
+	return ix
+}
+
+// newReader reads the users' files for the indexes that are on: each file decoded once and given to all of them.
+// nil when none is on.
+func newReader(config auth.AppConfig, library *media.Library, previews *media.Previews, ix indexes) *reading.Reader {
 	r := reading.New(library, reading.Previews{Previews: previews}, config.ReaderPrepare)
-	if scanner != nil {
-		r.Add(scanner)
+	if ix.nudity != nil {
+		r.Add(ix.nudity)
 	}
-	if facer != nil {
-		r.Add(facer.Index())
+	if ix.faces != nil {
+		r.Add(ix.faces.Index())
 	}
-	if searcher != nil {
-		r.Add(searcher)
+	if ix.ocr != nil {
+		r.Add(ix.ocr)
+	}
+	if ix.search != nil {
+		r.Add(ix.search)
+	}
+	if ix.similar != nil {
+		r.Add(ix.similar)
+	}
+	if ix.aesthetic != nil {
+		r.Add(ix.aesthetic)
 	}
 	if len(r.Names()) == 0 {
 		return nil
 	}
-	log.Printf("Reading new files for %v, %d ahead", r.Names(), config.ReaderPrepare)
+	log.Printf("Reading new files with %s, %d ahead", strings.Join(r.Models(), ", "), config.ReaderPrepare)
 	return r
 }
 

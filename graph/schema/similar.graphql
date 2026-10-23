@@ -1,0 +1,35 @@
+# --- Similar photos and duplicates -------------------------------------------
+# With DINOv2 on the server, which compares how photos look: the same scene shot again, an edit, a copy; see
+# docs/indexes.md.
+
+type SimilarHit {
+  media: Media!
+  """
+  How alike the two photos look: the cosine similarity of their DINOv2 vectors, -1 to 1. A copy of the same photo
+  scores about 0.97 or more, the same scene shot again seconds later 0.90 to 0.95.
+  """
+  score: Float!
+}
+
+type DuplicateGroup {
+  "Copies of the same photo, the best looking first (by its aesthetic score, when it has one)."
+  media: [Media!]!
+  "How alike the least alike two of them are (0.96 or more)."
+  score: Float!
+}
+
+extend type Query {
+  """
+  The photos and videos that look most like sha256's, best first, not itself: limit of them (at most 1000) after the
+  first offset; offset + limit at most 10000. Private files as in searchMedia. Fails when the file hasn't been read
+  yet, or similar photos are off on the server.
+  """
+  similarMedia(sha256: Sha256!, limit: Int = 100, offset: Int = 0, includePrivate: Boolean = false): [SimilarHit!]!
+  """
+  The user's groups of copies of the same photo (a photo and a smaller or recompressed copy of it, as WhatsApp
+  sends), for cleaning up: the biggest groups first, limit of them after the first offset. Only files the device may
+  see count, and private ones only with includePrivate; a group left with one is left out. Fails when similar photos
+  are off on the server.
+  """
+  duplicates(limit: Int = 100, offset: Int = 0, includePrivate: Boolean = false): [DuplicateGroup!]!
+}

@@ -134,10 +134,11 @@ func (o *Original) Size() (width, height int) {
 }
 
 // Picture is the original resized once to spec: Fit "contain" fits inside Width×Height and never enlarges;
-// SqueezeFit stretches to exactly Width×Height. No crop.
+// SqueezeFit stretches to exactly Width×Height; "cover" fills exactly Width×Height, cutting off the sides equally
+// (a model's centre crop). No crop of a part.
 func (o *Original) Picture(spec PreviewSpec) (*image.RGBA, error) {
-	if spec.Crop != nil || (spec.Fit != "contain" && spec.Fit != SqueezeFit) || spec.Width < 1 || spec.Height < 1 {
-		return nil, fmt.Errorf("an original's picture is contain or squeeze, without a crop: %+v", spec)
+	if spec.Crop != nil || (spec.Fit != "contain" && spec.Fit != SqueezeFit && spec.Fit != "cover") || spec.Width < 1 || spec.Height < 1 {
+		return nil, fmt.Errorf("an original's picture is contain, cover or squeeze, without a crop: %+v", spec)
 	}
 	if o.img == nil {
 		return o.programPicture(spec)
@@ -148,7 +149,13 @@ func (o *Original) Picture(spec PreviewSpec) (*image.RGBA, error) {
 	}
 	var rgba *image.RGBA
 	err := o.p.lib.onThread(func() error {
-		resized, err := o.p.lib.thumbnail(o.img, spec.Width, spec.Height, size)
+		var resized *vipsImage
+		var err error
+		if spec.Fit == "cover" {
+			resized, err = o.p.lib.thumbnailCover(o.img, spec.Width, spec.Height)
+		} else {
+			resized, err = o.p.lib.thumbnail(o.img, spec.Width, spec.Height, size)
+		}
 		if err != nil {
 			return err
 		}
@@ -206,10 +213,14 @@ func (o *Original) Close() {
 	})
 }
 
-// programPicture is spec made by the vips program from the original file: contain, and for SqueezeFit then
-// stretched in Go.
+// programPicture is spec made by the vips program from the original file: contain or cover, and for SqueezeFit
+// then stretched in Go.
 func (o *Original) programPicture(spec PreviewSpec) (*image.RGBA, error) {
-	contain := PreviewSpec{Width: spec.Width, Height: spec.Height, Fit: "contain", Format: "jpeg", Quality: "max"}
+	fit := "contain"
+	if spec.Fit == "cover" {
+		fit = "cover"
+	}
+	contain := PreviewSpec{Width: spec.Width, Height: spec.Height, Fit: fit, Format: "jpeg", Quality: "max"}
 	img, err := o.programGet(contain)
 	if err != nil {
 		return nil, err

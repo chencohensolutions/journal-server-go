@@ -150,9 +150,10 @@ func newIndex(name string, order int, wants Wants, log *[]string, logMu *sync.Mu
 	return &index{name: name, order: order, wants: wants, fail: map[string]bool{}, done: map[string]bool{}, log: log, logMu: logMu}
 }
 
-func (x *index) Name() string { return x.name }
-func (x *index) Order() int   { return x.order }
-func (x *index) Wants() Wants { return x.wants }
+func (x *index) Name() string  { return x.name }
+func (x *index) Model() string { return x.name + "-model" }
+func (x *index) Order() int    { return x.order }
+func (x *index) Wants() Wants  { return x.wants }
 func (x *index) Needs(user string, item media.Item) bool {
 	x.mu.Lock()
 	defer x.mu.Unlock()

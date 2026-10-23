@@ -25,8 +25,10 @@ import (
 
 // Index is one thing the server keeps about each file, made by reading it.
 type Index interface {
-	// Name names the index in logs and progress lines: "nudity", "faces", "search".
+	// Name names the index in the code and its failure list: "nudity", "faces", "search".
 	Name() string
+	// Model is the model it reads with, as logs and progress lines name it: "nudenet-320n", "yunet-sface".
+	Model() string
 	// Order says who goes first when several need the same file; lower first. Hiding comes before finding.
 	Order() int
 	// Wants is what the index reads of a file. Asked once, when it is added.
@@ -126,6 +128,15 @@ func (r *Reader) Names() []string {
 	return names
 }
 
+// Models is the indexes' models, in order.
+func (r *Reader) Models() []string {
+	models := make([]string, len(r.indexes))
+	for i, x := range r.indexes {
+		models[i] = x.Model()
+	}
+	return models
+}
+
 // Wake has Run look for new files now rather than at its next look: after an upload.
 func (r *Reader) Wake() {
 	select {
@@ -196,7 +207,7 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 		return todo[i].item.Sidecar.Facts.UploadedAt.After(todo[j].item.Sidecar.Facts.UploadedAt)
 	})
 	if len(todo) > 1 {
-		log.Printf("reading: %d files of %s for %s", len(todo), user, strings.Join(r.Names(), ", "))
+		log.Printf("reading: %d files of %s with %s", len(todo), user, strings.Join(r.Models(), ", "))
 	}
 
 	// Stage 1: prepare files ahead, within the memory budget, into a queue of at most prepare files.
@@ -256,12 +267,12 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 			if logs[x.Name()] == nil {
 				folder, name := x.FailureLog()
 				os.MkdirAll(filepath.Join(store.Root(), ".cache", folder), 0o755)
-				logs[x.Name()] = media.NewFailureLog(store, x.Name(), folder, name)
+				logs[x.Name()] = media.NewFailureLog(store, x.Model(), folder, name)
 			}
 			logs[x.Name()].Add(p.item, err)
 			// Without libvips or ffmpeg every file (or video) fails alike; the server said so at start.
 			if !errors.Is(err, media.ErrPreviewsUnavailable) && !errors.Is(err, media.ErrPostersUnavailable) {
-				log.Printf("reading: %s: %s: %v", x.Name(), p.item.Path, err)
+				log.Printf("reading: %s: %s: %v", x.Model(), p.item.Path, err)
 			}
 		}
 		if p.source != nil {
@@ -290,19 +301,21 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 	if len(todo) > 1 || failed > 0 {
 		log.Printf("reading: read %d files of %s in %s: %s", done, user, time.Since(started).Round(time.Second), r.summary(stats))
 	}
-	for name, l := range logs {
-		log.Printf("reading: the files %s could not read are listed in %s", name, l.Path)
+	for _, x := range r.indexes {
+		if l := logs[x.Name()]; l != nil {
+			log.Printf("reading: the files %s could not read are listed in %s", x.Model(), l.Path)
+		}
 	}
 }
 
 type count struct{ read, failed int }
 
-// summary is each index's counts: "nudity 523, faces 520 (3 could not be read), search 0".
+// summary is each index's counts, by model: "nudenet-320n 523, yunet-sface 520 (3 could not be read), …".
 func (r *Reader) summary(stats map[string]*count) string {
 	var parts []string
 	for _, x := range r.indexes {
 		c := stats[x.Name()]
-		part := fmt.Sprintf("%s %d", x.Name(), c.read)
+		part := fmt.Sprintf("%s %d", x.Model(), c.read)
 		if c.failed > 0 {
 			part += fmt.Sprintf(" (%d could not be read)", c.failed)
 		}

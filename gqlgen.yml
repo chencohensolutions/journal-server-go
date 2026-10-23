@@ -20,3 +20,7 @@ models:
     fields:
       faces:
         resolver: true
+      text:
+        resolver: true
+      aesthetic:
+        resolver: true

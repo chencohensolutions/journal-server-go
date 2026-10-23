@@ -1,0 +1,16 @@
+# --- Text in photos -----------------------------------------------------------
+# Read by OCR on the server (Hebrew and English: PaddleOCR finetuned for Hebrew); searchMedia finds photos by it.
+# See docs/indexes.md.
+
+type TextLine {
+  "The line's words in reading order (Hebrew in logical order, as it is stored and typed)."
+  text: String!
+  box: Box!
+  "How sure the reading is, 0 to 1."
+  score: Float!
+}
+
+extend type Media {
+  "The lines of text read in the photo, top to bottom; empty when it has none, hasn't been read, or OCR is off."
+  text: [TextLine!]!
+}

@@ -3,6 +3,7 @@ package resolver
 import (
 	"context"
 	"errors"
+	"strconv"
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/faces"
@@ -32,8 +33,8 @@ func toFace(info faces.FaceInfo) *model.Face {
 	f := &model.Face{
 		ID:     info.ID.String(),
 		Sha256: info.ID.Sha256,
-		Box:    &model.Box{X: float64(info.Box[0]), Y: float64(info.Box[1]), W: float64(info.Box[2]), H: float64(info.Box[3])},
-		Score:  float64(info.Score),
+		Box:    &model.Box{X: f64(info.Box[0]), Y: f64(info.Box[1]), W: f64(info.Box[2]), H: f64(info.Box[3])},
+		Score:  f64(info.Score),
 	}
 	if info.Person != "" {
 		f.PersonID = &info.Person
@@ -89,4 +90,19 @@ func notFound(id string, err error) (model.NotFound, bool) {
 		return model.NotFound{ID: id, Reason: err.Error()}, true
 	}
 	return model.NotFound{}, false
+}
+
+// aestheticOf is user's file sha's aesthetic score, and whether it has one.
+func (r *Resolver) aestheticOf(user, sha string) (float64, bool) {
+	if r.AestheticScores == nil {
+		return 0, false
+	}
+	score, ok := r.AestheticScores.Score(user, sha)
+	return f64(score), ok
+}
+
+// f64 is v as the shortest decimal that is v, so 0.95 kept as a 32-bit float is answered 0.95, not 0.949999988.
+func f64(v float32) float64 {
+	f, _ := strconv.ParseFloat(strconv.FormatFloat(float64(v), 'g', -1, 32), 64)
+	return f
 }

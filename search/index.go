@@ -40,7 +40,12 @@ const indexHeader = "journal-vectors 1\n"
 // OpenIndex opens (or starts) the vectors of model in the data folder root. A file of vectors of another length
 // is started over.
 func OpenIndex(root, model string, dim int) (*Index, error) {
-	path := filepath.Join(root, ".cache", "search", model+".vectors")
+	return OpenVectors(filepath.Join(root, ".cache", "search", model+".vectors"), dim)
+}
+
+// OpenVectors opens (or starts) the vectors file at path, of vectors of dim numbers: the format of OpenIndex, for
+// the other indexes that keep a vector per file (package similar, aesthetic).
+func OpenVectors(path string, dim int) (*Index, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -165,6 +170,14 @@ func (x *Index) Add(sha string, vector []float32) error {
 	}
 	x.put(sha, vector)
 	return nil
+}
+
+// View calls fn with every vector (shas[i]'s is vectors[i*dim : (i+1)*dim]), in the order they were added, while
+// the index can't change. fn must not keep or change them, nor call the index.
+func (x *Index) View(fn func(shas []string, vectors []float32, dim int)) {
+	x.mu.RLock()
+	defer x.mu.RUnlock()
+	fn(x.shas, x.vectors, x.dim)
 }
 
 // Close closes the file; the index can't be added to after.

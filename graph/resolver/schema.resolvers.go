@@ -60,12 +60,16 @@ func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (mod
 // ServerInfo is the resolver for the serverInfo field.
 func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, error) {
 	return &model.ServerInfo{
-		API:        APIVersion,
-		Version:    r.Version,
-		Search:     r.Search != nil,
-		Previews:   r.Previews != nil && r.Previews.Available(),
-		Posters:    r.Previews != nil && r.Previews.PostersAvailable(),
-		NudityScan: r.NudityScan,
+		API:          APIVersion,
+		Version:      r.Version,
+		Search:       r.Search != nil,
+		Previews:     r.Previews != nil && r.Previews.Available(),
+		Posters:      r.Previews != nil && r.Previews.PostersAvailable(),
+		NudityScan:   r.NudityScan,
+		Faces:        r.Faces != nil,
+		TextInPhotos: r.TextInPhotos != nil,
+		Similar:      r.SimilarPhotos != nil,
+		Aesthetic:    r.AestheticScores != nil,
 	}, nil
 }
 

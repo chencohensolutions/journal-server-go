@@ -2,11 +2,25 @@
 
 The server keeps several **indexes** of each user's photos and videos, each made by reading the file once:
 
-| Index | Package | Reads | Keeps |
+| Index (order) | Model | Reads | Keeps |
 |---|---|---|---|
-| nudity | `nudity` | the photo fitted in 320×320 | the score in the sidecar's `detected.nudity` (see [media.md](media.md)) |
-| faces | `faces` | the photo fitted in 640 and in 1280, then each face cut from the original | `.cache/faces/<model>.faces` (see [faces.md](faces.md)) |
-| search | `search` | the photo squeezed to 256×256 | `.cache/search/<model>.vectors` (see [search.md](search.md)) |
+| nudity (0) | `nudenet-320n` | the photo fitted in 320×320 | the score in the sidecar's `detected.nudity` (see [media.md](media.md)) |
+| faces (10) | `yunet-sface` | the photo fitted in 640 and in 1280, then each face cut from the original | `.cache/faces/<model>.faces` (see [faces.md](faces.md)) |
+| ocr (15) | `paddleocr-hebrew` | the photo fitted in 1280, then each word cut from the original at 48 px high | `.cache/ocr/<model>.jsonl` |
+| search (20) | `siglip2-base-patch16-256` | the photo squeezed to 256×256 | `.cache/search/<model>.vectors` (see [search.md](search.md)) |
+| similar (25) | `dinov2-small` | the photo's centre at 224×224 | `.cache/similar/<model>.vectors` |
+| aesthetic (30) | `clip-vit-large-patch14-laion` | the photo's centre at 224×224 | `.cache/aesthetic/<model>.vectors` (one number a file) |
+
+The console names each index by its model: `reading: 1000 of 48210 files of hen (nudenet-320n 1000, yunet-sface 997,
+…)`. Each index is off when its model isn't there (`go run ./scripts/bundle-onnx` downloads them all; `--ocr=false`
+and the like leave one out), and `serverInfo` tells the apps which are on.
+
+**Cost (Oct 23, 2026).** On the owner's PC, with the server indexing at the same time:
+- 22 photos took **3.8 s each** with all six indexes.
+- Of that, CLIP ViT-L/14 is about 0.6 s, DINOv2 about 0.1 s, and OCR 0.3 s for a photo without text. A screenshot
+  full of text takes several seconds more, at about 0.4 s a word.
+- All the models loaded take about **2.2 GB** of memory: SigLIP about 1.5 GB, CLIP L/14 300 MB (8-bit), the others
+  under 100 MB each.
 
 One **reader** (package `reading`) feeds them all. Each file is decoded **once**, and every index gets exactly the
 picture its model reads, each **made from the original** at that size, never from another picture made before.
@@ -48,6 +62,55 @@ picture its model reads, each **made from the original** at that size, never fro
 
 Measured on 20 of the owner's photos (Oct 23, 2026), against before (each index making its own preview with the vips
 program), for all three indexes' pictures of one photo: **JPEG 600 → 117 ms, HEIC 1.92 s → 573 ms**.
+
+## Text in photos (OCR)
+- **Models:** Rivok/paddleocr-hebrew (Apache 2.0), PaddleOCR finetuned for Hebrew: the word detector (DBNet,
+  4.6 MB) and the PP-OCRv6 word recognizer (60 MB). The official PP-OCRv5 has no Hebrew. The recognizer's 120
+  characters are Hebrew, Latin letters, digits and signs, so one model reads mixed lines.
+  - Its card reports 2.2% character errors on Hebrew words and 2.0% on Latin.
+  - The small "mobile" recognizer (7 MB) was 17× faster here, but dropped and swapped letters on rendered Hebrew
+    and English.
+- **Steps:**
+  1. The detector reads the photo fitted in 1280 px: blue, green and red, ImageNet's normalization, padded to a
+     multiple of 32.
+  2. Its text map is cut at 0.3. Each blob whose mean reaches 0.35 becomes a word, grown by 1.5 × area / perimeter
+     (1.3 cut off final letters).
+  3. Words under 10 px high are dropped (specks, icons), and at most the 200 biggest of a photo are read.
+  4. Each word is cut from the original at 48 px high (up to 320 wide) and read one at a time; 16 at once was
+     slower on a CPU. The reading is CTC: the likeliest character at each step, repeats and blanks dropped.
+  5. Words read less surely than 0.5 are dropped.
+  6. Words become lines by their overlap, in reading order: right to left when a line is mostly Hebrew. Hebrew is
+     stored in logical order, as it is typed.
+- **Search:** `searchMedia(text:)` puts photos whose own text has every word first, with score 1, then SigLIP's
+  matches. A word matches:
+  - the same word, ignoring niqqud, final letters' shapes and case;
+  - a word it begins, when it has 3 letters or more;
+  - in Hebrew, the word with up to two prefix letters: ה ו ב כ ל מ ש ("קבלה" finds "בקבלה").
+- **API:** `Media.text` gives the lines (text, box, score).
+
+## Similar photos and duplicates (DINOv2)
+- **Model:** DINOv2 small (Meta, Apache 2.0; onnx-community's export), 88 MB. It compares how photos look rather
+  than what they show.
+- **Reads** the original's centre at 224×224. The vector is its class token, scaled to length 1.
+- **`similarMedia(sha256:)`:** the files most like one, best first.
+- **`duplicates`:** groups of copies.
+  - Two files are copies at a cosine of **0.96** or more, and copies that link through each other are one group.
+  - Measured on the owner's photos: a photo and a smaller, recompressed copy score 0.974–0.993; the same scene shot
+    again seconds later 0.90–0.95 (text search's sets already keep those together); different photos 0.07–0.86.
+  - The first time, every pair is compared, on all the CPUs, after the reader's run; then only new files.
+  - A group lists the best-looking copy first (aesthetic score), else the first uploaded.
+
+## Aesthetic scores
+- **Model:** LAION's aesthetic predictor ("sac+logos+ava1-l14-linearMSE", christophschuhmann/
+  improved-aesthetic-predictor, Apache 2.0), on OpenAI's CLIP ViT-L/14 (MIT; Xenova's 8-bit export, 300 MB).
+  - LAION's head has five linear layers with no activation between them, so `bundle-onnx` multiplies them into one
+    (768 weights and a bias, `laion-head.json`). The server needs no PyTorch.
+  - Aesthetic Predictor V2.5 was left out: it is AGPL.
+- **Reads** the original's centre at 224×224, exactly as CLIP was trained (the short side to 224, the centre cut).
+  The score is the head applied to CLIP's image vector scaled to length 1.
+- **Scale:** about 1 to 10. The owner's sample photos scored 4.2–5.3 (median 4.55), random noise 3.1, flat grey
+  4.4. Around 6 and above is a good photo.
+- **API:** `Media.aesthetic`. `duplicates` uses it to put the best copy first.
 
 ## Adding an index
 An index is one type that implements `reading.Index`:

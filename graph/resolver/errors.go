@@ -19,6 +19,10 @@ const (
 	CodeSearchOff = "SEARCH_OFF"
 	// CodeWithheld: this device is kept from private files, so it can't unmark them.
 	CodeWithheld = "WITHHELD"
+	// CodeSimilarOff: similar photos and duplicates are off on this server (no model or runtime).
+	CodeSimilarOff = "SIMILAR_OFF"
+	// CodeNotReadYet: the file hasn't been read by the index asked about yet (the server is still reading).
+	CodeNotReadYet = "NOT_READ_YET"
 )
 
 // coded is an error with a code devices act on.

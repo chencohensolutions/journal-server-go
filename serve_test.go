@@ -22,11 +22,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
+	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/ocr"
 	"github.com/journal/server-go/reading"
 	"github.com/journal/server-go/search"
+	"github.com/journal/server-go/similar"
 )
 
 type testEnv struct {
@@ -124,12 +128,15 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		}
 		t.Cleanup(facer.Close)
 	}
-	// The reader of the indexes on, which a test runs itself (never with fakeFaceModel: no models to read with).
+	ix := indexes{search: searcher, faces: facer}
+	ix.ocr, ix.similar, ix.aesthetic = testIndexes(t, config, library)
+	// The reader of the indexes on, which a test runs itself (never with fake models: they can't read).
 	var reader *reading.Reader
-	if config.FaceModel != fakeFaceModel {
-		reader = newReader(config, library, previews, nil, facer, searcher)
+	if config.FaceModel != fakeFaceModel && config.SimilarModel != fakeModel {
+		reader = newReader(config, library, previews, ix)
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, searcher, facer, nil, reader))
+	ix.reader = reader
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
@@ -346,4 +353,63 @@ func TestDevicesSpeakHTTP2AndHTTP1(t *testing.T) {
 			t.Fatalf("storageUsage over %s: %d %s", c.proto, resp.StatusCode, resp.Proto)
 		}
 	}
+}
+
+// fakeModel as config.SimilarModel, OCRModel or AestheticModel gives a test env that index without its model: the
+// test writes what it would have read into the data folder's .cache itself, before the env starts.
+const fakeModel = "fake"
+
+// testIndexes is the OCR, similar and aesthetic indexes a test asked for: with fakeModel, without models; off
+// otherwise (loading them takes seconds), unless a test names a real model folder.
+func testIndexes(t *testing.T, config auth.AppConfig, library *media.Library) (*ocr.Service, *similar.Service, *aesthetic.Service) {
+	t.Helper()
+	var (
+		o   *ocr.Service
+		s   *similar.Service
+		a   *aesthetic.Service
+		err error
+	)
+	switch config.OCRModel {
+	case auth.DefaultOCRModel:
+	case fakeModel:
+		if o, err = ocr.NewService(&ocr.Model{Name: fakeModel}, library); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		if o = newOCR(config, library); o == nil {
+			t.Fatalf("no OCR with %s", config.OCRModel)
+		}
+	}
+	switch config.SimilarModel {
+	case auth.DefaultSimilarModel:
+	case fakeModel:
+		if s, err = similar.NewService(&similar.Model{Name: fakeModel, Dim: 2}, library); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		if s = newSimilar(config, library); s == nil {
+			t.Fatalf("no similar photos with %s", config.SimilarModel)
+		}
+	}
+	switch config.AestheticModel {
+	case auth.DefaultAestheticModel:
+	case fakeModel:
+		if a, err = aesthetic.NewService(&aesthetic.Model{Name: fakeModel}, library); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		if a = newAesthetic(config, library); a == nil {
+			t.Fatalf("no aesthetic scores with %s", config.AestheticModel)
+		}
+	}
+	if o != nil {
+		t.Cleanup(o.Close)
+	}
+	if s != nil {
+		t.Cleanup(s.Close)
+	}
+	if a != nil {
+		t.Cleanup(a.Close)
+	}
+	return o, s, a
 }

@@ -48,6 +48,9 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   .cache/previews/<sha[:2]>/<sha256>/1080x1440-cover.webp   ← previews made so far
   .cache/search/<model>.vectors             ← text search's vectors (search.md)
   .cache/faces/<model>.faces                ← the faces found in each file (faces.md)
+  .cache/ocr/<model>.jsonl                  ← the text read in each photo (indexes.md)
+  .cache/similar/<model>.vectors            ← DINOv2 vectors, for similar photos and duplicates (indexes.md)
+  .cache/aesthetic/<model>.vectors          ← each file's aesthetic score (indexes.md)
   .cache/{nudity,faces,search}/<model>.failed.log  ← files those indexes could not read, one line each
 ```
 

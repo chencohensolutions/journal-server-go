@@ -99,6 +99,8 @@ func NewService(model *Model) *Service { return &Service{model: model} }
 
 func (s *Service) Name() string { return "nudity" }
 
+func (s *Service) Model() string { return ModelName }
+
 // Order: first, so that a new photo is hidden before it can be found.
 func (s *Service) Order() int { return 0 }
 

@@ -67,6 +67,13 @@ type Collection struct {
 	Hidden bool   `json:"hidden"`
 }
 
+type DuplicateGroup struct {
+	// Copies of the same photo, the best looking first (by its aesthetic score, when it has one).
+	Media []*Media `json:"media"`
+	// How alike the least alike two of them are (0.96 or more).
+	Score float64 `json:"score"`
+}
+
 type EnrollDeviceInput struct {
 	// As shown by `journal-server enroll-code`; case, dashes and spaces are ignored.
 	Code string `json:"code"`
@@ -203,8 +210,13 @@ type Media struct {
 	Private bool `json:"private"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
+	// How good the photo looks, about 1 to 10, as people rated photos the model learned from: around 4 to 5 is an
+	// ordinary snapshot, 6 and more a good photo. Null until scored, or when aesthetic scores are off.
+	Aesthetic *float64 `json:"aesthetic,omitempty"`
 	// The faces found in the file, biggest first; empty until the server has read it, or when face search is off.
 	Faces []*Face `json:"faces"`
+	// The lines of text read in the photo, top to bottom; empty when it has none, hasn't been read, or OCR is off.
+	Text []*TextLine `json:"text"`
 }
 
 // The server already has this file (from this device or another); nothing to send.
@@ -289,7 +301,7 @@ type Query struct {
 type SearchHit struct {
 	Media *Media `json:"media"`
 	// How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
-	// a good match is often 0.1 to 0.2.
+	// a good match is often 0.1 to 0.2. A photo whose own text has the words (Media.text) scores 1.
 	Score float64 `json:"score"`
 	// Hits with the same set are almost identical photos (a burst, a pose taken again): very alike and taken within ten
 	// minutes of the set's best. Numbered from 0 in the order of each set's best hit, counting from the first hit (not the
@@ -315,6 +327,21 @@ type ServerInfo struct {
 	// New files are scanned for nudity (NudeNet's model is installed), so what scores high is hidden soon after it comes
 	// (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
 	NudityScan bool `json:"nudityScan"`
+	// Face search (people, Media.faces, similarFaces) is on.
+	Faces bool `json:"faces"`
+	// Text in photos is read (Media.text), and searchMedia finds photos by it.
+	TextInPhotos bool `json:"textInPhotos"`
+	// Similar photos (similarMedia) and duplicates are on.
+	Similar bool `json:"similar"`
+	// Photos get aesthetic scores (Media.aesthetic).
+	Aesthetic bool `json:"aesthetic"`
+}
+
+type SimilarHit struct {
+	Media *Media `json:"media"`
+	// How alike the two photos look: the cosine similarity of their DINOv2 vectors, -1 to 1. A copy of the same photo
+	// scores about 0.97 or more, the same scene shot again seconds later 0.90 to 0.95.
+	Score float64 `json:"score"`
 }
 
 type StartUploadInput struct {
@@ -343,6 +370,14 @@ type StorageUsage struct {
 	VideoBytes int64 `json:"videoBytes"`
 	// photoBytes + videoBytes.
 	Bytes int64 `json:"bytes"`
+}
+
+type TextLine struct {
+	// The line's words in reading order (Hebrew in logical order, as it is stored and typed).
+	Text string `json:"text"`
+	Box  *Box   `json:"box"`
+	// How sure the reading is, 0 to 1.
+	Score float64 `json:"score"`
 }
 
 type UploadReady struct {

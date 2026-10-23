@@ -145,8 +145,17 @@ func TestOriginalPicturesAreExactAndUpright(t *testing.T) {
 		if b := bottom.Bounds(); b.Dx() != 20 || b.Dy() != 40 || !isBlue(bottom.At(10, 2)) || !isBlue(bottom.At(10, 37)) {
 			t.Errorf("the bottom half: %v, %v … %v", b, bottom.At(10, 2), bottom.At(10, 37))
 		}
-		if _, err := o.Picture(PreviewSpec{Width: 10, Height: 10, Fit: "cover"}); err == nil {
-			t.Error("a cover picture of an original was made")
+		// cover fills the box, cutting the sides equally (a model's centre crop): the middle of red over blue.
+		square, err := o.Picture(PreviewSpec{Width: 50, Height: 50, Fit: "cover"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b := square.Bounds(); b.Dx() != 50 || b.Dy() != 50 {
+			t.Errorf("cover: %v", b)
+		}
+		redTopBlueBottom(t, "cover", square)
+		if _, err := o.Picture(PreviewSpec{Width: 10, Height: 10, Fit: "contain", Crop: &Rect{0, 0, 0.5, 0.5}}); err == nil {
+			t.Error("a cropped picture of an original was made")
 		}
 	})
 }

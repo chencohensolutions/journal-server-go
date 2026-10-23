@@ -22,8 +22,8 @@ import (
 type vipsLib struct {
 	fn map[string]uintptr
 	// GLib's types of the values set as properties.
-	imageType, sizeType, blobType, arrayImageType uintptr
-	Version                                       string
+	imageType, sizeType, interestingType, blobType, arrayImageType uintptr
+	Version                                                        string
 }
 
 // GLib's fundamental types (G_TYPE_INT and so on) are fixed numbers: the type's place shifted left by 2.
@@ -38,6 +38,7 @@ const (
 	vipsSizeBoth     = 0 // VipsSize: shrink or enlarge to fit (1 is VIPS_SIZE_UP, only enlarge)
 	vipsSizeDown     = 2 // only ever shrink
 	vipsSizeForce    = 3 // exactly the size asked, the aspect not kept
+	vipsCropCentre   = 1 // VipsInteresting: fill the size asked, cutting off the sides equally
 	vipsFormatUchar  = 0 // VipsBandFormat
 	vipsFormatUshort = 2
 )
@@ -46,7 +47,8 @@ var vipsFunctions = []string{
 	"vips_init", "vips_version", "vips_concurrency_set", "vips_cache_set_max", "vips_error_buffer", "vips_error_clear",
 	"vips_thread_shutdown", "vips_operation_new", "vips_cache_operation_buildp", "vips_object_unref_outputs",
 	"vips_object_set_from_string", "vips_foreign_find_load", "vips_foreign_find_save",
-	"vips_image_get_type", "vips_size_get_type", "vips_blob_get_type", "vips_array_image_get_type",
+	"vips_image_get_type", "vips_size_get_type", "vips_interesting_get_type", "vips_blob_get_type",
+	"vips_array_image_get_type",
 	"vips_image_get_width", "vips_image_get_height", "vips_image_get_bands", "vips_image_get_format",
 	"vips_image_get_int", "vips_image_set_int", "vips_image_remove", "vips_image_write_to_memory",
 	"vips_image_copy_memory", "vips_image_new_from_memory_copy", "vips_blob_copy", "vips_array_image_new",
@@ -89,6 +91,7 @@ func loadVipsLib(libs []string, threads int) (*vipsLib, error) {
 	// Nothing is made twice the same: keeping operations would only hold memory.
 	l.call("vips_cache_set_max", 0)
 	l.imageType, l.sizeType = l.call("vips_image_get_type"), l.call("vips_size_get_type")
+	l.interestingType = l.call("vips_interesting_get_type")
 	l.blobType, l.arrayImageType = l.call("vips_blob_get_type"), l.call("vips_array_image_get_type")
 	return l, nil
 }
@@ -288,6 +291,13 @@ func (l *vipsLib) thumbnailFile(path string, width, height, size int) (*vipsImag
 func (l *vipsLib) thumbnail(img *vipsImage, width, height, size int) (*vipsImage, error) {
 	return l.operation("thumbnail_image").setImage("in", img).setInt("width", width).setInt("height", height).
 		setEnum("size", l.sizeType, size).run("out")
+}
+
+// thumbnailCover is img, upright, filling exactly width×height: scaled so the box is covered, the rest cut off
+// equally on both sides.
+func (l *vipsLib) thumbnailCover(img *vipsImage, width, height int) (*vipsImage, error) {
+	return l.operation("thumbnail_image").setImage("in", img).setInt("width", width).setInt("height", height).
+		setEnum("crop", l.interestingType, vipsCropCentre).run("out")
 }
 
 // autorot is img turned upright by its EXIF orientation (which it then no longer has).

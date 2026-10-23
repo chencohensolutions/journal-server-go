@@ -67,6 +67,11 @@ type ComplexityRoot struct {
 		Name   func(childComplexity int) int
 	}
 
+	DuplicateGroup struct {
+		Media func(childComplexity int) int
+		Score func(childComplexity int) int
+	}
+
 	EnrolledDevice struct {
 		Certificate func(childComplexity int) int
 		DeviceName  func(childComplexity int) int
@@ -112,6 +117,7 @@ type ComplexityRoot struct {
 	}
 
 	Media struct {
+		Aesthetic  func(childComplexity int) int
 		App        func(childComplexity int) int
 		DurationMs func(childComplexity int) int
 		Faces      func(childComplexity int) int
@@ -128,6 +134,7 @@ type ComplexityRoot struct {
 		Size       func(childComplexity int) int
 		Source     func(childComplexity int) int
 		TakenAt    func(childComplexity int) int
+		Text       func(childComplexity int) int
 		URL        func(childComplexity int) int
 		UploadedAt func(childComplexity int) int
 		UploadedBy func(childComplexity int) int
@@ -187,6 +194,7 @@ type ComplexityRoot struct {
 
 	Query struct {
 		Changes           func(childComplexity int, since *string, limit *int) int
+		Duplicates        func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
 		EnrollmentPreview func(childComplexity int, code string) int
 		HiddenCollections func(childComplexity int) int
 		Media             func(childComplexity int, sha256 string) int
@@ -195,6 +203,7 @@ type ComplexityRoot struct {
 		SearchMedia       func(childComplexity int, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
 		ServerInfo        func(childComplexity int) int
 		SimilarFaces      func(childComplexity int, face string, limit *int, offset *int, includePrivate *bool) int
+		SimilarMedia      func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
 		StorageUsage      func(childComplexity int) int
 	}
 
@@ -206,12 +215,21 @@ type ComplexityRoot struct {
 	}
 
 	ServerInfo struct {
-		API        func(childComplexity int) int
-		NudityScan func(childComplexity int) int
-		Posters    func(childComplexity int) int
-		Previews   func(childComplexity int) int
-		Search     func(childComplexity int) int
-		Version    func(childComplexity int) int
+		API          func(childComplexity int) int
+		Aesthetic    func(childComplexity int) int
+		Faces        func(childComplexity int) int
+		NudityScan   func(childComplexity int) int
+		Posters      func(childComplexity int) int
+		Previews     func(childComplexity int) int
+		Search       func(childComplexity int) int
+		Similar      func(childComplexity int) int
+		TextInPhotos func(childComplexity int) int
+		Version      func(childComplexity int) int
+	}
+
+	SimilarHit struct {
+		Media func(childComplexity int) int
+		Score func(childComplexity int) int
 	}
 
 	StorageUsage struct {
@@ -220,6 +238,12 @@ type ComplexityRoot struct {
 		Photos     func(childComplexity int) int
 		VideoBytes func(childComplexity int) int
 		Videos     func(childComplexity int) int
+	}
+
+	TextLine struct {
+		Box   func(childComplexity int) int
+		Score func(childComplexity int) int
+		Text  func(childComplexity int) int
 	}
 
 	UploadReady struct {
@@ -235,7 +259,9 @@ type ComplexityRoot struct {
 }
 
 type MediaResolver interface {
+	Aesthetic(ctx context.Context, obj *model.Media) (*float64, error)
 	Faces(ctx context.Context, obj *model.Media) ([]*model.Face, error)
+	Text(ctx context.Context, obj *model.Media) ([]*model.TextLine, error)
 }
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
@@ -258,6 +284,8 @@ type QueryResolver interface {
 	People(ctx context.Context, includeGroups *bool, includePrivate *bool) (*model.People, error)
 	SimilarFaces(ctx context.Context, face string, limit *int, offset *int, includePrivate *bool) ([]*model.FaceHit, error)
 	SearchMedia(ctx context.Context, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error)
+	SimilarMedia(ctx context.Context, sha256 string, limit *int, offset *int, includePrivate *bool) ([]*model.SimilarHit, error)
+	Duplicates(ctx context.Context, limit *int, offset *int, includePrivate *bool) ([]*model.DuplicateGroup, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -373,6 +401,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Collection.Name(childComplexity), true
+
+	case "DuplicateGroup.media":
+		if e.ComplexityRoot.DuplicateGroup.Media == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DuplicateGroup.Media(childComplexity), true
+	case "DuplicateGroup.score":
+		if e.ComplexityRoot.DuplicateGroup.Score == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DuplicateGroup.Score(childComplexity), true
 
 	case "EnrolledDevice.certificate":
 		if e.ComplexityRoot.EnrolledDevice.Certificate == nil {
@@ -519,6 +560,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.HiddenCollections.Whatsapp(childComplexity), true
 
+	case "Media.aesthetic":
+		if e.ComplexityRoot.Media.Aesthetic == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Aesthetic(childComplexity), true
 	case "Media.app":
 		if e.ComplexityRoot.Media.App == nil {
 			break
@@ -615,6 +662,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.TakenAt(childComplexity), true
+	case "Media.text":
+		if e.ComplexityRoot.Media.Text == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Text(childComplexity), true
 	case "Media.url":
 		if e.ComplexityRoot.Media.URL == nil {
 			break
@@ -878,6 +931,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Changes(childComplexity, args["since"].(*string), args["limit"].(*int)), true
+	case "Query.duplicates":
+		if e.ComplexityRoot.Query.Duplicates == nil {
+			break
+		}
+
+		args, err := ec.field_Query_duplicates_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.Duplicates(childComplexity, args["limit"].(*int), args["offset"].(*int), args["includePrivate"].(*bool)), true
 	case "Query.enrollmentPreview":
 		if e.ComplexityRoot.Query.EnrollmentPreview == nil {
 			break
@@ -957,6 +1021,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.SimilarFaces(childComplexity, args["face"].(string), args["limit"].(*int), args["offset"].(*int), args["includePrivate"].(*bool)), true
+	case "Query.similarMedia":
+		if e.ComplexityRoot.Query.SimilarMedia == nil {
+			break
+		}
+
+		args, err := ec.field_Query_similarMedia_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.SimilarMedia(childComplexity, args["sha256"].(string), args["limit"].(*int), args["offset"].(*int), args["includePrivate"].(*bool)), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -995,6 +1070,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.API(childComplexity), true
+	case "ServerInfo.aesthetic":
+		if e.ComplexityRoot.ServerInfo.Aesthetic == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Aesthetic(childComplexity), true
+	case "ServerInfo.faces":
+		if e.ComplexityRoot.ServerInfo.Faces == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Faces(childComplexity), true
 	case "ServerInfo.nudityScan":
 		if e.ComplexityRoot.ServerInfo.NudityScan == nil {
 			break
@@ -1019,12 +1106,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Search(childComplexity), true
+	case "ServerInfo.similar":
+		if e.ComplexityRoot.ServerInfo.Similar == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Similar(childComplexity), true
+	case "ServerInfo.textInPhotos":
+		if e.ComplexityRoot.ServerInfo.TextInPhotos == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.TextInPhotos(childComplexity), true
 	case "ServerInfo.version":
 		if e.ComplexityRoot.ServerInfo.Version == nil {
 			break
 		}
 
 		return e.ComplexityRoot.ServerInfo.Version(childComplexity), true
+
+	case "SimilarHit.media":
+		if e.ComplexityRoot.SimilarHit.Media == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SimilarHit.Media(childComplexity), true
+	case "SimilarHit.score":
+		if e.ComplexityRoot.SimilarHit.Score == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SimilarHit.Score(childComplexity), true
 
 	case "StorageUsage.bytes":
 		if e.ComplexityRoot.StorageUsage.Bytes == nil {
@@ -1056,6 +1168,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.StorageUsage.Videos(childComplexity), true
+
+	case "TextLine.box":
+		if e.ComplexityRoot.TextLine.Box == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TextLine.Box(childComplexity), true
+	case "TextLine.score":
+		if e.ComplexityRoot.TextLine.Score == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TextLine.Score(childComplexity), true
+	case "TextLine.text":
+		if e.ComplexityRoot.TextLine.Text == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TextLine.Text(childComplexity), true
 
 	case "UploadReady.chunkSize":
 		if e.ComplexityRoot.UploadReady.ChunkSize == nil {
@@ -1178,6 +1309,17 @@ func newExecutionContext(
 }
 
 var sources = []*ast.Source{
+	{Name: "../schema/aesthetic.graphql", Input: `# --- Aesthetic scores ---------------------------------------------------------
+# With LAION's aesthetic predictor on CLIP ViT-L/14, on the server; see docs/indexes.md.
+
+extend type Media {
+  """
+  How good the photo looks, about 1 to 10, as people rated photos the model learned from: around 4 to 5 is an
+  ordinary snapshot, 6 and more a good photo. Null until scored, or when aesthetic scores are off.
+  """
+  aesthetic: Float
+}
+`, BuiltIn: false},
 	{Name: "../schema/hidden.graphql", Input: `# --- Hidden collections -------------------------------------------------------
 # What the user hides on every device (Settings → Private media → Hidden collections in the apps), and the files the
 # nudity scan scored high. The server does the hiding: a hidden file comes in the change feed as deleted and hidden
@@ -1573,6 +1715,14 @@ type ServerInfo {
   (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
   """
   nudityScan: Boolean!
+  "Face search (people, Media.faces, similarFaces) is on."
+  faces: Boolean!
+  "Text in photos is read (Media.text), and searchMedia finds photos by it."
+  textInPhotos: Boolean!
+  "Similar photos (similarMedia) and duplicates are on."
+  similar: Boolean!
+  "Photos get aesthetic scores (Media.aesthetic)."
+  aesthetic: Boolean!
 }
 
 type Mutation {
@@ -1640,7 +1790,7 @@ type SearchHit {
   media: Media!
   """
   How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
-  a good match is often 0.1 to 0.2.
+  a good match is often 0.1 to 0.2. A photo whose own text has the words (Media.text) scores 1.
   """
   score: Float!
   """
@@ -1682,16 +1832,73 @@ extend type Query {
   """
   The photos and videos that text describes best ("a dog on the beach at sunset"), best first: limit of them (at most
   1000) after the first offset, for the next page; offset + limit at most 10000.
+  Photos whose own text has every word of text come first (a receipt, a sign, a screenshot: Media.text, Hebrew and
+  English, a word also matching its start and, in Hebrew, its prefixed forms), those with the most matches first;
+  then the files SigLIP finds.
   With people (Person.id), only files with a face of every one of them; with people and no text, those files, the
   last taken first, and indexed and total count the files read for faces.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
   the best are picked, so a filtered search returns the best matches of that year or place. Files the user marked
   private (setPrivate) are left out too, unless includePrivate is true (an app showing private media); on a device
-  set to withhold them they are never found. Fails when text search is off on the server (face search, for people),
+  set to withhold them they are never found. Fails when both text search and text in photos are off on the server
+  (face search, for people),
   when neither text nor people is given, and when a person is not found (load the people again).
   """
   searchMedia(text: String, people: [ID!], limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
+}
+`, BuiltIn: false},
+	{Name: "../schema/similar.graphql", Input: `# --- Similar photos and duplicates -------------------------------------------
+# With DINOv2 on the server, which compares how photos look: the same scene shot again, an edit, a copy; see
+# docs/indexes.md.
+
+type SimilarHit {
+  media: Media!
+  """
+  How alike the two photos look: the cosine similarity of their DINOv2 vectors, -1 to 1. A copy of the same photo
+  scores about 0.97 or more, the same scene shot again seconds later 0.90 to 0.95.
+  """
+  score: Float!
+}
+
+type DuplicateGroup {
+  "Copies of the same photo, the best looking first (by its aesthetic score, when it has one)."
+  media: [Media!]!
+  "How alike the least alike two of them are (0.96 or more)."
+  score: Float!
+}
+
+extend type Query {
+  """
+  The photos and videos that look most like sha256's, best first, not itself: limit of them (at most 1000) after the
+  first offset; offset + limit at most 10000. Private files as in searchMedia. Fails when the file hasn't been read
+  yet, or similar photos are off on the server.
+  """
+  similarMedia(sha256: Sha256!, limit: Int = 100, offset: Int = 0, includePrivate: Boolean = false): [SimilarHit!]!
+  """
+  The user's groups of copies of the same photo (a photo and a smaller or recompressed copy of it, as WhatsApp
+  sends), for cleaning up: the biggest groups first, limit of them after the first offset. Only files the device may
+  see count, and private ones only with includePrivate; a group left with one is left out. Fails when similar photos
+  are off on the server.
+  """
+  duplicates(limit: Int = 100, offset: Int = 0, includePrivate: Boolean = false): [DuplicateGroup!]!
+}
+`, BuiltIn: false},
+	{Name: "../schema/text.graphql", Input: `# --- Text in photos -----------------------------------------------------------
+# Read by OCR on the server (Hebrew and English: PaddleOCR finetuned for Hebrew); searchMedia finds photos by it.
+# See docs/indexes.md.
+
+type TextLine {
+  "The line's words in reading order (Hebrew in logical order, as it is stored and typed)."
+  text: String!
+  box: Box!
+  "How sure the reading is, 0 to 1."
+  score: Float!
+}
+
+extend type Media {
+  "The lines of text read in the photo, top to bottom; empty when it has none, hasn't been read, or OCR is off."
+  text: [TextLine!]!
 }
 `, BuiltIn: false},
 }
@@ -1755,6 +1962,16 @@ func (ec *executionContext) childFields_Collection(ctx context.Context, field gr
 		return ec.fieldContext_Collection_hidden(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Collection", field.Name)
+}
+
+func (ec *executionContext) childFields_DuplicateGroup(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "media":
+		return ec.fieldContext_DuplicateGroup_media(ctx, field)
+	case "score":
+		return ec.fieldContext_DuplicateGroup_score(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type DuplicateGroup", field.Name)
 }
 
 func (ec *executionContext) childFields_Face(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -1855,8 +2072,12 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_private(ctx, field)
 	case "url":
 		return ec.fieldContext_Media_url(ctx, field)
+	case "aesthetic":
+		return ec.fieldContext_Media_aesthetic(ctx, field)
 	case "faces":
 		return ec.fieldContext_Media_faces(ctx, field)
+	case "text":
+		return ec.fieldContext_Media_text(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
 }
@@ -1947,8 +2168,26 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_posters(ctx, field)
 	case "nudityScan":
 		return ec.fieldContext_ServerInfo_nudityScan(ctx, field)
+	case "faces":
+		return ec.fieldContext_ServerInfo_faces(ctx, field)
+	case "textInPhotos":
+		return ec.fieldContext_ServerInfo_textInPhotos(ctx, field)
+	case "similar":
+		return ec.fieldContext_ServerInfo_similar(ctx, field)
+	case "aesthetic":
+		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
+}
+
+func (ec *executionContext) childFields_SimilarHit(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "media":
+		return ec.fieldContext_SimilarHit_media(ctx, field)
+	case "score":
+		return ec.fieldContext_SimilarHit_score(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SimilarHit", field.Name)
 }
 
 func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -1965,6 +2204,18 @@ func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field 
 		return ec.fieldContext_StorageUsage_bytes(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type StorageUsage", field.Name)
+}
+
+func (ec *executionContext) childFields_TextLine(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "text":
+		return ec.fieldContext_TextLine_text(ctx, field)
+	case "box":
+		return ec.fieldContext_TextLine_box(ctx, field)
+	case "score":
+		return ec.fieldContext_TextLine_score(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type TextLine", field.Name)
 }
 
 func (ec *executionContext) childFields___Directive(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2263,6 +2514,36 @@ func (ec *executionContext) field_Query_changes_args(ctx context.Context, rawArg
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_duplicates_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "includePrivate",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["includePrivate"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_enrollmentPreview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2400,6 +2681,44 @@ func (ec *executionContext) field_Query_similarFaces_args(ctx context.Context, r
 		return nil, err
 	}
 	args["face"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "includePrivate",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["includePrivate"] = arg3
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_similarMedia_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "sha256",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNSha2562string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sha256"] = arg0
 	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
 		func(ctx context.Context, v any) (*int, error) {
 			return ec.unmarshalOInt2ᚖint(ctx, v)
@@ -2875,6 +3194,61 @@ func (ec *executionContext) _Collection_hidden(ctx context.Context, field graphq
 }
 func (ec *executionContext) fieldContext_Collection_hidden(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Collection", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _DuplicateGroup_media(ctx context.Context, field graphql.CollectedField, obj *model.DuplicateGroup) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DuplicateGroup_media(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Media, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DuplicateGroup_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DuplicateGroup",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DuplicateGroup_score(ctx context.Context, field graphql.CollectedField, obj *model.DuplicateGroup) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DuplicateGroup_score(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Score, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DuplicateGroup_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DuplicateGroup", field, false, false, errors.New("field of type Float does not have child fields"))
 }
 
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
@@ -3961,6 +4335,29 @@ func (ec *executionContext) fieldContext_Media_url(_ context.Context, field grap
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _Media_aesthetic(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_aesthetic(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Media().Aesthetic(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
+			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_aesthetic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, true, true, errors.New("field of type Float does not have child fields"))
+}
+
 func (ec *executionContext) _Media_faces(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -3988,6 +4385,38 @@ func (ec *executionContext) fieldContext_Media_faces(_ context.Context, field gr
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_Face(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Media_text(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_text(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Media().Text(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.TextLine) graphql.Marshaler {
+			return ec.marshalNTextLine2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐTextLineᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_text(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_TextLine(ctx, field)
 		},
 	}
 	return fc, nil
@@ -5271,6 +5700,94 @@ func (ec *executionContext) fieldContext_Query_searchMedia(ctx context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_similarMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_similarMedia(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().SimilarMedia(ctx, fc.Args["sha256"].(string), fc.Args["limit"].(*int), fc.Args["offset"].(*int), fc.Args["includePrivate"].(*bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.SimilarHit) graphql.Marshaler {
+			return ec.marshalNSimilarHit2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSimilarHitᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_similarMedia(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SimilarHit(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_similarMedia_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_duplicates(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_duplicates(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().Duplicates(ctx, fc.Args["limit"].(*int), fc.Args["offset"].(*int), fc.Args["includePrivate"].(*bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.DuplicateGroup) graphql.Marshaler {
+			return ec.marshalNDuplicateGroup2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDuplicateGroupᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_duplicates(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_DuplicateGroup(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_duplicates_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5586,6 +6103,153 @@ func (ec *executionContext) fieldContext_ServerInfo_nudityScan(_ context.Context
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_faces(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_faces(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Faces, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_faces(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_textInPhotos(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_textInPhotos(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.TextInPhotos, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_textInPhotos(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_similar(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_similar(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Similar, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_similar(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_aesthetic(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Aesthetic, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_aesthetic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _SimilarHit_media(ctx context.Context, field graphql.CollectedField, obj *model.SimilarHit) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SimilarHit_media(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Media, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SimilarHit_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SimilarHit",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SimilarHit_score(ctx context.Context, field graphql.CollectedField, obj *model.SimilarHit) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SimilarHit_score(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Score, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SimilarHit_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SimilarHit", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
 func (ec *executionContext) _StorageUsage_photos(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5699,6 +6363,84 @@ func (ec *executionContext) _StorageUsage_bytes(ctx context.Context, field graph
 }
 func (ec *executionContext) fieldContext_StorageUsage_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _TextLine_text(ctx context.Context, field graphql.CollectedField, obj *model.TextLine) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TextLine_text(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Text, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TextLine_text(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TextLine", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _TextLine_box(ctx context.Context, field graphql.CollectedField, obj *model.TextLine) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TextLine_box(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Box, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Box) graphql.Marshaler {
+			return ec.marshalNBox2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐBox(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TextLine_box(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "TextLine",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Box(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _TextLine_score(ctx context.Context, field graphql.CollectedField, obj *model.TextLine) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TextLine_score(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Score, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TextLine_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TextLine", field, false, false, errors.New("field of type Float does not have child fields"))
 }
 
 func (ec *executionContext) _UploadReady_url(ctx context.Context, field graphql.CollectedField, obj *model.UploadReady) (ret graphql.Marshaler) {
@@ -7579,6 +8321,50 @@ func (ec *executionContext) _Collection(ctx context.Context, sel ast.SelectionSe
 	return out
 }
 
+var duplicateGroupImplementors = []string{"DuplicateGroup"}
+
+func (ec *executionContext) _DuplicateGroup(ctx context.Context, sel ast.SelectionSet, obj *model.DuplicateGroup) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, duplicateGroupImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DuplicateGroup")
+		case "media":
+			out.Values[i] = ec._DuplicateGroup_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "score":
+			out.Values[i] = ec._DuplicateGroup_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var enrolledDeviceImplementors = []string{"EnrolledDevice", "EnrollDeviceResult"}
 
 func (ec *executionContext) _EnrolledDevice(ctx context.Context, sel ast.SelectionSet, obj *model.EnrolledDevice) graphql.Marshaler {
@@ -8012,6 +8798,39 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "aesthetic":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Media_aesthetic(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "faces":
 			field := field
 
@@ -8022,6 +8841,42 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 					}
 				}()
 				res = ec._Media_faces(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "text":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Media_text(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -8706,6 +9561,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "similarMedia":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_similarMedia(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "duplicates":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_duplicates(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -8832,6 +9731,70 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "faces":
+			out.Values[i] = ec._ServerInfo_faces(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "textInPhotos":
+			out.Values[i] = ec._ServerInfo_textInPhotos(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "similar":
+			out.Values[i] = ec._ServerInfo_similar(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "aesthetic":
+			out.Values[i] = ec._ServerInfo_aesthetic(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var similarHitImplementors = []string{"SimilarHit"}
+
+func (ec *executionContext) _SimilarHit(ctx context.Context, sel ast.SelectionSet, obj *model.SimilarHit) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, similarHitImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SimilarHit")
+		case "media":
+			out.Values[i] = ec._SimilarHit_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "score":
+			out.Values[i] = ec._SimilarHit_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -8888,6 +9851,55 @@ func (ec *executionContext) _StorageUsage(ctx context.Context, sel ast.Selection
 			}
 		case "bytes":
 			out.Values[i] = ec._StorageUsage_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var textLineImplementors = []string{"TextLine"}
+
+func (ec *executionContext) _TextLine(ctx context.Context, sel ast.SelectionSet, obj *model.TextLine) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, textLineImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TextLine")
+		case "text":
+			out.Values[i] = ec._TextLine_text(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "box":
+			out.Values[i] = ec._TextLine_box(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "score":
+			out.Values[i] = ec._TextLine_score(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -9444,6 +10456,32 @@ func (ec *executionContext) marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserve
 	return ec._Collection(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNDuplicateGroup2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDuplicateGroupᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.DuplicateGroup) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNDuplicateGroup2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDuplicateGroup(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNDuplicateGroup2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDuplicateGroup(ctx context.Context, sel ast.SelectionSet, v *model.DuplicateGroup) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DuplicateGroup(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNEnrollDeviceInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx context.Context, v any) (model.EnrollDeviceInput, error) {
 	res, err := ec.unmarshalInputEnrollDeviceInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -9860,6 +10898,32 @@ func (ec *executionContext) marshalNSha2562ᚕstringᚄ(ctx context.Context, sel
 	return ret
 }
 
+func (ec *executionContext) marshalNSimilarHit2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSimilarHitᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.SimilarHit) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNSimilarHit2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSimilarHit(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSimilarHit2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSimilarHit(ctx context.Context, sel ast.SelectionSet, v *model.SimilarHit) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SimilarHit(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNStartUploadInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐStartUploadInput(ctx context.Context, v any) (model.StartUploadInput, error) {
 	res, err := ec.unmarshalInputStartUploadInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -9933,6 +10997,32 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 	}
 
 	return ret
+}
+
+func (ec *executionContext) marshalNTextLine2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐTextLineᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.TextLine) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNTextLine2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐTextLine(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNTextLine2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐTextLine(ctx context.Context, sel ast.SelectionSet, v *model.TextLine) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._TextLine(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNTime2timeᚐTime(ctx context.Context, v any) (time.Time, error) {

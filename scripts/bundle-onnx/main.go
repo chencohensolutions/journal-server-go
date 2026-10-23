@@ -6,7 +6,17 @@
 //   - the face models, YuNet (finds faces, MIT licence) and SFace (tells them apart, Apache 2.0), into
 //     ./models/yunet-sface (from OpenCV's model zoo on Hugging Face). --faces=false leaves them out;
 //   - NudeNet's detector (320n.onnx, AGPL-3.0), into ./models/nudenet (from NudeNet's GitHub releases).
-//     --nudity=false leaves it out.
+//     --nudity=false leaves it out;
+//   - DINOv2 small (Meta, Apache 2.0), for similar photos and duplicates, into ./models/dinov2-small (from
+//     onnx-community). --similar=false leaves it out;
+//   - a Hebrew and English PaddleOCR (a word detector and the PP-OCRv6 word recognizer of Rivok/paddleocr-hebrew,
+//     Apache 2.0, whose 120 characters are Hebrew, Latin, digits and signs), for text in photos, into
+//     ./models/paddleocr-hebrew. --ocr=false leaves it out;
+//   - CLIP ViT-L/14's vision half (OpenAI, MIT; 8-bit, from Xenova) and LAION's aesthetic predictor (the
+//     sac+logos+ava1 linear head of christophschuhmann/improved-aesthetic-predictor, Apache 2.0), for aesthetic
+//     scores, into ./models/clip-vit-large-patch14-laion. The head's five linear layers (no activation between
+//     them) are multiplied out here into one: 768 weights and a bias, kept as laion-head.json.
+//     --aesthetic=false leaves them out.
 //
 // --model base (the default, google/siglip2-base-patch16-256) reads a photo in about a tenth of a second on a
 // desktop CPU; --model large (google/siglip2-so400m-patch16-256) finds better but is about four times slower.
@@ -20,12 +30,14 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path"
@@ -52,6 +64,12 @@ const (
 	nuditySha256  = "c15d8273adad2d0a92f014cc69ab2d6c311a06777a55545f2c4eb46f51911f0f"
 )
 
+// LAION's aesthetic head (sac+logos+ava1-l14-linearMSE.pth), from its GitHub repository.
+const (
+	laionHeadURL    = "https://github.com/christophschuhmann/improved-aesthetic-predictor/raw/main/sac+logos+ava1-l14-linearMSE.pth"
+	laionHeadSha256 = "21dd590f3ccdc646f0d53120778b296013b096a035a2718c9cb0d511bff0f1e0"
+)
+
 // The face models: Hugging Face repository → file, kept under the same name.
 var faceModels = [][2]string{
 	{"opencv/face_detection_yunet", "face_detection_yunet_2023mar.onnx"},
@@ -65,6 +83,9 @@ func main() {
 	modelsDir := flag.String("models", "models", "folder the model's folder is made in")
 	faces := flag.Bool("faces", true, "also download the face models")
 	nudity := flag.Bool("nudity", true, "also download NudeNet's detector, for the nudity scan")
+	similar := flag.Bool("similar", true, "also download DINOv2 small, for similar photos and duplicates")
+	ocr := flag.Bool("ocr", true, "also download the Hebrew and English OCR models")
+	aesthetic := flag.Bool("aesthetic", true, "also download CLIP ViT-L/14 and LAION's aesthetic head")
 	flag.Parse()
 	name, ok := models[*modelFlag]
 	suffix, ok2 := precisions[*precision]
@@ -104,6 +125,23 @@ func main() {
 			log.Fatalf("%s is not in %s", nudityFile, nudityRelease)
 		}
 		log.Printf("NudeNet's detector in %s", to)
+	}
+	if *similar {
+		bundleFiles("onnx-community/dinov2-small-ONNX", filepath.Join(*modelsDir, "dinov2-small"), map[string]string{
+			"onnx/model.onnx": "model.onnx", "preprocessor_config.json": "preprocessor_config.json"})
+	}
+	if *ocr {
+		bundleFiles("Rivok/paddleocr-hebrew", filepath.Join(*modelsDir, "paddleocr-hebrew"), map[string]string{
+			"word-det/det.onnx": "det.onnx", "server-v6/rec.onnx": "rec.onnx", "charset_v2f.txt": "charset.txt"})
+	}
+	if *aesthetic {
+		out := filepath.Join(*modelsDir, "clip-vit-large-patch14-laion")
+		bundleFiles("Xenova/clip-vit-large-patch14", out, map[string]string{
+			"onnx/vision_model_quantized.onnx": "vision_model.onnx", "preprocessor_config.json": "preprocessor_config.json"})
+		pth := filepath.Join(out, "sac+logos+ava1-l14-linearMSE.pth")
+		download(laionHeadURL, pth, laionHeadSha256)
+		check(writeLAIONHead(pth, filepath.Join(out, "laion-head.json")))
+		log.Printf("LAION's aesthetic head in %s", filepath.Join(out, "laion-head.json"))
 	}
 	fmt.Printf("Done. In config.json: \"search_model\": %q\n", filepath.ToSlash(out))
 }
@@ -219,6 +257,80 @@ func bundleModel(repo, suffix, out string) {
 		download("https://huggingface.co/"+repo+"/resolve/main/"+from, filepath.Join(out, to), hash)
 	}
 	log.Printf("%s in %s", repo, out)
+}
+
+// bundleFiles downloads files of the Hugging Face repository repo (from → to) into out, checked against the
+// repository's hashes.
+func bundleFiles(repo, out string, files map[string]string) {
+	hashes := repoHashes(repo)
+	for from, to := range files {
+		hash, ok := hashes[from]
+		if !ok {
+			log.Fatalf("%s has no %s", repo, from)
+		}
+		download("https://huggingface.co/"+repo+"/resolve/main/"+from, filepath.Join(out, to), hash)
+	}
+	log.Printf("%s in %s", repo, out)
+}
+
+// writeLAIONHead reads LAION's aesthetic head (a PyTorch archive of five linear layers: 768→1024→128→64→16→1,
+// stored in that order as archive/data/0 to 9, weights then biases, row by row) and writes it as one layer:
+// {"weights": [768 numbers], "bias": b}, so the server needs no PyTorch.
+func writeLAIONHead(pth, out string) error {
+	z, err := zip.OpenReader(pth)
+	if err != nil {
+		return err
+	}
+	defer z.Close()
+	tensors := map[string][]float64{}
+	for _, f := range z.File {
+		dir, name := path.Split(f.Name)
+		if !strings.HasSuffix(dir, "/data/") {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		raw, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			return err
+		}
+		values := make([]float64, len(raw)/4)
+		for i := range values {
+			values[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(raw[4*i:])))
+		}
+		tensors[name] = values
+	}
+	sizes := [][2]int{{1024, 768}, {128, 1024}, {64, 128}, {16, 64}, {1, 16}} // out, in
+	// Start from the last layer and multiply backwards: w = W4·W3·W2·W1·W0, bias summed through the same.
+	w, bias := []float64{1}, 0.0 // a 1-wide row
+	for layer := len(sizes) - 1; layer >= 0; layer-- {
+		rows, cols := sizes[layer][0], sizes[layer][1]
+		weight, b := tensors[fmt.Sprint(2*layer)], tensors[fmt.Sprint(2*layer+1)]
+		if len(weight) != rows*cols || len(b) != rows || len(w) != rows {
+			return fmt.Errorf("%s: layer %d is not %d×%d", pth, layer, rows, cols)
+		}
+		for r := range rows {
+			bias += w[r] * b[r]
+		}
+		next := make([]float64, cols)
+		for r := range rows {
+			for c := range cols {
+				next[c] += w[r] * weight[r*cols+c]
+			}
+		}
+		w = next
+	}
+	data, err := json.Marshal(struct {
+		Weights []float64 `json:"weights"`
+		Bias    float64   `json:"bias"`
+	}{w, bias})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(out, data, 0o644)
 }
 
 // repoHashes is the files of the Hugging Face repository repo, with the sha256 of each kept in LFS ("" for the

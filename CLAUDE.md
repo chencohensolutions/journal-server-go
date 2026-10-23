@@ -18,8 +18,9 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server.
 - [docs/faces.md](docs/faces.md): face search: YuNet and SFace on the same runtime, groups of alike faces, people
   the user names (`people.json`), `people`, `similarFaces`, `searchMedia(people:)`.
-- [docs/indexes.md](docs/indexes.md): the reader that feeds every index (nudity, faces, search) from one decode of
-  each original, and how to add an index.
+- [docs/indexes.md](docs/indexes.md): the reader that feeds every index from one decode of each original (nudity,
+  faces, OCR, search, DINOv2 similar photos and duplicates, LAION aesthetic scores), the models and their costs,
+  and how to add an index.
 
 Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
 
@@ -40,7 +41,7 @@ go test ./search/... .                     # the search package and the root (se
 go vet ./...                               # the command-line lint (VS Code runs golangci-lint on save; no .golangci file)
 go tool gqlgen generate                    # after editing graph/schema/*.graphql
 go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
-go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + search, face and nudity models into onnxruntime/, models/ (gitignored)
+go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + every index's model into onnxruntime/, models/ (gitignored)
 go run ./scripts/bundle-vips               # portable libvips for Windows into vips/ (gitignored)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
@@ -117,7 +118,8 @@ cache would hold copies of what the phone already has. Don't propose turning it 
 `.cache/write-journal.tsv` so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside
 `Store.Turn` (the store's own write methods already do). The exceptions are `.cache/search/`, `.cache/faces/` and
-the indexes' failure lists, which only the server writes.
+the indexes' caches (`.cache/ocr/`, `.cache/similar/`, `.cache/aesthetic/`) and failure lists, which only the
+server writes.
 
 **External tools are found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and `vips/bin` first), or
 at `vips` / `ffmpeg` in `config.json`; libvips's library is then loaded from beside `vips` (on Windows its folder is
@@ -131,7 +133,9 @@ scan (package `nudity`, NudeNet's 320n detector, the same steps as NudeNet's Pyt
 sidecar (`Store.SetNudity`), shared with `scripts/scan-nudity`. All three are `reading.Index`es of one
 `reading.Reader` (`newReader` in `library.go`): it decodes each original once, gives every index exactly the picture
 its model reads, in order (nudity, faces, search), prepares the next files while the models read this one, and
-keeps each index's failure list (docs/indexes.md). Without the runtime or a model, that index is off (search queries
+keeps each index's failure list (docs/indexes.md). Packages `ocr` (Hebrew and English text in photos, found by
+`searchMedia`), `similar` (DINOv2: `similarMedia`, `duplicates`) and `aesthetic` (LAION on CLIP L/14:
+`Media.aesthetic`) are indexes too; logs name indexes by their model (`Index.Model`). Without the runtime or a model, that index is off (search queries
 answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
 `Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
 `facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `outcomes.go` (moving files,

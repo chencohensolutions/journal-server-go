@@ -1,10 +1,13 @@
 package resolver
 
 import (
+	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/ocr"
 	"github.com/journal/server-go/search"
+	"github.com/journal/server-go/similar"
 )
 
 // This file will not be regenerated automatically.
@@ -19,6 +22,11 @@ type Resolver struct {
 	Search *search.Service
 	// Face search; nil when it is off.
 	Faces *faces.Service
+	// Text in photos (OCR), similar photos and duplicates (DINOv2), aesthetic scores (LAION); each nil when off.
+	// Named so as not to clash with gqlgen's resolvers of Media.text and Media.aesthetic.
+	TextInPhotos    *ocr.Service
+	SimilarPhotos   *similar.Service
+	AestheticScores *aesthetic.Service
 	// New files are scanned for nudity (package nudity), for serverInfo.
 	NudityScan bool
 	// Previews and posters, for serverInfo to say whether they can be made.

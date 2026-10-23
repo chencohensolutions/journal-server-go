@@ -1,0 +1,10 @@
+# --- Aesthetic scores ---------------------------------------------------------
+# With LAION's aesthetic predictor on CLIP ViT-L/14, on the server; see docs/indexes.md.
+
+extend type Media {
+  """
+  How good the photo looks, about 1 to 10, as people rated photos the model learned from: around 4 to 5 is an
+  ordinary snapshot, 6 and more a good photo. Null until scored, or when aesthetic scores are off.
+  """
+  aesthetic: Float
+}

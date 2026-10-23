@@ -36,7 +36,7 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []
 	if words == "" && len(people) == 0 {
 		return nil, coded(CodeInvalidArgument, "give text, people or both")
 	}
-	if words != "" && r.Search == nil {
+	if words != "" && r.Search == nil && r.TextInPhotos == nil {
 		return nil, coded(CodeSearchOff, "text search is off on this server")
 	}
 	filter, err := newSearchFilter(years, area)
@@ -67,11 +67,28 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []
 	var hits []search.Hit
 	result := &model.MediaSearch{}
 	if words != "" {
-		if hits, err = r.Search.Search(user, words, skip+n, keep); err != nil {
-			return nil, err
+		// First the photos whose own text has the words, then what SigLIP finds among the others.
+		inText := map[string]bool{}
+		if r.TextInPhotos != nil {
+			for _, sha := range r.TextInPhotos.Find(user, words, keep) {
+				if len(hits) == skip+n {
+					break
+				}
+				hits = append(hits, search.Hit{Sha256: sha, Score: 1})
+				inText[sha] = true
+			}
 		}
-		result.Model = r.Search.Model()
-		result.Indexed, result.Total = r.Search.Counts(user, v.hides)
+		if r.Search != nil && len(hits) < skip+n {
+			found, err := r.Search.Search(user, words, skip+n-len(hits), func(sha string) bool { return !inText[sha] && keep(sha) })
+			if err != nil {
+				return nil, err
+			}
+			hits = append(hits, found...)
+			result.Model = r.Search.Model()
+			result.Indexed, result.Total = r.Search.Counts(user, v.hides)
+		} else if r.TextInPhotos != nil {
+			result.Indexed, result.Total = r.TextInPhotos.Counts(user, v.hides)
+		}
 	} else {
 		hits = lastTaken(v, withPeople, skip+n, keep)
 		result.Indexed, result.Total = r.Faces.Counts(user, v.hides)

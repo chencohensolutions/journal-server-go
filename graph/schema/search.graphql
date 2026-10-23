@@ -5,7 +5,7 @@ type SearchHit {
   media: Media!
   """
   How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
-  a good match is often 0.1 to 0.2.
+  a good match is often 0.1 to 0.2. A photo whose own text has the words (Media.text) scores 1.
   """
   score: Float!
   """
@@ -47,13 +47,17 @@ extend type Query {
   """
   The photos and videos that text describes best ("a dog on the beach at sunset"), best first: limit of them (at most
   1000) after the first offset, for the next page; offset + limit at most 10000.
+  Photos whose own text has every word of text come first (a receipt, a sign, a screenshot: Media.text, Hebrew and
+  English, a word also matching its start and, in Hebrew, its prefixed forms), those with the most matches first;
+  then the files SigLIP finds.
   With people (Person.id), only files with a face of every one of them; with people and no text, those files, the
   last taken first, and indexed and total count the files read for faces.
   With years, only files taken in one of them (the year where they were taken; when that isn't known, the year
   uploaded). With area, only files taken inside it; files without a location are left out. Both are applied before
   the best are picked, so a filtered search returns the best matches of that year or place. Files the user marked
   private (setPrivate) are left out too, unless includePrivate is true (an app showing private media); on a device
-  set to withhold them they are never found. Fails when text search is off on the server (face search, for people),
+  set to withhold them they are never found. Fails when both text search and text in photos are off on the server
+  (face search, for people),
   when neither text nor people is given, and when a person is not found (load the people again).
   """
   searchMedia(text: String, people: [ID!], limit: Int = 100, offset: Int = 0, years: [Int!], area: GeoAreaInput, includePrivate: Boolean = false): MediaSearch!
