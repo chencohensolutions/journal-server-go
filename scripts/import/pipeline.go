@@ -62,7 +62,7 @@ func (im *importer) importFiles(ctx context.Context, files []sourceFile, jobs in
 			break
 		}
 		im.store.CatchUp() // decide knowing what the others placed meanwhile
-		im.decide(e)
+		im.decide(ctx, e)
 		doneBytes += e.size
 		if time.Since(last) >= 10*time.Second || i == len(news)-1 {
 			log.Printf("Importing: %5.1f%%  %s of %s, %d of %d files, about %s left",
@@ -178,6 +178,7 @@ const (
 	notImportedNoDate = "no date"
 	notImportedFailed = "failed"
 	notImportedNear   = "near-duplicates" // waiting for --review
+	notImportedSame   = "same picture"
 	notImportedOther  = "not photos or videos"
 	notImportedHidden = "hidden"
 )
@@ -188,8 +189,9 @@ type examined struct {
 	size   int64
 	sha256 string
 	folder string
-	facts  facts
-	hash   *dhash
+	facts   facts
+	hash    *dhash
+	picture *picture // for the same-picture check
 }
 
 // examine reads one file (several at a time): its sha256, then, unless the data folder already has it
@@ -238,6 +240,10 @@ func (im *importer) examine(ctx context.Context, path string) *examined {
 	e := &examined{path: path, size: info.Size(), sha256: sha, folder: folder, facts: facts}
 	if facts.kind == media.KindPhoto {
 		e.hash = im.dhashOf(ctx, sha, path)
+		if e.hash != nil {
+			e.picture = im.pictureOf(ctx, sha, path, &facts)
+			im.prepare(ctx, *e.hash)
+		}
 	}
 	if ctx.Err() != nil {
 		return nil
@@ -245,9 +251,10 @@ func (im *importer) examine(ctx context.Context, path string) *examined {
 	return e
 }
 
-// decide imports one examined file, or keeps it for review as a near-duplicate; one file at a time, the
-// largest first, so the original of a photo goes in before its smaller copies.
-func (im *importer) decide(e *examined) {
+// decide imports one examined file, skips it as the same picture as one in the journal, or keeps it for
+// review; one file at a time, the largest first, so the original of a photo goes in before its smaller
+// copies.
+func (im *importer) decide(ctx context.Context, e *examined) {
 	folders := []string{}
 	if e.folder != "" {
 		folders = append(folders, e.folder)
@@ -274,9 +281,17 @@ func (im *importer) decide(e *examined) {
 	}
 
 	if e.hash != nil {
-		if wait, item := im.nearCheck(photo{hash: *e.hash, sha256: e.sha256, name: filepath.Base(e.path), takenAt: e.facts.takenAt, path: e.path}); wait {
+		pair, found := im.nearCheck(ctx, photo{hash: *e.hash, sha256: e.sha256, path: e.path}, e.picture)
+		if ctx.Err() != nil {
+			return
+		}
+		if found && pair.waits() {
 			im.waiting[e.sha256] = len(im.toReview)
-			im.waitForReview(item)
+			im.waitForReview(im.reviewItemOf(e.path, e.sha256, pair))
+			return
+		}
+		if found && pair.verdict == verdictSame {
+			im.skipSame(e.path, pathInside(im.roots, e.path), folders, pair)
 			return
 		}
 	}
@@ -285,7 +300,7 @@ func (im *importer) decide(e *examined) {
 		im.count(false, e.size)
 		return
 	}
-	_, existed, err := im.importInto(e.path, e.sha256, e.size, e.facts, folders)
+	_, existed, err := im.importInto(e.path, e.path, e.sha256, e.size, e.facts, folders)
 	if err != nil {
 		im.reject(e.path, notImportedFailed, err.Error())
 		im.mu.Lock()
@@ -327,12 +342,13 @@ func folderOf(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// importInto copies the file into the data folder with the facts read from it.
-func (im *importer) importInto(path, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
-	source := media.SourceOfPath(path)
-	from := path
+// importInto copies the file at path into the data folder with the facts read from it; foundAt is where
+// it was found (a near-duplicate has moved since), which its source is told from.
+func (im *importer) importInto(path, foundAt, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
+	source := media.SourceOfPath(foundAt)
+	from := foundAt
 	if im.cloud != nil {
-		from = im.cloud.origin(path)
+		from = im.cloud.origin(foundAt)
 	}
 	return im.store.Import(path, media.UploadRequest{
 		Sha256:       sha,

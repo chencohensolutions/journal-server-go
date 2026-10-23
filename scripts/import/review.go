@@ -32,6 +32,8 @@ type reviewItem struct {
 	LikeSha256  string   `json:"likeSha256"`
 	LikePath    string   `json:"likePath,omitempty"` // when the look-alike isn't in the data folder
 	Distance    int      `json:"distance"`
+	Why         string   `json:"why,omitempty"`   // what the same-picture check found (none before it)
+	Score       float64  `json:"score,omitempty"` // the pixels' PSNR in dB
 }
 
 // folders are the folders the photo and its identical copies were found in.
@@ -324,7 +326,7 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "no date in its file name or metadata", http.StatusUnprocessableEntity)
 			return
 		}
-		placed, _, err := im.importInto(item.Path, item.Sha256, info.Size(), facts, item.folders())
+		placed, _, err := im.importInto(item.Path, item.foundAt(), item.Sha256, info.Size(), facts, item.folders())
 		if err != nil {
 			http.Error(w, "not imported: "+err.Error(), http.StatusInternalServerError)
 			return

@@ -143,7 +143,7 @@ one writer at a time. Packages `ocr` (Hebrew and English text in photos, found b
 `Media.aesthetic`) are indexes too; logs name indexes by their model (`Index.Model`). Without the runtime or a model, that index is off (search queries
 answer an error). The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
 `Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
-`facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `outcomes.go` (moving files,
+`facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `same.go` (the same-picture check), `recheck.go` (`--recheck`), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).
 
 ## Conventions worth knowing

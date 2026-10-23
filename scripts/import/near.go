@@ -2,16 +2,18 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"sync"
-	"time"
 
 	"github.com/journal/server-go/media"
 )
 
-// Near-duplicates: photos that look alike by their dHash, found across the data folder and this run.
+// Near-duplicates: photos that look alike by their dHash, found across the data folder and this run, then
+// told apart by the same-picture check (same.go).
 
 // hashDataFolder makes the dHash of the photos in the data folder that don't have one in the table yet
 // (the first import, or photos uploaded since), so new files are compared with them.
@@ -58,8 +60,7 @@ func (im *importer) hashDataFolder(ctx context.Context, jobs int) {
 	}
 	for _, item := range all {
 		if h, _ := im.dhashes.get(item.Sha256()); h != nil {
-			facts := item.Sidecar.Facts
-			im.photos = append(im.photos, photo{hash: *h, sha256: item.Sha256(), name: facts.FileName, takenAt: facts.TakenAt})
+			im.photos = append(im.photos, photo{hash: *h, sha256: item.Sha256()})
 		}
 	}
 }
@@ -82,31 +83,106 @@ func (im *importer) dhashOf(ctx context.Context, sha, path string) *dhash {
 	return &h
 }
 
-// nearCheck compares a new photo with the ones in the data folder and those going in this run. When the
-// closest is within nearDistance bits and isn't from the same burst, the photo waits for the owner's
-// decision (wait: don't import it now). Otherwise it is added at once to the photos later ones are
-// compared with, so two copies worked on at the same time still meet.
-func (im *importer) nearCheck(p photo) (wait bool, item reviewItem) {
+// alike returns the photos within nearDistance bits of h, closest first, at most compared of them.
+// Called with im.mu held.
+func (im *importer) alike(h dhash) []photo {
+	var found []photo
+	for _, q := range im.photos {
+		if h.distance(q.hash) <= im.nearDistance {
+			found = append(found, q)
+		}
+	}
+	sort.SliceStable(found, func(i, j int) bool { return h.distance(found[i].hash) < h.distance(found[j].hash) })
+	return found[:min(len(found), compared)]
+}
+
+// prepare makes the pictures of a new photo's look-alikes while files are still read several at a time,
+// so deciding, one file at a time, mostly finds them made.
+func (im *importer) prepare(ctx context.Context, h dhash) {
+	im.mu.Lock()
+	alike := im.alike(h)
+	im.mu.Unlock()
+	for _, q := range alike {
+		im.pictureOf(ctx, q.sha256, im.pathOf(q), nil)
+	}
+}
+
+// pathOf is where a photo compared with is now: in the data folder, or where it was found.
+func (im *importer) pathOf(q photo) string {
+	if item, ok := im.store.Get(q.sha256); ok {
+		return filepath.Join(im.dataFolder, filepath.FromSlash(item.Path))
+	}
+	return q.path
+}
+
+// nearCheck compares a new photo with its look-alikes in the data folder and among those going in this
+// run, closest first, and reports the one closest to being the same picture (found: false when nothing
+// looks alike). A photo that will be imported (nothing alike, or only other shots) is added at once to
+// the photos later ones are compared with, so two copies worked on at the same time still meet.
+func (im *importer) nearCheck(ctx context.Context, p photo, pic *picture) (pair nearPair, found bool) {
+	im.mu.Lock()
+	alike := im.alike(p.hash)
+	im.mu.Unlock()
+	for i, q := range alike {
+		v, score, why := comparePictures(pic, im.pictureOf(ctx, q.sha256, im.pathOf(q), nil))
+		if i == 0 || v > pair.verdict {
+			pair = nearPair{distance: p.hash.distance(q.hash), verdict: v, score: score, why: why, path: p.path, like: q}
+		}
+		if v == verdictSame {
+			break
+		}
+	}
+	if ctx.Err() != nil {
+		return nearPair{}, false // stopped while comparing: decided by the next run
+	}
+	if pair.verdict == verdictSame {
+		like := im.pictureOf(ctx, pair.like.sha256, im.pathOf(pair.like), nil)
+		pair.better = like.pixels() > 0 && pic.pixels() > like.pixels()
+	}
 	im.mu.Lock()
 	defer im.mu.Unlock()
-	best, like := 65, photo{}
-	for _, q := range im.photos {
-		if d := p.hash.distance(q.hash); d < best {
-			best, like = d, q
-		}
+	if len(alike) > 0 {
+		im.near = append(im.near, pair)
 	}
-	if best <= im.nearDistance {
-		burst := sameBurst(p, like)
-		im.near = append(im.near, nearPair{distance: best, burst: burst, path: p.path, like: like})
-		if !burst {
-			return true, reviewItem{
-				Path: p.path, FoundAt: p.path, Sha256: p.sha256, Root: im.rootOf(p.path),
-				LikeSha256: like.sha256, LikePath: like.path, Distance: best,
-			}
-		}
+	if len(alike) == 0 || pair.verdict == verdictDifferent {
+		im.photos = append(im.photos, p)
 	}
-	im.photos = append(im.photos, p)
-	return false, reviewItem{}
+	return pair, len(alike) > 0
+}
+
+// waits reports whether the pair waits for the owner: a larger copy of the same picture, or not sure.
+func (pair nearPair) waits() bool {
+	return pair.verdict == verdictUnsure || (pair.verdict == verdictSame && pair.better)
+}
+
+// decision is what became of the pair's new photo, as the report and review page say it.
+func (pair nearPair) decision() string {
+	switch {
+	case pair.verdict == verdictDifferent:
+		return "another shot, imported"
+	case pair.verdict == verdictSame && pair.better:
+		return "a larger copy of the same picture, waits for you"
+	case pair.verdict == verdictSame:
+		return "the same picture, not imported"
+	}
+	return "not sure, waits for you"
+}
+
+// reviewItemOf is a near-duplicate that waits for the owner, found at path.
+func (im *importer) reviewItemOf(path, sha string, pair nearPair) reviewItem {
+	return reviewItem{
+		Path: path, FoundAt: path, Sha256: sha, Root: im.rootOf(path),
+		LikeSha256: pair.like.sha256, LikePath: pair.like.path, Distance: pair.distance,
+		Why: pair.reason(), Score: pair.score,
+	}
+}
+
+// reason is why the pair waits, or what was found, in a few words with the pixels' score.
+func (pair nearPair) reason() string {
+	if pair.score > 0 {
+		return fmt.Sprintf("%s (%.1f dB)", pair.why, pair.score)
+	}
+	return pair.why
 }
 
 // waitForReview moves a near-duplicate to the not-imported folder and lists it for --review.
@@ -128,25 +204,28 @@ func (im *importer) waitForReview(item reviewItem) {
 	im.mu.Unlock()
 }
 
+// skipSame moves a photo found to be the same picture as one already in the journal (or going in), and
+// no larger, to the not-imported folder (at inside, its path there), and adds the folders it was found
+// in to that one's sidecar: they are a clue about the photo. False when it couldn't be moved.
+func (im *importer) skipSame(path, inside string, folders []string, pair nearPair) bool {
+	if !im.dryRun && len(folders) > 0 {
+		if _, ok := im.store.Get(pair.like.sha256); ok {
+			if _, err := im.store.AddFolders(pair.like.sha256, folders); err != nil {
+				log.Printf("%s: its folders couldn't be added to the same picture's: %v", path, err)
+			}
+		}
+	}
+	if !im.rejectAs(path, inside, notImportedSame, "the same picture as "+im.pathOf(pair.like)+": "+pair.reason()) {
+		return false
+	}
+	im.mu.Lock()
+	im.counts.same++
+	im.mu.Unlock()
+	return true
+}
+
 // Burst shots are numbered within their second: 20260120_081253_035.jpg, PIC_20251202_192632357.jpg.
 var burstNumber = regexp.MustCompile(`((?:19|20)\d{6})[-_]?(\d{6})[-_]?(\d{3})(?:\D|$)`)
-
-// sameBurst reports whether two photos that look alike are shots in a row rather than copies of one
-// shot: taken 1 to 60 seconds apart, or in the same second with different burst numbers.
-func sameBurst(a, b photo) bool {
-	if a.takenAt == nil || b.takenAt == nil {
-		return false
-	}
-	gap := a.takenAt.Sub(*b.takenAt).Abs()
-	if gap >= time.Second && gap <= time.Minute {
-		return true
-	}
-	if gap >= time.Second {
-		return false
-	}
-	ma, mb := burstNumber.FindStringSubmatch(a.name), burstNumber.FindStringSubmatch(b.name)
-	return ma != nil && mb != nil && ma[1] == mb[1] && ma[2] == mb[2] && ma[3] != mb[3]
-}
 
 // learn adds a photo another process placed (another import, a phone's upload) to the photos new ones
 // are compared with, so near-duplicates are found across them too.
@@ -155,9 +234,8 @@ func (im *importer) learn(item media.Item) {
 		return
 	}
 	if h := im.dhashOf(context.Background(), item.Sha256(), filepath.Join(im.dataFolder, filepath.FromSlash(item.Path))); h != nil {
-		facts := item.Sidecar.Facts
 		im.mu.Lock()
-		im.photos = append(im.photos, photo{hash: *h, sha256: item.Sha256(), name: facts.FileName, takenAt: facts.TakenAt})
+		im.photos = append(im.photos, photo{hash: *h, sha256: item.Sha256()})
 		im.mu.Unlock()
 	}
 }

@@ -40,12 +40,17 @@ const (
 // reject moves a file that wasn't imported to this run's not-imported folder, in the folder for why
 // (dry run: only listed).
 func (im *importer) reject(path, why, reason string) {
+	im.rejectAs(path, pathInside(im.roots, path), why, reason)
+}
+
+// rejectAs is reject with the file's path inside the folder for why; false when it couldn't be moved.
+func (im *importer) rejectAs(path, inside, why, reason string) bool {
 	movedTo := "(dry run)"
 	if !im.dryRun {
-		dest, err := moveFile(path, filepath.Join(im.notImportedRun, why, pathInside(im.roots, path)))
+		dest, err := moveFile(path, filepath.Join(im.notImportedRun, why, inside))
 		if err != nil {
 			im.leave(path, reason+"; not moved to the not-imported folder: "+err.Error())
-			return
+			return false
 		}
 		movedTo = dest
 		if im.cloud != nil {
@@ -56,6 +61,7 @@ func (im *importer) reject(path, why, reason string) {
 	im.rejected = append(im.rejected, strings.Join([]string{why, reason, path, movedTo}, "\t"))
 	im.mu.Unlock()
 	log.Printf("%s: not imported (%s): %s", path, why, reason)
+	return true
 }
 
 // leave notes a file that stays where it is.
@@ -81,22 +87,27 @@ func (im *importer) progress(size int64) {
 	}
 	left := timeLeft(time.Since(im.started), im.doneBytes, im.totalBytes)
 	c := im.counts
-	waiting, bursts := im.nearCounts()
-	log.Printf("%5.1f%%  %s of %s, %d of %d files, about %s left | %d new, %d duplicates, %d bursts, %d near-duplicates for you, %d left behind",
+	others, same, waiting := im.nearCounts()
+	log.Printf("%5.1f%%  %s of %s, %d of %d files, about %s left | %d new, %d duplicates, %d other shots, %d same pictures, %d near-duplicates for you, %d left behind",
 		percent, gb(im.doneBytes), gb(im.totalBytes), im.doneFiles, im.totalFiles, left,
-		c.imported, c.duplicates, bursts, waiting, len(im.leftBehind))
+		c.imported, c.duplicates, others, same, waiting, len(im.leftBehind))
 	im.lastProgress = time.Now()
 }
 
-func (im *importer) nearCounts() (waiting, bursts int) {
+// nearCounts counts the look-alikes by what became of them: other shots (imported), the same picture
+// (not imported), and those waiting for the owner.
+func (im *importer) nearCounts() (others, same, waiting int) {
 	for _, pair := range im.near {
-		if pair.burst {
-			bursts++
-		} else {
+		switch {
+		case pair.waits():
 			waiting++
+		case pair.verdict == verdictSame:
+			same++
+		default:
+			others++
 		}
 	}
-	return waiting, bursts
+	return others, same, waiting
 }
 
 func (im *importer) summarize() {
@@ -107,13 +118,14 @@ func (im *importer) summarize() {
 	}
 	fmt.Printf("\n%s %d files (%s)\n", verb, c.imported, gb(c.importedBytes))
 	fmt.Printf("Duplicates (same sha256 as a file in the data folder or found before): %d (%s)\n", c.duplicates, gb(c.duplicateBytes))
-	waiting, bursts := im.nearCounts()
-	fmt.Printf("Look-alike shots of a burst (dHash within %d bits, taken in a row), imported: %d\n", im.nearDistance, bursts)
+	shots, same, waiting := im.nearCounts()
+	fmt.Printf("Look-alikes (dHash within %d bits) found to be other shots, imported: %d\n", im.nearDistance, shots)
 	moved := "moved to " + im.notImportedRun
 	if im.dryRun {
 		moved = "would be moved to the not-imported folder"
 	}
-	fmt.Printf("Near-duplicates for you to decide (%s, %s): %d\n", moved, notImportedNear, waiting)
+	fmt.Printf("The same picture as one in the journal, not imported (%s, %s): %d\n", moved, notImportedSame, same)
+	fmt.Printf("Near-duplicates for you to decide, larger copies or not sure (%s, %s): %d\n", moved, notImportedNear, waiting)
 	fmt.Printf("Not imported, %s: %d without a date, %d failed\n", moved, c.noDate, c.failed)
 	if len(im.leftBehind) > 0 {
 		fmt.Printf("Left where they are (they couldn't be moved): %d\n", len(im.leftBehind))
@@ -150,15 +162,12 @@ func (im *importer) summarize() {
 	sort.Strings(im.dateNotes)
 	var near []string
 	for _, pair := range im.near {
-		kind := "waits for you"
-		if pair.burst {
-			kind = "burst, imported"
+		// By the pixels' score, so the pairs around the thresholds sit together.
+		score := "-"
+		if pair.score > 0 {
+			score = fmt.Sprintf("%04.1f", pair.score)
 		}
-		like := pair.like.path
-		if item, ok := im.store.Get(pair.like.sha256); ok {
-			like = filepath.Join(im.dataFolder, filepath.FromSlash(item.Path))
-		}
-		near = append(near, fmt.Sprintf("%d\t%s\t%s\t%s", pair.distance, kind, pair.path, like))
+		near = append(near, fmt.Sprintf("%s\t%d\t%s\t%s\t%s\t%s", score, pair.distance, pair.decision(), pair.why, pair.path, im.pathOf(pair.like)))
 	}
 	sort.Strings(near)
 	for _, report := range []struct {
@@ -168,7 +177,7 @@ func (im *importer) summarize() {
 		{im.notImportedRun, "not-imported", "The files not imported, and why", "folder\treason\tfound at\tnow at", im.rejected},
 		{im.runFolder, "left-where-they-are", "The files left where they are, and why", "file\treason", im.leftBehind},
 		{im.runFolder, "dates", "Files whose name and metadata disagree", "file\tdates", im.dateNotes},
-		{im.runFolder, "near-duplicates", "Near-duplicates", "bits apart\tdecision\tphoto\tlooks like", near},
+		{im.runFolder, "near-duplicates", "Near-duplicates", "pixels' score (dB)\tdHash bits apart\tdecision\twhy\tphoto\tlooks like", near},
 	} {
 		if len(report.lines) == 0 {
 			continue

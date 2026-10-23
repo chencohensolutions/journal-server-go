@@ -410,7 +410,7 @@ the name, as uploads do.
   `dates.tsv` and `near-duplicates.tsv`).
 - **Files that weren't imported are moved to `--not-imported`**, a separate folder so deleting an imported run
   never deletes them: `<not-imported>\<run time>\<why>\phone DCIM\…`, with `<why>` one of `no date`, `failed`,
-  `near-duplicates` (waiting for `--review`), and with `--move-other` also `not photos or videos` and `hidden`
+  `near-duplicates` (waiting for `--review`), `same picture` (a copy of a photo in the journal), and with `--move-other` also `not photos or videos` and `hidden`
   (`.trashed-…`); off by default, so searching a whole drive never moves its other files. The run's
   `not-imported.tsv` lists each with its reason, where it was found and where it is now. Only files that can't
   be moved stay where they are (`left-where-they-are.tsv`). Running again continues where it stopped (also after
@@ -419,7 +419,7 @@ the name, as uploads do.
   each claims its own run folder (`…-2` when two start in the same second), and the review list is changed by one
   at a time. See "Several processes on one data folder".
 - **Files are read several at a time, then decided one at a time, largest first**, so the original of a photo
-  goes in before its smaller copies (which wait as near-duplicates), whatever order they were read in. An
+  goes in before its smaller copies (found to be the same picture), whatever order they were read in. An
   identical copy of a waiting near-duplicate is moved to the imported folder as its duplicate; its folder is
   kept with the waiting photo, which is decided on once.
 - **Files are only copied**, byte for byte (the copy's sha256 is checked); nothing is written into them. What is
@@ -438,16 +438,38 @@ the name, as uploads do.
   copy kept in an album is the duplicate), and so does a near-duplicate skipped on the review page. Only the
   sidecar is rewritten. `--backfill-folders <folder>…` adds the folders of files looked at by runs from before
   this, from `.cache/source-hashes.tsv`.
-- **Near-duplicates** (photos that look alike but aren't the same bytes: a resized copy, a burst) are found by
-  **dHash** (the photo shrunk by libvips to 9×8 grey pixels, one bit per pair of neighbors) and listed in
-  `near-duplicates.tsv` when within `--near` bits (default 4) of a photo in the data folder or imported
-  before. **Shots of a burst** (taken 1–60 s apart, or in the same second with different burst numbers,
-  `20260120_081253_035.jpg` / `…_041.jpg`) are imported. **Any other near-duplicate is left where it is** and
-  added to `<imported>/review.json`; `--review` opens a page on this machine showing each next to the photo it
-  looks like, with both photos' facts (rows that differ highlighted), to **import it too** or **skip it** (moved to
-  the imported folder like a duplicate; decisions are logged in that run folder's `review-decisions.tsv`; `review.json` stays at the top of `--imported`, across runs). The dHash of every photo
-  in the data folder is kept in `.cache/dhash.tsv` (by sha256), and the sha256 of every file looked at in
-  `.cache/source-hashes.tsv` (by path, size and modified time), so later runs don't redo them. Videos have no dHash.
+- **Near-duplicates** (photos that look alike but aren't the same bytes) are found by **dHash** (the photo
+  shrunk by libvips to 9×8 grey pixels, one bit per pair of neighbors): those within `--near` bits (default 8)
+  of a photo in the data folder or imported before, up to 8 of them, closest first. Looking alike is not enough
+  to hold a photo back: the **same-picture check** (`same.go`) tells a copy (resized, recompressed, its EXIF
+  changed) from another shot (a burst, a second try):
+  - **Same camera, another moment.** When both have the same EXIF `Make` and `Model` and a `DateTimeOriginal`,
+    photos taken more than 10 ms apart are two shots. The milliseconds come from `SubSecTimeOriginal`, or from
+    the name (`20260120_081253_035.jpg`, `PIC_20251202_192632357.jpg`); without them, a different second is
+    enough. Without camera tags on both (WhatsApp strips them) the pixels decide.
+  - **Names of two shots.** A copy keeps its name, give or take a mark (`(1)`, ` (2)`, `-נערכה` or `-edited`,
+    `~20230328-021353`, `_saved`). Names with a date and time that differ (more than 10 ms when both have
+    milliseconds) are two shots, such as two screenshots of one app. Names alike but for their digits are a
+    camera's numbers for two shots (`DSC_000429` / `DSC_000430`, `…_084736_05` / `…_03`). WhatsApp's names are
+    left out: it numbers every file it saves, so a photo sent twice has two numbers.
+  - **Same shape.** Width-to-height ratios more than 1% apart (a crop) are two pictures.
+  - **Same pixels.** Both are shrunk to 64×64 grey and compared (PSNR): 35 dB or more is the same picture, 28
+    to 35 not sure, less another shot.
+
+  **Another shot is imported.** **The same picture, no larger than the one in the journal, is not**: it goes to
+  `<not-imported>\<run time>\same picture\…`, and its folders are added to that photo's. **A larger copy of
+  it, or a pair the check isn't sure of, is left where it is** and added to `<imported>/review.json` (with
+  `why` and `score`); `--review` opens a page on this machine showing each next to the photo it looks like,
+  with both photos' facts (rows that differ highlighted), to **import it too** or **skip it** (moved to the
+  imported folder like a duplicate; decisions are logged in that run folder's `review-decisions.tsv`;
+  `review.json` stays at the top of `--imported`, across runs). `near-duplicates.tsv` lists every pair with the
+  pixels' score, the dHash distance, the decision and why, sorted by score so the pairs near the thresholds sit
+  together. **`--recheck [--dry-run]`** decides again, with the check, on every photo waiting in `review.json`
+  (those held back before it, when looking alike was enough, too): other shots are imported and moved to the
+  imported folder, the same pictures to `same picture`, and the rest keep waiting. The dHash of every photo in
+  the data folder is kept in `.cache/dhash.tsv` (by sha256), and the sha256 of every file looked at in
+  `.cache/source-hashes.tsv` (by path, size and modified time), so later runs don't redo them. Videos have no
+  dHash.
 
 ### Importing from Google Drive and OneDrive
 

@@ -142,27 +142,143 @@ func TestReadPNM(t *testing.T) {
 	}
 }
 
-func TestSameBurst(t *testing.T) {
+func TestShotTime(t *testing.T) {
+	exif := func(sub string) map[string]string {
+		return map[string]string{"exif-ifd2-DateTimeOriginal": "2026:01:20 08:12:53", "exif-ifd2-SubSecTimeOriginal": sub}
+	}
+	for _, c := range []struct {
+		exif  map[string]string
+		name  string
+		want  string
+		exact bool
+	}{
+		{exif("035"), "a.jpg", "08:12:53.035", true},
+		{exif("35"), "a.jpg", "08:12:53.350", true}, // sub-seconds are digits after the point
+		{exif(""), "20260120_081253_041.jpg", "08:12:53.041", true},
+		{exif(""), "PIC_20260120_081253912.jpg", "08:12:53.912", true},
+		{exif(""), "20260120_081254_041.jpg", "08:12:53.000", false}, // the name's second differs
+		{exif(""), "IMG-20260120-WA0003.jpg", "08:12:53.000", false},
+	} {
+		got, exact := shotTime(c.exif, c.name)
+		if got == nil || got.Format("15:04:05.000") != c.want || exact != c.exact {
+			t.Errorf("%v %s: %v %v, want %s %v", c.exif, c.name, got, exact, c.want, c.exact)
+		}
+	}
+	if got, _ := shotTime(map[string]string{}, "20260120_081253_041.jpg"); got != nil {
+		t.Errorf("no EXIF date: %v", got)
+	}
+}
+
+func TestDifferentShots(t *testing.T) {
 	at := func(s string) *time.Time {
-		v, _ := time.Parse("2006-01-02 15:04:05.000", s)
+		v, _ := time.Parse("15:04:05.000", s)
 		return &v
 	}
-	shot := func(name, taken string) photo { return photo{name: name, takenAt: at(taken)} }
+	shot := func(camera, taken string, exact bool) *picture {
+		return &picture{camera: camera, shot: at(taken), exact: exact}
+	}
 	for _, c := range []struct {
-		a, b  photo
-		burst bool
+		a, b      *picture
+		different bool
 	}{
-		{shot("20260120_081253_035.jpg", "2026-01-20 08:12:53.000"), shot("20260120_081253_041.jpg", "2026-01-20 08:12:53.000"), true},
-		{shot("PIC_20251202_192632357.jpg", "2025-12-02 19:26:32.000"), shot("PIC_20251202_192632912.jpg", "2025-12-02 19:26:32.000"), true},
-		{shot("20260505_181704.jpg", "2026-05-05 18:17:04.000"), shot("20260505_181709.jpg", "2026-05-05 18:17:09.000"), true},
-		// The same shot twice (a resized or sent copy): for the owner to decide.
-		{shot("20260505_181704.jpg", "2026-05-05 18:17:04.000"), shot("20260505_181704 (2).jpg", "2026-05-05 18:17:04.000"), false},
-		{shot("20260505_181704.jpg", "2026-05-05 18:17:04.000"), shot("IMG-20260506-WA0003.jpg", "2026-05-06 12:00:00.000"), false},
-		{shot("a.jpg", "2026-05-05 18:17:04.000"), photo{name: "b.jpg"}, false},
+		{shot("samsung SM-S918B", "08:12:53.035", true), shot("samsung SM-S918B", "08:12:53.041", true), false},
+		{shot("samsung SM-S918B", "08:12:53.035", true), shot("samsung SM-S918B", "08:12:53.050", true), true}, // a burst
+		{shot("samsung SM-S918B", "08:12:53.000", false), shot("samsung SM-S918B", "08:12:53.500", true), false},
+		{shot("samsung SM-S918B", "08:12:53.000", false), shot("samsung SM-S918B", "08:12:54.000", false), true},
+		// Another camera, or none (WhatsApp strips it): the pixels decide.
+		{shot("samsung SM-S918B", "08:12:53.000", true), shot("Apple iPhone 15", "08:20:00.000", true), false},
+		{shot("samsung SM-S918B", "08:12:53.000", true), shot("", "08:20:00.000", true), false},
 	} {
-		if got := sameBurst(c.a, c.b); got != c.burst {
-			t.Errorf("%s / %s: burst %v, want %v", c.a.name, c.b.name, got, c.burst)
+		if got := differentShots(c.a, c.b) != ""; got != c.different {
+			t.Errorf("%+v / %+v: different %v, want %v", c.a, c.b, got, c.different)
 		}
+	}
+
+	// By the time in their names, without camera tags.
+	named := func(name string) *picture {
+		p := &picture{}
+		p.named, p.namedExact = namedTime(name)
+		return p
+	}
+	for _, c := range []struct {
+		a, b      string
+		different bool
+	}{
+		{"Screenshot_20251105_161324_Chrome.png", "Screenshot_20251105_161113_Chrome.png", true},
+		{"20220909_175106_097.jpg", "20220909_175106_073.jpg", true},
+		{"20220604_195852_028_saved.jpg", "20220604_195852_028.jpg", false},
+		{"20221110_191432(0).jpg", "20221110_191432(0).dng", false},
+		{"DSC_0045_BURST20200311170024427.JPG", "DSC_0046_BURST20200311170024427.JPG", false}, // the burst's start
+		{"IMG-20251023-WA0017.jpg", "IMG-20251025-WA0014.jpg", false},                         // when it was sent
+		{"20220909_175106.jpg", "IMG-20220909-WA0001.jpg", false},
+	} {
+		if got := differentShots(named(c.a), named(c.b)) != ""; got != c.different {
+			t.Errorf("%s / %s: different %v, want %v", c.a, c.b, got, c.different)
+		}
+	}
+
+	// By the shot numbers in their names: a copy keeps its name, marks aside.
+	for _, c := range []struct {
+		a, b      string
+		different bool
+	}{
+		{"DSC_000429.JPG", "DSC_000430.JPG", true},
+		{"20220528_084736_05.jpg", "20220528_084736_03.jpg", true},
+		{"DSC_000004-נערכה(6).JPG", "DSC_000005-נערכה(6).JPG", true},
+		{"DSC_000073-נערכה(1).JPG", "DSC_000073(1).JPG", false},
+		{"DSC_0013(2).JPG", "DSC_0013 (2).JPG", false},
+		{"20221215_081204.heic", "20221215_081204~20230328-021353.heic", false},
+		{"DSC_0441(2).JPG", "dsc_0441.jpg", false},
+		{"IMG-20260114-WA0032.jpg", "IMG-20260130-WA0022.jpg", false}, // a photo sent twice
+		{"IMG-20221217-WA0020.jpg", "20221217_123948.heic", false},
+		{"CAM00428.jpg", "DSC_0428.JPG", false},
+	} {
+		if got := numberedApart(c.a, c.b); got != c.different {
+			t.Errorf("%s / %s: numbered apart %v, want %v", c.a, c.b, got, c.different)
+		}
+	}
+}
+
+func TestComparePictures(t *testing.T) {
+	texture := func(seed, dx int) []uint8 {
+		grey := make([]uint8, pictureSide*pictureSide)
+		for y := range pictureSide {
+			for x := range pictureSide {
+				v := uint32((x+dx)*7919+y*104729+seed) * 2654435761
+				grey[y*pictureSide+x] = uint8(v >> 24)
+			}
+		}
+		return grey
+	}
+	photo := texture(1, 0)
+	copied := append([]uint8(nil), photo...)
+	for i := range copied {
+		if i%3 == 0 && copied[i] < 255 {
+			copied[i]++ // recompressed: a level off here and there
+		}
+	}
+	at := time.Date(2026, 1, 20, 8, 12, 53, 0, time.UTC)
+	later := at.Add(time.Second)
+	pic := func(grey []uint8, w, h int, camera string, shot *time.Time) *picture {
+		return &picture{grey: grey, width: w, height: h, camera: camera, shot: shot}
+	}
+	for _, c := range []struct {
+		name string
+		a, b *picture
+		want verdict
+	}{
+		{"resized copy", pic(photo, 4000, 3000, "cam", &at), pic(copied, 1600, 1200, "", nil), verdictSame},
+		{"another shot, moved", pic(photo, 4000, 3000, "", nil), pic(texture(1, 3), 4000, 3000, "", nil), verdictDifferent},
+		{"a crop", pic(photo, 4000, 3000, "", nil), pic(copied, 3000, 3000, "", nil), verdictDifferent},
+		{"same camera, a second later", pic(photo, 4000, 3000, "cam", &at), pic(copied, 4000, 3000, "cam", &later), verdictDifferent},
+		{"unreadable", pic(photo, 4000, 3000, "", nil), nil, verdictUnsure},
+	} {
+		if got, score, why := comparePictures(c.a, c.b); got != c.want {
+			t.Errorf("%s: %v (%.1f dB, %s), want %v", c.name, got, score, why, c.want)
+		}
+	}
+	if (&picture{width: 1600, height: 1200}).pixels() >= (&picture{width: 4000, height: 3000}).pixels() {
+		t.Error("pixels")
 	}
 }
 

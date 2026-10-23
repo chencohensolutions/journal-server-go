@@ -13,16 +13,24 @@
 // is used. A time without an offset is taken as this machine's time zone. Files with no date are left
 // where they are.
 //
-// Photos that look alike but aren't the same bytes (a resized copy, a burst) are found by their dHash and
-// listed in near-duplicates-<time>.tsv; they are imported all the same. The dHash of every photo in the
-// data folder is kept in its .cache/dhash.tsv, and the sha256 of every file looked at in
-// .cache/source-hashes.tsv (by path, size and modified time), so the import after a dry run doesn't read
-// everything again.
+// Photos that look alike but aren't the same bytes are found by their dHash (within --near bits), then
+// told apart by the same-picture check (same.go): both shrunk to the same small grey square and compared
+// pixel by pixel, after checking they have the same shape and, when the same camera took both, were taken
+// within 10 ms of each other. Another shot (a burst, a second try) is imported. The same picture (a
+// resized or recompressed copy, its EXIF changed) is not, and goes to the not-imported folder's "same
+// picture" folder; a larger copy of it, or a pair the check isn't sure of, waits there in "near-duplicates"
+// for --review. Every pair, with its score, is listed in the run's near-duplicates.tsv. --recheck decides
+// again on the photos waiting for review (those held back before this check, too).
+//
+// The dHash of every photo in the data folder is kept in its .cache/dhash.tsv, and the sha256 of every
+// file looked at in .cache/source-hashes.tsv (by path, size and modified time), so the import after a dry
+// run doesn't read everything again.
 //
 // The server may keep running: it and every import take turns at writing to the data folder (media/turns.go),
 // and it sees imported files at once. Run from the server folder:
 //
 //	go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] D:\Backups "E:\Old phone"
+//	go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" --recheck [--dry-run]
 package main
 
 import (
@@ -98,6 +106,7 @@ type importer struct {
 	others       []sourceFile   // files that aren't photos or videos, or are hidden: moved with --move-other
 	dateNotes    []string
 	near         []nearPair
+	pictures     pictureCache // has its own lock
 	toReview     []reviewItem
 	lastProgress time.Time
 	started      time.Time
@@ -110,23 +119,24 @@ type importer struct {
 // photo is one photo in the data folder (or on its way there, or in a dry run one that would be), with
 // its dHash.
 type photo struct {
-	hash    dhash
-	sha256  string
-	name    string
-	takenAt *time.Time
-	path    string // where it was found, for one from this run (the data folder's is looked up by sha256)
+	hash   dhash
+	sha256 string
+	path   string // where it was found, for one from this run (the data folder's is looked up by sha256)
 }
 
-// nearPair is a photo found to look like one before it.
+// nearPair is a photo found to look like one before it, and what the same-picture check made of them.
 type nearPair struct {
-	distance int
-	burst    bool
+	distance int // dHash bits apart
+	verdict  verdict
+	better   bool    // the same picture, with more pixels than the one it looks like
+	score    float64 // the pixels' PSNR in dB; 0 when not compared
+	why      string
 	path     string // the new photo, where it was found
 	like     photo
 }
 
 type counts struct {
-	imported, duplicates, noDate, failed, hidden int
+	imported, duplicates, same, noDate, failed, hidden int
 	importedBytes, duplicateBytes                int64
 }
 
@@ -135,8 +145,9 @@ func main() {
 	imported := flag.String("imported", "", "folder the source files are moved to once imported (or found to be duplicates)")
 	dryRun := flag.Bool("dry-run", false, "only count what would be imported; nothing is copied or moved")
 	jobs := flag.Int("jobs", 4, "files worked on at once")
-	near := flag.Int("near", 4, "most dHash bits two photos may differ in to be listed as near-duplicates (0–64)")
+	near := flag.Int("near", 8, "most dHash bits two photos may differ in to be compared as near-duplicates (0–64)")
 	review := flag.Bool("review", false, "show the near-duplicates waiting in the imported folder side by side, to import or skip each")
+	recheck := flag.Bool("recheck", false, "decide again on the near-duplicates waiting for review, with the same-picture check")
 	noBrowser := flag.Bool("no-browser", false, "with --review, only print the page's address")
 	notImported := flag.String("not-imported", "", "folder the files that weren't imported are moved to, by why (required to import)")
 	moveOther := flag.Bool("move-other", false, "also move files that aren't photos or videos, and hidden ones (.trashed-…), to the not-imported folder")
@@ -149,12 +160,13 @@ func main() {
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--move-other] <folder>...")
 		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> --cloud gdrive,onedrive --temp <folder> [--dry-run]")
+		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> --recheck [--dry-run]")
 		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --review")
 		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --backfill-folders <folder>...")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if *user == "" || *imported == "" || (flag.NArg() == 0) != (*review || *cloud != "") || *jobs < 1 ||
+	if *user == "" || *imported == "" || (flag.NArg() == 0) != (*review || *recheck || *cloud != "") || *jobs < 1 ||
 		(*cloud != "") != (*temp != "") || *batchGB <= 0 {
 		flag.Usage()
 		os.Exit(2)
@@ -192,6 +204,7 @@ func main() {
 		waiting:        map[string]int{},
 		notMedia:       map[string]int{},
 		lastProgress:   time.Now(),
+		pictures:       pictureCache{pictures: map[string]*picture{}},
 	}
 	if *notImported != "" {
 		im.notImported = absolute(*notImported)
@@ -239,6 +252,10 @@ func main() {
 	}
 	if *backfill {
 		im.backfillFolders()
+		return
+	}
+	if *recheck {
+		im.recheck(ctx, *jobs)
 		return
 	}
 
