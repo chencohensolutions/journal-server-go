@@ -14,6 +14,7 @@ import (
 	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/faces"
+	"github.com/journal/server-go/graph/resolver"
 	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/nudity"
@@ -259,6 +260,8 @@ type indexes struct {
 	reader    *reading.Reader
 	// The caches are written by journal-server index ("index": "daily"), and read here to answer queries.
 	daily bool
+	// Starts, follows and pauses each user's reading (indexrun.go), for the indexing fields; nil: none.
+	runs resolver.IndexRunner
 }
 
 // openIndexes is the server's indexes. With "index": "server" (the default) every index whose model is there,

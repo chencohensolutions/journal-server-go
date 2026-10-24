@@ -27,7 +27,13 @@ import (
 // enrolledClient enrolls a device for hen and returns an HTTP client presenting its certificate.
 func (e *testEnv) enrolledClient(t *testing.T) *http.Client {
 	t.Helper()
-	code, _ := e.enrollment.Codes.Create("hen")
+	return e.enrolledClientOf(t, "hen")
+}
+
+// enrolledClientOf is a device enrolled for user.
+func (e *testEnv) enrolledClientOf(t *testing.T, user string) *http.Client {
+	t.Helper()
+	code, _ := e.enrollment.Codes.Create(user)
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	result := e.enroll(t, code, key)
 	certDER, _ := base64.StdEncoding.DecodeString(result.Certificate)

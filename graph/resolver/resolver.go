@@ -36,6 +36,8 @@ type Resolver struct {
 	Version string
 	// The indexes phones may keep (localIndexes); nil or with none when none can be.
 	Local *localindex.Server
+	// Starts, follows and pauses the reading of each user's files for the indexes; nil when no file is read.
+	IndexRuns IndexRunner
 }
 
 // APIVersion is serverInfo.api: raised when a change needs newer apps.

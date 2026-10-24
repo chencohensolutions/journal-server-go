@@ -174,6 +174,44 @@ type HiddenCollectionsInput struct {
 	Nudity *NudityHidingInput `json:"nudity,omitempty"`
 }
 
+type Indexing struct {
+	State IndexingState `json:"state"`
+	// The run was started by the nightly run ("index_at"), not by a phone.
+	Nightly bool `json:"nightly"`
+	// Files read so far in this run (with what was read before a pause), and how many it reads in all.
+	Done      int        `json:"done"`
+	Total     int        `json:"total"`
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	// QUEUED: how many runs are ahead of this one.
+	QueuedBehind *int `json:"queuedBehind,omitempty"`
+	// How many files each index read in this run, and how many it couldn't.
+	Indexes []*IndexingCount `json:"indexes"`
+	// How the caller's last run ended.
+	LastRun *IndexingRun `json:"lastRun,omitempty"`
+	// When the next nightly run starts ("index": "daily"); null when the server reads files as they come.
+	NextNightly *time.Time `json:"nextNightly,omitempty"`
+}
+
+type IndexingCount struct {
+	// search, faces, ocr, similar, aesthetic or nudity.
+	Name   string `json:"name"`
+	Read   int    `json:"read"`
+	Failed int    `json:"failed"`
+}
+
+type IndexingRun struct {
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	// Files read.
+	Files int `json:"files"`
+	// Files an index couldn't read.
+	Failed int `json:"failed"`
+	// It was paused, or the server stopped, before every file was read.
+	Stopped bool `json:"stopped"`
+	// Why the run couldn't go on (another run of the same files, no model).
+	Error *string `json:"error,omitempty"`
+}
+
 type LocalIndex struct {
 	// search (text search, SigLIP 2), faces, ocr (text in photos), similar (similar photos and duplicates, DINOv2), aesthetic.
 	Name string `json:"name"`
@@ -364,6 +402,8 @@ type ServerInfo struct {
 	Similar bool `json:"similar"`
 	// Photos get aesthetic scores (Media.aesthetic).
 	Aesthetic bool `json:"aesthetic"`
+	// A phone can start, follow and pause the reading of its user's files (indexing).
+	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
 	LocalIndexes bool `json:"localIndexes"`
 }
@@ -538,6 +578,69 @@ func (e *EnrollmentRejectedReason) UnmarshalJSON(b []byte) error {
 }
 
 func (e EnrollmentRejectedReason) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type IndexingState string
+
+const (
+	// No run of the caller's files in hand.
+	IndexingStateIdle IndexingState = "IDLE"
+	// Waits for other runs to end (queuedBehind).
+	IndexingStateQueued IndexingState = "QUEUED"
+	// Reading the caller's files.
+	IndexingStateRunning IndexingState = "RUNNING"
+	// Paused by a phone; startIndexing goes on.
+	IndexingStatePaused IndexingState = "PAUSED"
+)
+
+var AllIndexingState = []IndexingState{
+	IndexingStateIdle,
+	IndexingStateQueued,
+	IndexingStateRunning,
+	IndexingStatePaused,
+}
+
+func (e IndexingState) IsValid() bool {
+	switch e {
+	case IndexingStateIdle, IndexingStateQueued, IndexingStateRunning, IndexingStatePaused:
+		return true
+	}
+	return false
+}
+
+func (e IndexingState) String() string {
+	return string(e)
+}
+
+func (e *IndexingState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = IndexingState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid IndexingState", str)
+	}
+	return nil
+}
+
+func (e IndexingState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *IndexingState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e IndexingState) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

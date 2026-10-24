@@ -450,3 +450,78 @@ func TestARunSavesTheIndexCache(t *testing.T) {
 		t.Errorf("index.json not saved after the run: %v → %v (%v)", before.ModTime(), after.ModTime(), err)
 	}
 }
+
+// A run's progress counts up file by file, is told to OnProgress, and is kept as the last run when it ends.
+func TestProgressCountsUpAndEndsAsTheLastRun(t *testing.T) {
+	lib, _ := library(t, media.KindPhoto, media.KindPhoto, media.KindPhoto)
+	var calls []string
+	var mu sync.Mutex
+	x := newIndex("x", 0, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{small}}, &calls, &mu)
+	r := New(lib, newOpener(), 2)
+	r.Add(x)
+	var seen []Progress
+	r.OnProgress = func(p Progress) { seen = append(seen, p) }
+	r.ReadNew(context.Background(), "hen")
+	if len(seen) != 5 || !seen[4].Ended || seen[4].Done != 3 {
+		t.Fatalf("told %d times, want 5 (the start, each file and the end): %+v", len(seen), seen)
+	}
+	for i, p := range seen[:4] {
+		if p.User != "hen" || p.Done != i || p.Total != 3 {
+			t.Errorf("progress %d: %+v", i, p)
+		}
+	}
+	if last := seen[3].Indexes; len(last) != 1 || last[0].Name != "x" || last[0].Read != 3 {
+		t.Errorf("the indexes' counts: %+v", last)
+	}
+	if _, ok := r.Progress("hen"); ok {
+		t.Error("a run still in hand after it ended")
+	}
+	if l, ok := r.LastRun("hen"); !ok || l.Files != 3 || l.Stopped {
+		t.Errorf("the last run: %+v %v", l, ok)
+	}
+}
+
+// Pause stops a run after the file in hand, Run skips the user while paused, and Resume reads the rest.
+func TestPauseStopsARunAndResumeCarriesOn(t *testing.T) {
+	lib, _ := library(t, media.KindPhoto, media.KindPhoto, media.KindPhoto, media.KindPhoto, media.KindPhoto)
+	var calls []string
+	var mu sync.Mutex
+	x := newIndex("x", 0, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{small}}, &calls, &mu)
+	x.delay = 30 * time.Millisecond
+	r := New(lib, newOpener(), 1)
+	r.Add(x)
+	r.OnProgress = func(p Progress) {
+		if p.Done == 2 {
+			r.Pause("hen")
+		}
+	}
+	r.ReadNew(context.Background(), "hen")
+	read := func() int {
+		x.mu.Lock()
+		defer x.mu.Unlock()
+		return len(x.done)
+	}
+	if n := read(); n < 2 || n >= 5 {
+		t.Fatalf("read %d files before the pause took hold, want 2 or 3", n)
+	}
+	if l, _ := r.LastRun("hen"); !l.Stopped {
+		t.Errorf("the paused run isn't marked stopped: %+v", l)
+	}
+	r.OnProgress = nil
+	before := read()
+	r.ReadNew(context.Background(), "hen")
+	if read() != before {
+		t.Fatal("a paused user's files were read")
+	}
+
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
+	defer func() { stop(); <-done }()
+	r.Resume("hen")
+	for deadline := time.Now().Add(5 * time.Second); read() < 5; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("read %d of 5 files after Resume", read())
+		}
+	}
+}

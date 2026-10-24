@@ -23,6 +23,8 @@ const (
 	CodeSimilarOff = "SIMILAR_OFF"
 	// CodeNotReadYet: the file hasn't been read by the index asked about yet (the server is still reading).
 	CodeNotReadYet = "NOT_READ_YET"
+	// CodeIndexingOff: the server reads no files for indexes (no model or runtime), so there is no run to start.
+	CodeIndexingOff = "INDEXING_OFF"
 )
 
 // coded is an error with a code devices act on.

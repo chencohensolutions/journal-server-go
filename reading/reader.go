@@ -106,6 +106,44 @@ type Reader struct {
 	failed map[string]map[string]bool
 	// Not call the indexes' Finish: in journal-server index, whose results the server puts together itself.
 	skipFinish bool
+	// OnProgress, when set, is told how a run is going after each file (and at its start and end): journal-server
+	// index --progress writes it out for the server that started it. Set before the first run.
+	OnProgress func(Progress)
+
+	mu       sync.Mutex
+	progress map[string]Progress           // the run in hand, by user
+	last     map[string]LastRun            // how each user's last run ended
+	paused   map[string]bool               // users whose reading waits for Resume
+	cancels  map[string]context.CancelFunc // stops the run in hand, by user
+}
+
+// Progress is how far a run of one user's files has come.
+type Progress struct {
+	User      string       `json:"user"`
+	Done      int          `json:"done"`
+	Total     int          `json:"total"`
+	StartedAt time.Time    `json:"startedAt"`
+	Indexes   []IndexCount `json:"indexes"`
+	// The run is over (read through, paused or stopped): its last report.
+	Ended bool `json:"ended,omitempty"`
+}
+
+// IndexCount is how many files one index read in a run, and how many it couldn't.
+type IndexCount struct {
+	Name   string `json:"name"`
+	Read   int    `json:"read"`
+	Failed int    `json:"failed"`
+}
+
+// LastRun is how a run of one user's files ended.
+type LastRun struct {
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Files      int
+	Total      int // the files it set out to read
+	Failed     int
+	// It was paused or the server stopped before every file was read; the next run carries on.
+	Stopped bool
 }
 
 // SkipFinish has ReadNew not call the indexes' Finish (faces grouping, duplicate finding): for a process that only
@@ -115,7 +153,69 @@ func (r *Reader) SkipFinish() { r.skipFinish = true }
 // New reads library's files with opener, preparing up to prepare files ahead of the indexes.
 func New(library *media.Library, opener Opener, prepare int) *Reader {
 	return &Reader{library: library, opener: opener, prepare: max(1, prepare), wants: map[Index]Wants{},
-		wake: make(chan struct{}, 1), failed: map[string]map[string]bool{}}
+		wake: make(chan struct{}, 1), failed: map[string]map[string]bool{}, progress: map[string]Progress{},
+		last: map[string]LastRun{}, paused: map[string]bool{}, cancels: map[string]context.CancelFunc{}}
+}
+
+// Progress is how far user's run in hand has come; false when none is.
+func (r *Reader) Progress(user string) (Progress, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.progress[user]
+	return p, ok
+}
+
+// LastRun is how user's last run (one that had files to read) ended; false before the first.
+func (r *Reader) LastRun(user string) (LastRun, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	l, ok := r.last[user]
+	return l, ok
+}
+
+// Pause stops reading user's files: the run in hand finishes the file it is on, and Run skips user until Resume.
+func (r *Reader) Pause(user string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.paused[user] = true
+	if cancel := r.cancels[user]; cancel != nil {
+		cancel()
+	}
+}
+
+// Resume reads user's files again, now.
+func (r *Reader) Resume(user string) {
+	r.mu.Lock()
+	delete(r.paused, user)
+	r.mu.Unlock()
+	r.Wake()
+}
+
+// Paused reports whether user's reading waits for Resume.
+func (r *Reader) Paused(user string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.paused[user]
+}
+
+// report keeps p as user's run in hand and tells OnProgress.
+func (r *Reader) report(p Progress) {
+	r.mu.Lock()
+	r.progress[p.User] = p
+	r.mu.Unlock()
+	if r.OnProgress != nil {
+		r.OnProgress(p)
+	}
+}
+
+// counts is stats as IndexCounts, in the indexes' order.
+func (r *Reader) counts(stats map[string]*count) []IndexCount {
+	counts := make([]IndexCount, 0, len(r.indexes))
+	for _, x := range r.indexes {
+		c := stats[x.Name()]
+		counts = append(counts, IndexCount{Name: x.Name(), Read: c.read, Failed: c.failed})
+	}
+	return counts
 }
 
 // Add adds an index; before Run.
@@ -188,12 +288,23 @@ type prepared struct {
 }
 
 // ReadNew reads user's files that any index needs, once each: stage 1 decodes the originals and makes the pictures
-// (prepare files ahead, in goroutines of their own), stage 2 runs the indexes on them in order.
+// (prepare files ahead, in goroutines of their own), stage 2 runs the indexes on them in order. Nothing while user is
+// paused; Pause stops it after the file in hand.
 func (r *Reader) ReadNew(ctx context.Context, user string) {
 	store := r.library.Store(user)
-	if store == nil || len(r.indexes) == 0 || ctx.Err() != nil {
+	if store == nil || len(r.indexes) == 0 || ctx.Err() != nil || r.Paused(user) {
 		return
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	r.mu.Lock()
+	r.cancels[user] = cancel
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		delete(r.cancels, user)
+		r.mu.Unlock()
+		cancel()
+	}()
 	var todo []file
 	store.Range(func(item media.Item) {
 		f := file{item: item}
@@ -254,7 +365,30 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 	}()
 	started, done := time.Now(), 0
 	lastAt, lastDone := started, 0
+	r.report(Progress{User: user, Total: len(todo), StartedAt: started, Indexes: r.counts(stats)})
+	defer func() {
+		failed := 0
+		for _, c := range stats {
+			failed += c.failed
+		}
+		if r.OnProgress != nil {
+			r.OnProgress(Progress{User: user, Done: done, Total: len(todo), StartedAt: started, Indexes: r.counts(stats), Ended: true})
+		}
+		r.mu.Lock()
+		delete(r.progress, user)
+		r.last[user] = LastRun{StartedAt: started, FinishedAt: time.Now(), Files: done, Total: len(todo),
+			Failed: failed, Stopped: done < len(todo)}
+		r.mu.Unlock()
+	}()
 	for p := range ready {
+		if ctx.Err() != nil {
+			// Stopped: what was prepared ahead is let go unread, and not counted.
+			if p.source != nil {
+				p.source.Close()
+				p.release()
+			}
+			continue
+		}
 		for _, x := range p.needing {
 			if ctx.Err() != nil {
 				break
@@ -288,6 +422,7 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 			p.release()
 		}
 		done++
+		r.report(Progress{User: user, Done: done, Total: len(todo), StartedAt: started, Indexes: r.counts(stats)})
 		if since := time.Since(lastAt); since >= progressEvery && done < len(todo) {
 			rate := float64(done-lastDone) / since.Seconds()
 			lastAt, lastDone = time.Now(), done

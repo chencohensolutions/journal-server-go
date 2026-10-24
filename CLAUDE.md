@@ -50,7 +50,7 @@ go run ./scripts/bundle-vips               # portable libvips for Windows into v
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run . copy [user] | copy report [user] [--list]   # start the copies' full pass now; what each copy lacks
-go run . index                             # read new files for every index once and exit ("index": "daily" runs it at "index_at")
+go run . index [--user name] [--progress]  # read new files for the indexes once and exit ("index": "daily" runs it per user at "index_at")
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
 go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named, screenshots' app

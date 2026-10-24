@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -117,6 +118,9 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		// As the server does with "index": "daily": only what queries need, read from caches another process writes.
 		ix = openQueryIndexes(config, library)
 		refreshIndexes = ix.refresh
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		ix.runs = newDailyRuns(ctx, config, ix.refresh)
 	} else {
 		// Text search is off unless a test names a model folder: loading one takes seconds. The test runs the reader.
 		if config.SearchModel != auth.DefaultSearchModel {
@@ -146,6 +150,9 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 			reader = newReader(config, library, previews, ix)
 		}
 		ix.reader = reader
+		if reader != nil {
+			ix.runs = readerRuns{reader}
+		}
 	}
 	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)

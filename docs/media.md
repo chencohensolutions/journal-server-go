@@ -540,6 +540,7 @@ A GraphQL error a device should act on carries a code in `extensions.code`; the 
 | `INVALID_ARGUMENT` | An argument is over its limit (hashes, limit, offset, wait, years) or malformed | A client bug: fix the app |
 | `SEARCH_OFF` | Text search is off on this server (`serverInfo.search` says so beforehand) | Hide search |
 | `WITHHELD` | This device is kept from private files, so it can't unmark them | Tell the user |
+| `INDEXING_OFF` | The server reads no files for indexes (no model), so there is no run to start (`serverInfo.indexing` says so beforehand) | Hide On your server |
 
 The media routes answer with HTTP status codes instead, listed with each route above.
 

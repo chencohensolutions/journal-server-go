@@ -62,12 +62,17 @@ func serve(config auth.AppConfig) {
 	}
 	readerDone := make(chan struct{})
 	running, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	var daily *dailyRuns
+	if ix.daily {
+		daily = newDailyRuns(running, config, ix.refresh)
+		ix.runs = daily
+	}
 	copiers := newCopiers(config, library)
 	startCopies(running, library, copiers)
 	go serveAdmin(config, enrollment, refreshIndexes, copiers, func(c *copies.Copier) { runCopy(running, c) })
 	switch {
 	case ix.daily:
-		go func() { indexDaily(running, config, ix); close(readerDone) }()
+		go func() { indexDaily(running, daily, library.Users()); close(readerDone) }()
 	case ix.reader != nil:
 		// The server's own reader writes the indexes' caches: journal-server index can't run beside it.
 		if err := lockIndexes(library); err != nil {
@@ -75,6 +80,7 @@ func serve(config auth.AppConfig) {
 			close(readerDone)
 			break
 		}
+		ix.runs = readerRuns{ix.reader}
 		go func() { ix.reader.Run(running); close(readerDone) }()
 	default:
 		close(readerDone)
@@ -239,7 +245,7 @@ func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previe
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Enrollment: enrollment, Library: library, Search: ix.search, Faces: ix.faces,
 			TextInPhotos: ix.ocr, SimilarPhotos: ix.similar, AestheticScores: ix.aesthetic, NudityScan: ix.nudity != nil,
-			Previews: previews, Version: serverVersion(), Local: local},
+			Previews: previews, Version: serverVersion(), Local: local, IndexRuns: ix.runs},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})

@@ -1,0 +1,77 @@
+# --- Reading the user's photos for the indexes -------------------------------------------------
+# The server reads each new file once for its indexes (search, faces, text in photos, similar photos, aesthetic,
+# nudity; docs/indexes.md). Each user's files are read in a run of their own: nightly at "index_at" with
+# "index": "daily", or as they come with "index": "server". A phone can start a run of its user's files now, see how
+# far it has come and pause it. Only the caller's own run is ever shown; nothing about another user's.
+
+extend type Query {
+  "The reading of the caller's files for the indexes: a run in hand, waiting or paused, and the last one."
+  indexing: Indexing!
+}
+
+extend type Mutation {
+  """
+  Reads the caller's new files for the indexes now, or goes on with a paused run. With "index": "daily" the run waits
+  while another user's runs first (QUEUED).
+  """
+  startIndexing: Indexing!
+  """
+  Pauses the caller's run after the file in hand (or takes it off the queue); startIndexing goes on from there. With
+  "index": "daily" the run's process ends, so its models leave the server's memory.
+  """
+  pauseIndexing: Indexing!
+}
+
+extend type ServerInfo {
+  "A phone can start, follow and pause the reading of its user's files (indexing)."
+  indexing: Boolean!
+}
+
+enum IndexingState {
+  "No run of the caller's files in hand."
+  IDLE
+  "Waits for other runs to end (queuedBehind)."
+  QUEUED
+  "Reading the caller's files."
+  RUNNING
+  "Paused by a phone; startIndexing goes on."
+  PAUSED
+}
+
+type Indexing {
+  state: IndexingState!
+  "The run was started by the nightly run (\"index_at\"), not by a phone."
+  nightly: Boolean!
+  "Files read so far in this run (with what was read before a pause), and how many it reads in all."
+  done: Int!
+  total: Int!
+  startedAt: Time
+  "QUEUED: how many runs are ahead of this one."
+  queuedBehind: Int
+  "How many files each index read in this run, and how many it couldn't."
+  indexes: [IndexingCount!]!
+  "How the caller's last run ended."
+  lastRun: IndexingRun
+  "When the next nightly run starts (\"index\": \"daily\"); null when the server reads files as they come."
+  nextNightly: Time
+}
+
+type IndexingCount {
+  "search, faces, ocr, similar, aesthetic or nudity."
+  name: String!
+  read: Int!
+  failed: Int!
+}
+
+type IndexingRun {
+  startedAt: Time!
+  finishedAt: Time!
+  "Files read."
+  files: Int!
+  "Files an index couldn't read."
+  failed: Int!
+  "It was paused, or the server stopped, before every file was read."
+  stopped: Boolean!
+  "Why the run couldn't go on (another run of the same files, no model)."
+  error: String
+}

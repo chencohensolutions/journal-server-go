@@ -71,6 +71,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Similar:      r.SimilarPhotos != nil,
 		Aesthetic:    r.AestheticScores != nil,
 		LocalIndexes: r.Local.On(),
+		Indexing:     r.IndexRuns != nil,
 	}, nil
 }
 

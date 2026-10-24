@@ -22,6 +22,8 @@ const usage = `usage:
   journal-server index --only nudity,faces
                                       the same, with only the indexes named (nudity, faces, ocr, search,
                                       similar, aesthetic), to bring those up to date first
+  journal-server index --user <name>  the same, for one user's files only
+  journal-server index --progress     also write how the run is going to stdout, for the server that started it
   journal-server copy [user]          start a full pass of the user's copies now (config.json "copies")
   journal-server copy report [user] [--list]
                                       how each copy is doing, and what it lacks now
@@ -38,12 +40,12 @@ func main() {
 		return
 	}
 	if os.Args[1] == "index" {
-		only, err := parseOnly(os.Args[2:])
+		args, err := parseIndexArgs(os.Args[2:])
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(2)
 		}
-		if err := runIndex(config, only); err != nil {
+		if err := runIndex(config, args); err != nil {
 			log.Fatal(err)
 		}
 		return

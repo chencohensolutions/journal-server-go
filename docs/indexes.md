@@ -70,8 +70,11 @@ With `"index": "daily"` in config.json (the default is `"server"`), files are re
 day, and the server keeps only what queries need, so it takes far less memory.
 - **The run:** `journal-server index` loads every index's model, reads every user's new files (the same reader,
   each file decoded once), saves the caches and exits, so the models' memory is gone until the next run.
-  - The server starts it at `"index_at"` (local time, default `"03:00"`) and copies its output into its own log, so
-    the `reading:` progress lines show as before.
+  - The server starts it **one user at a time** (`journal-server index --user <name> --progress`, `indexrun.go`): at
+    `"index_at"` (local time, default `"03:00"`) it queues every user's run, and a phone can queue its own user's
+    run at any time (see "Started, followed and paused from a phone" below). Only one process runs at once, so only
+    one set of models is ever in memory. Its log goes into the server's log, so the `reading:` progress lines show as
+    before.
   - It can also be run by hand at any time; it then tells the server through the admin API (`indexesUpdated`).
   - `journal-server index --only nudity,faces` loads and reads with only the indexes named (`nudity`, `faces`,
     `ocr`, `search`, `similar`, `aesthetic`), to bring those up to date first; the next full run catches up with
@@ -104,8 +107,29 @@ day, and the server keeps only what queries need, so it takes far less memory.
   - The caches stay in memory, to answer at once. They are read with room for every record at once, and what that
     leaves behind is given back to the system right away.
 - **One writer at a time:** whoever writes the caches holds `.cache/index.lock` in each data folder. A server in
-  `"server"` mode holds it while its own reader runs, and `journal-server index` holds it for its run. A second run,
-  or a run beside a `"server"` server, refuses at once.
+  `"server"` mode holds it while its own reader runs, and `journal-server index` holds it for its run (with `--user`,
+  only that user's). A second run of the same user, or a run beside a `"server"` server, refuses at once.
+
+## Started, followed and paused from a phone
+Each user's files are read in a run of their own, and a phone sees and acts on its own user's run only, as it sees
+only its own user's indexes (Oct 24, 2026). The public API (`graph/schema/indexing.graphql`):
+- `indexing` is the caller's run: `IDLE`, `QUEUED` (with `queuedBehind`, the runs ahead; whose they are is not
+  said), `RUNNING` or `PAUSED`, with `done` of `total` files, how many each index read and couldn't (`indexes`),
+  whether the nightly run started it (`nightly`), how the last run ended (`lastRun`) and when the next nightly run
+  starts (`nextNightly`, daily mode only). `serverInfo.indexing` says whether a phone can do any of this (a server
+  that reads no files, without any model, answers `INDEXING_OFF`).
+- `startIndexing` queues the caller's run, or goes on with a paused one.
+- `pauseIndexing` pauses it after the file in hand, or takes it off the queue.
+- **With `"index": "daily"`** (`dailyRuns`): the runs wait in a queue and one process runs at a time. Pausing ends
+  the user's process, so **its models leave the server's memory**, and the next user's run starts. The process
+  writes its progress to stdout (`--progress`: a `@progress {json}` line at its start, at most once a second, and at
+  its end) and the server keeps it. A paused run goes on from where it was: the new process reads only what is still
+  unread, and the server adds what was read before, so the count doesn't start again. The next nightly run queues
+  every user again, paused or not.
+- **With `"index": "server"`** (`readerRuns`): the reader reads every user's files as they come
+  (`reading.Reader.Progress`, `Pause`, `Resume`). Pausing stops the user's run after the file in hand and leaves
+  their new files unread until resumed; the models stay in memory, since they read every user's uploads.
+- A pause is kept in memory only: a restart forgets it.
 
 ## Text in photos (OCR)
 - **Models:** Rivok/paddleocr-hebrew (Apache 2.0), PaddleOCR finetuned for Hebrew: the word detector (DBNet,

@@ -116,6 +116,33 @@ type ComplexityRoot struct {
 		Whatsapp              func(childComplexity int) int
 	}
 
+	Indexing struct {
+		Done         func(childComplexity int) int
+		Indexes      func(childComplexity int) int
+		LastRun      func(childComplexity int) int
+		NextNightly  func(childComplexity int) int
+		Nightly      func(childComplexity int) int
+		QueuedBehind func(childComplexity int) int
+		StartedAt    func(childComplexity int) int
+		State        func(childComplexity int) int
+		Total        func(childComplexity int) int
+	}
+
+	IndexingCount struct {
+		Failed func(childComplexity int) int
+		Name   func(childComplexity int) int
+		Read   func(childComplexity int) int
+	}
+
+	IndexingRun struct {
+		Error      func(childComplexity int) int
+		Failed     func(childComplexity int) int
+		Files      func(childComplexity int) int
+		FinishedAt func(childComplexity int) int
+		StartedAt  func(childComplexity int) int
+		Stopped    func(childComplexity int) int
+	}
+
 	LocalIndex struct {
 		Bytes  func(childComplexity int) int
 		Dim    func(childComplexity int) int
@@ -180,9 +207,11 @@ type ComplexityRoot struct {
 		MoveFace             func(childComplexity int, face string, to *string) int
 		NameFace             func(childComplexity int, face string, name string) int
 		NamePerson           func(childComplexity int, id string, name string) int
+		PauseIndexing        func(childComplexity int) int
 		PrepareSearch        func(childComplexity int) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
+		StartIndexing        func(childComplexity int) int
 		StartUpload          func(childComplexity int, input model.StartUploadInput) int
 	}
 
@@ -218,6 +247,7 @@ type ComplexityRoot struct {
 		Duplicates        func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
 		EnrollmentPreview func(childComplexity int, code string) int
 		HiddenCollections func(childComplexity int) int
+		Indexing          func(childComplexity int) int
 		LocalIndexes      func(childComplexity int) int
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
@@ -241,6 +271,7 @@ type ComplexityRoot struct {
 		API          func(childComplexity int) int
 		Aesthetic    func(childComplexity int) int
 		Faces        func(childComplexity int) int
+		Indexing     func(childComplexity int) int
 		LocalIndexes func(childComplexity int) int
 		NudityScan   func(childComplexity int) int
 		Posters      func(childComplexity int) int
@@ -290,6 +321,8 @@ type MediaResolver interface {
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
 	SetHiddenCollections(ctx context.Context, input model.HiddenCollectionsInput) (*model.HiddenCollections, error)
+	StartIndexing(ctx context.Context) (*model.Indexing, error)
+	PauseIndexing(ctx context.Context) (*model.Indexing, error)
 	StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error)
 	SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error)
 	NamePerson(ctx context.Context, id string, name string) (model.PersonResult, error)
@@ -304,6 +337,7 @@ type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 	ServerInfo(ctx context.Context) (*model.ServerInfo, error)
 	HiddenCollections(ctx context.Context) (*model.HiddenCollections, error)
+	Indexing(ctx context.Context) (*model.Indexing, error)
 	LocalIndexes(ctx context.Context) ([]*model.LocalIndex, error)
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
@@ -588,6 +622,117 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.HiddenCollections.Whatsapp(childComplexity), true
+
+	case "Indexing.done":
+		if e.ComplexityRoot.Indexing.Done == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.Done(childComplexity), true
+	case "Indexing.indexes":
+		if e.ComplexityRoot.Indexing.Indexes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.Indexes(childComplexity), true
+	case "Indexing.lastRun":
+		if e.ComplexityRoot.Indexing.LastRun == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.LastRun(childComplexity), true
+	case "Indexing.nextNightly":
+		if e.ComplexityRoot.Indexing.NextNightly == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.NextNightly(childComplexity), true
+	case "Indexing.nightly":
+		if e.ComplexityRoot.Indexing.Nightly == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.Nightly(childComplexity), true
+	case "Indexing.queuedBehind":
+		if e.ComplexityRoot.Indexing.QueuedBehind == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.QueuedBehind(childComplexity), true
+	case "Indexing.startedAt":
+		if e.ComplexityRoot.Indexing.StartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.StartedAt(childComplexity), true
+	case "Indexing.state":
+		if e.ComplexityRoot.Indexing.State == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.State(childComplexity), true
+	case "Indexing.total":
+		if e.ComplexityRoot.Indexing.Total == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Indexing.Total(childComplexity), true
+
+	case "IndexingCount.failed":
+		if e.ComplexityRoot.IndexingCount.Failed == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingCount.Failed(childComplexity), true
+	case "IndexingCount.name":
+		if e.ComplexityRoot.IndexingCount.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingCount.Name(childComplexity), true
+	case "IndexingCount.read":
+		if e.ComplexityRoot.IndexingCount.Read == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingCount.Read(childComplexity), true
+
+	case "IndexingRun.error":
+		if e.ComplexityRoot.IndexingRun.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingRun.Error(childComplexity), true
+	case "IndexingRun.failed":
+		if e.ComplexityRoot.IndexingRun.Failed == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingRun.Failed(childComplexity), true
+	case "IndexingRun.files":
+		if e.ComplexityRoot.IndexingRun.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingRun.Files(childComplexity), true
+	case "IndexingRun.finishedAt":
+		if e.ComplexityRoot.IndexingRun.FinishedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingRun.FinishedAt(childComplexity), true
+	case "IndexingRun.startedAt":
+		if e.ComplexityRoot.IndexingRun.StartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingRun.StartedAt(childComplexity), true
+	case "IndexingRun.stopped":
+		if e.ComplexityRoot.IndexingRun.Stopped == nil {
+			break
+		}
+
+		return e.ComplexityRoot.IndexingRun.Stopped(childComplexity), true
 
 	case "LocalIndex.bytes":
 		if e.ComplexityRoot.LocalIndex.Bytes == nil {
@@ -917,6 +1062,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.NamePerson(childComplexity, args["id"].(string), args["name"].(string)), true
+	case "Mutation.pauseIndexing":
+		if e.ComplexityRoot.Mutation.PauseIndexing == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.PauseIndexing(childComplexity), true
 	case "Mutation.prepareSearch":
 		if e.ComplexityRoot.Mutation.PrepareSearch == nil {
 			break
@@ -945,6 +1096,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetPrivate(childComplexity, args["sha256s"].([]string), args["private"].(bool)), true
+	case "Mutation.startIndexing":
+		if e.ComplexityRoot.Mutation.StartIndexing == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.StartIndexing(childComplexity), true
 	case "Mutation.startUpload":
 		if e.ComplexityRoot.Mutation.StartUpload == nil {
 			break
@@ -1090,6 +1247,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.HiddenCollections(childComplexity), true
+	case "Query.indexing":
+		if e.ComplexityRoot.Query.Indexing == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Indexing(childComplexity), true
 
 	case "Query.localIndexes":
 		if e.ComplexityRoot.Query.LocalIndexes == nil {
@@ -1230,6 +1393,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Faces(childComplexity), true
+	case "ServerInfo.indexing":
+		if e.ComplexityRoot.ServerInfo.Indexing == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Indexing(childComplexity), true
 	case "ServerInfo.localIndexes":
 		if e.ComplexityRoot.ServerInfo.LocalIndexes == nil {
 			break
@@ -1543,6 +1712,84 @@ extend type Mutation {
   at their next sync.
   """
   setHiddenCollections(input: HiddenCollectionsInput!): HiddenCollections!
+}
+`, BuiltIn: false},
+	{Name: "../schema/indexing.graphql", Input: `# --- Reading the user's photos for the indexes -------------------------------------------------
+# The server reads each new file once for its indexes (search, faces, text in photos, similar photos, aesthetic,
+# nudity; docs/indexes.md). Each user's files are read in a run of their own: nightly at "index_at" with
+# "index": "daily", or as they come with "index": "server". A phone can start a run of its user's files now, see how
+# far it has come and pause it. Only the caller's own run is ever shown; nothing about another user's.
+
+extend type Query {
+  "The reading of the caller's files for the indexes: a run in hand, waiting or paused, and the last one."
+  indexing: Indexing!
+}
+
+extend type Mutation {
+  """
+  Reads the caller's new files for the indexes now, or goes on with a paused run. With "index": "daily" the run waits
+  while another user's runs first (QUEUED).
+  """
+  startIndexing: Indexing!
+  """
+  Pauses the caller's run after the file in hand (or takes it off the queue); startIndexing goes on from there. With
+  "index": "daily" the run's process ends, so its models leave the server's memory.
+  """
+  pauseIndexing: Indexing!
+}
+
+extend type ServerInfo {
+  "A phone can start, follow and pause the reading of its user's files (indexing)."
+  indexing: Boolean!
+}
+
+enum IndexingState {
+  "No run of the caller's files in hand."
+  IDLE
+  "Waits for other runs to end (queuedBehind)."
+  QUEUED
+  "Reading the caller's files."
+  RUNNING
+  "Paused by a phone; startIndexing goes on."
+  PAUSED
+}
+
+type Indexing {
+  state: IndexingState!
+  "The run was started by the nightly run (\"index_at\"), not by a phone."
+  nightly: Boolean!
+  "Files read so far in this run (with what was read before a pause), and how many it reads in all."
+  done: Int!
+  total: Int!
+  startedAt: Time
+  "QUEUED: how many runs are ahead of this one."
+  queuedBehind: Int
+  "How many files each index read in this run, and how many it couldn't."
+  indexes: [IndexingCount!]!
+  "How the caller's last run ended."
+  lastRun: IndexingRun
+  "When the next nightly run starts (\"index\": \"daily\"); null when the server reads files as they come."
+  nextNightly: Time
+}
+
+type IndexingCount {
+  "search, faces, ocr, similar, aesthetic or nudity."
+  name: String!
+  read: Int!
+  failed: Int!
+}
+
+type IndexingRun {
+  startedAt: Time!
+  finishedAt: Time!
+  "Files read."
+  files: Int!
+  "Files an index couldn't read."
+  failed: Int!
+  "It was paused, or the server stopped, before every file was read."
+  stopped: Boolean!
+  "Why the run couldn't go on (another run of the same files, no model)."
+  error: String
 }
 `, BuiltIn: false},
 	{Name: "../schema/local.graphql", Input: `# --- Indexes kept on the phone ---------------------------------------------------
@@ -2274,6 +2521,60 @@ func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, f
 	return nil, fmt.Errorf("no field named %q was found under type HiddenCollections", field.Name)
 }
 
+func (ec *executionContext) childFields_Indexing(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "state":
+		return ec.fieldContext_Indexing_state(ctx, field)
+	case "nightly":
+		return ec.fieldContext_Indexing_nightly(ctx, field)
+	case "done":
+		return ec.fieldContext_Indexing_done(ctx, field)
+	case "total":
+		return ec.fieldContext_Indexing_total(ctx, field)
+	case "startedAt":
+		return ec.fieldContext_Indexing_startedAt(ctx, field)
+	case "queuedBehind":
+		return ec.fieldContext_Indexing_queuedBehind(ctx, field)
+	case "indexes":
+		return ec.fieldContext_Indexing_indexes(ctx, field)
+	case "lastRun":
+		return ec.fieldContext_Indexing_lastRun(ctx, field)
+	case "nextNightly":
+		return ec.fieldContext_Indexing_nextNightly(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Indexing", field.Name)
+}
+
+func (ec *executionContext) childFields_IndexingCount(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_IndexingCount_name(ctx, field)
+	case "read":
+		return ec.fieldContext_IndexingCount_read(ctx, field)
+	case "failed":
+		return ec.fieldContext_IndexingCount_failed(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type IndexingCount", field.Name)
+}
+
+func (ec *executionContext) childFields_IndexingRun(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "startedAt":
+		return ec.fieldContext_IndexingRun_startedAt(ctx, field)
+	case "finishedAt":
+		return ec.fieldContext_IndexingRun_finishedAt(ctx, field)
+	case "files":
+		return ec.fieldContext_IndexingRun_files(ctx, field)
+	case "failed":
+		return ec.fieldContext_IndexingRun_failed(ctx, field)
+	case "stopped":
+		return ec.fieldContext_IndexingRun_stopped(ctx, field)
+	case "error":
+		return ec.fieldContext_IndexingRun_error(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type IndexingRun", field.Name)
+}
+
 func (ec *executionContext) childFields_LocalIndex(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "name":
@@ -2458,6 +2759,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_similar(ctx, field)
 	case "aesthetic":
 		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
+	case "indexing":
+		return ec.fieldContext_ServerInfo_indexing(ctx, field)
 	case "localIndexes":
 		return ec.fieldContext_ServerInfo_localIndexes(ctx, field)
 	}
@@ -4193,6 +4496,438 @@ func (ec *executionContext) fieldContext_HiddenCollections_nudity(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _Indexing_state(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_state(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.State, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.IndexingState) graphql.Marshaler {
+			return ec.marshalNIndexingState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingState(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_state(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type IndexingState does not have child fields"))
+}
+
+func (ec *executionContext) _Indexing_nightly(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_nightly(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Nightly, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_nightly(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Indexing_done(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_done(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Done, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_done(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Indexing_total(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_total(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Total, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_total(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Indexing_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_startedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_startedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _Indexing_queuedBehind(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_queuedBehind(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.QueuedBehind, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_queuedBehind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Indexing_indexes(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_indexes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Indexes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.IndexingCount) graphql.Marshaler {
+			return ec.marshalNIndexingCount2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingCountᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_indexes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Indexing",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_IndexingCount(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Indexing_lastRun(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_lastRun(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastRun, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.IndexingRun) graphql.Marshaler {
+			return ec.marshalOIndexingRun2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingRun(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_lastRun(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Indexing",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_IndexingRun(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Indexing_nextNightly(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Indexing_nextNightly(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.NextNightly, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Indexing_nextNightly(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Indexing", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingCount_name(ctx context.Context, field graphql.CollectedField, obj *model.IndexingCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingCount_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingCount_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingCount", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingCount_read(ctx context.Context, field graphql.CollectedField, obj *model.IndexingCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingCount_read(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Read, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingCount_read(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingCount", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingCount_failed(ctx context.Context, field graphql.CollectedField, obj *model.IndexingCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingCount_failed(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Failed, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingCount_failed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingCount", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingRun_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.IndexingRun) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingRun_startedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingRun_startedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingRun_finishedAt(ctx context.Context, field graphql.CollectedField, obj *model.IndexingRun) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingRun_finishedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FinishedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingRun_finishedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingRun_files(ctx context.Context, field graphql.CollectedField, obj *model.IndexingRun) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingRun_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingRun_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingRun_failed(ctx context.Context, field graphql.CollectedField, obj *model.IndexingRun) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingRun_failed(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Failed, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingRun_failed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingRun_stopped(ctx context.Context, field graphql.CollectedField, obj *model.IndexingRun) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingRun_stopped(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Stopped, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingRun_stopped(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _IndexingRun_error(ctx context.Context, field graphql.CollectedField, obj *model.IndexingRun) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_IndexingRun_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_IndexingRun_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _LocalIndex_name(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5291,6 +6026,70 @@ func (ec *executionContext) fieldContext_Mutation_setHiddenCollections(ctx conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_startIndexing(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_startIndexing(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().StartIndexing(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Indexing) graphql.Marshaler {
+			return ec.marshalNIndexing2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexing(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_startIndexing(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Indexing(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_pauseIndexing(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_pauseIndexing(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().PauseIndexing(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Indexing) graphql.Marshaler {
+			return ec.marshalNIndexing2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexing(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_pauseIndexing(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Indexing(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_startUpload(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6145,6 +6944,38 @@ func (ec *executionContext) fieldContext_Query_hiddenCollections(_ context.Conte
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_HiddenCollections(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_indexing(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_indexing(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Indexing(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Indexing) graphql.Marshaler {
+			return ec.marshalNIndexing2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexing(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_indexing(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Indexing(ctx, field)
 		},
 	}
 	return fc, nil
@@ -7014,6 +7845,29 @@ func (ec *executionContext) _ServerInfo_aesthetic(ctx context.Context, field gra
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_aesthetic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_indexing(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_indexing(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Indexing, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_indexing(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -9557,6 +10411,183 @@ func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.Sele
 	return out
 }
 
+var indexingImplementors = []string{"Indexing"}
+
+func (ec *executionContext) _Indexing(ctx context.Context, sel ast.SelectionSet, obj *model.Indexing) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, indexingImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Indexing")
+		case "state":
+			out.Values[i] = ec._Indexing_state(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "nightly":
+			out.Values[i] = ec._Indexing_nightly(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "done":
+			out.Values[i] = ec._Indexing_done(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "total":
+			out.Values[i] = ec._Indexing_total(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "startedAt":
+			out.Values[i] = ec._Indexing_startedAt(ctx, field, obj)
+		case "queuedBehind":
+			out.Values[i] = ec._Indexing_queuedBehind(ctx, field, obj)
+		case "indexes":
+			out.Values[i] = ec._Indexing_indexes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastRun":
+			out.Values[i] = ec._Indexing_lastRun(ctx, field, obj)
+		case "nextNightly":
+			out.Values[i] = ec._Indexing_nextNightly(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var indexingCountImplementors = []string{"IndexingCount"}
+
+func (ec *executionContext) _IndexingCount(ctx context.Context, sel ast.SelectionSet, obj *model.IndexingCount) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, indexingCountImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("IndexingCount")
+		case "name":
+			out.Values[i] = ec._IndexingCount_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "read":
+			out.Values[i] = ec._IndexingCount_read(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "failed":
+			out.Values[i] = ec._IndexingCount_failed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var indexingRunImplementors = []string{"IndexingRun"}
+
+func (ec *executionContext) _IndexingRun(ctx context.Context, sel ast.SelectionSet, obj *model.IndexingRun) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, indexingRunImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("IndexingRun")
+		case "startedAt":
+			out.Values[i] = ec._IndexingRun_startedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "finishedAt":
+			out.Values[i] = ec._IndexingRun_finishedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._IndexingRun_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "failed":
+			out.Values[i] = ec._IndexingRun_failed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "stopped":
+			out.Values[i] = ec._IndexingRun_stopped(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._IndexingRun_error(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var localIndexImplementors = []string{"LocalIndex"}
 
 func (ec *executionContext) _LocalIndex(ctx context.Context, sel ast.SelectionSet, obj *model.LocalIndex) graphql.Marshaler {
@@ -10025,6 +11056,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "startIndexing":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_startIndexing(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pauseIndexing":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_pauseIndexing(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "startUpload":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_startUpload(ctx, field)
@@ -10392,6 +11437,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_hiddenCollections(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "indexing":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_indexing(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -10786,6 +11853,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "aesthetic":
 			out.Values[i] = ec._ServerInfo_aesthetic(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "indexing":
+			out.Values[i] = ec._ServerInfo_indexing(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -11703,6 +12775,56 @@ func (ec *executionContext) marshalNID2ᚕstringᚄ(ctx context.Context, sel ast
 	return ret
 }
 
+func (ec *executionContext) marshalNIndexing2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexing(ctx context.Context, sel ast.SelectionSet, v model.Indexing) graphql.Marshaler {
+	return ec._Indexing(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNIndexing2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexing(ctx context.Context, sel ast.SelectionSet, v *model.Indexing) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Indexing(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNIndexingCount2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingCountᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.IndexingCount) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNIndexingCount2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingCount(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNIndexingCount2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingCount(ctx context.Context, sel ast.SelectionSet, v *model.IndexingCount) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._IndexingCount(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNIndexingState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingState(ctx context.Context, v any) (model.IndexingState, error) {
+	var res model.IndexingState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNIndexingState2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingState(ctx context.Context, sel ast.SelectionSet, v model.IndexingState) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -12419,6 +13541,13 @@ func (ec *executionContext) marshalOID2ᚖstring(ctx context.Context, sel ast.Se
 	_ = ctx
 	res := graphql.MarshalID(*v)
 	return res
+}
+
+func (ec *executionContext) marshalOIndexingRun2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐIndexingRun(ctx context.Context, sel ast.SelectionSet, v *model.IndexingRun) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._IndexingRun(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOInt2ᚕintᚄ(ctx context.Context, v any) ([]int, error) {
