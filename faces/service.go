@@ -160,6 +160,24 @@ func (s *Service) Move(user string, face FaceID, to string) error {
 	return p.move(face, to)
 }
 
+// Mark says, in one change, that the faces yes are person's and the faces no are not; see people.mark.
+func (s *Service) Mark(user, person string, yes, no []FaceID) error {
+	p, err := s.user(user)
+	if err != nil {
+		return err
+	}
+	return p.mark(person, yes, no)
+}
+
+// NameFace gives face to the person called name, or a new one, and returns the person's ID; see people.nameFace.
+func (s *Service) NameFace(user string, face FaceID, name string) (string, error) {
+	p, err := s.user(user)
+	if err != nil {
+		return "", err
+	}
+	return p.nameFace(face, name)
+}
+
 // Forget removes a person; their faces are put in groups again.
 func (s *Service) Forget(user, id string) error {
 	p, err := s.user(user)

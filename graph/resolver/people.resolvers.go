@@ -87,6 +87,61 @@ func (r *mutationResolver) MoveFace(ctx context.Context, face string, to *string
 	return model.NotFound{ID: face, Reason: "not found"}, nil
 }
 
+// MarkFaces is the resolver for the markFaces field.
+func (r *mutationResolver) MarkFaces(ctx context.Context, person string, yes []string, no []string) (model.PersonResult, error) {
+	service, user, err := r.facesOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	parse := func(list []string) ([]faces.FaceID, error) {
+		ids := make([]faces.FaceID, len(list))
+		for i, s := range list {
+			id, err := faces.ParseFaceID(s)
+			if err != nil {
+				return nil, coded(CodeInvalidArgument, "%v", err)
+			}
+			ids[i] = id
+		}
+		return ids, nil
+	}
+	yesIDs, err := parse(yes)
+	if err != nil {
+		return nil, err
+	}
+	noIDs, err := parse(no)
+	if err != nil {
+		return nil, err
+	}
+	err = service.Mark(user, person, yesIDs, noIDs)
+	if nf, ok := notFound(person, err); ok {
+		return nf, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r.personResult(ctx, person)
+}
+
+// NameFace is the resolver for the nameFace field.
+func (r *mutationResolver) NameFace(ctx context.Context, face string, name string) (model.PersonResult, error) {
+	service, user, err := r.facesOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := faces.ParseFaceID(face)
+	if err != nil {
+		return nil, coded(CodeInvalidArgument, "%v", err)
+	}
+	personID, err := service.NameFace(user, id, name)
+	if nf, ok := notFound(face, err); ok {
+		return nf, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r.personResult(ctx, personID)
+}
+
 // ForgetPerson is the resolver for the forgetPerson field.
 func (r *mutationResolver) ForgetPerson(ctx context.Context, id string) (bool, error) {
 	service, user, err := r.facesOf(ctx)

@@ -87,6 +87,9 @@ type Member struct {
 	ID    string
 	Name  string // "" for a group not named
 	Faces []FaceID
+	// For a named person, the user's choices, which a phone matches faces by as the server does (personFor): the
+	// faces the user said are them (their mean and exemplars), and those they said are not.
+	Named, Not []FaceID
 }
 
 // members is the people and groups of list, each with their faces in files keep accepts, in list's order.
@@ -104,6 +107,18 @@ func (p *people) members(keep func(sha string) bool, withGroups bool) []Member {
 		for _, id := range g.Faces {
 			if keep(id.Sha256) {
 				m.Faces = append(m.Faces, id)
+			}
+		}
+		if i := slices.IndexFunc(p.named, func(n media.Person) bool { return n.ID == g.ID }); i >= 0 {
+			for _, ref := range p.named[i].Faces {
+				if id, ok := p.find(ref); ok && keep(id.Sha256) {
+					m.Named = append(m.Named, id)
+				}
+			}
+			for _, ref := range p.named[i].NotFaces {
+				if id, ok := p.find(ref); ok && keep(id.Sha256) {
+					m.Not = append(m.Not, id)
+				}
 			}
 		}
 		members = append(members, m)
@@ -272,6 +287,83 @@ func (p *people) move(id FaceID, to string) error {
 		}
 		return named, nil
 	})
+}
+
+// mark says, in one change, that the faces yes are the person id's (as move to them) and the faces no are not (they
+// leave id's faces, and id is never given them, nor faces more like them than like id).
+func (p *people) mark(id string, yes, no []FaceID) error {
+	return p.change(func(named []media.Person) ([]media.Person, error) {
+		i := slices.IndexFunc(named, func(n media.Person) bool { return n.ID == id })
+		if i < 0 {
+			return nil, fmt.Errorf("%w: person %s", ErrNotFound, id)
+		}
+		for _, face := range append(slices.Clone(yes), no...) {
+			if face.N >= len(p.index.Faces(face.Sha256)) {
+				return nil, fmt.Errorf("%w: face %s", ErrNotFound, face)
+			}
+		}
+		now := p.store.Now()
+		for _, face := range yes {
+			ref, from := p.ref(face), p.of[face]
+			for j := range named {
+				n := &named[j]
+				switch n.ID {
+				case id:
+					*n = p.withFaces(*n, []media.FaceRef{ref}, now)
+				case from:
+					n.Faces = slices.DeleteFunc(slices.Clone(n.Faces), func(r media.FaceRef) bool { return p.is(r, face) })
+					n.NotFaces = append(slices.Clone(n.NotFaces), ref)
+					n.SetAt = now
+				}
+			}
+		}
+		n := &named[i]
+		for _, face := range no {
+			n.Faces = slices.DeleteFunc(slices.Clone(n.Faces), func(r media.FaceRef) bool { return p.is(r, face) })
+			if !slices.ContainsFunc(n.NotFaces, func(r media.FaceRef) bool { return p.is(r, face) }) {
+				n.NotFaces = append(slices.Clone(n.NotFaces), p.ref(face))
+			}
+			n.SetAt = now
+		}
+		return named, nil
+	})
+}
+
+// nameFace gives the face id to the person called name (ignoring case), or to a new person of that name, and keeps
+// it from the person it was. It returns the person's ID.
+func (p *people) nameFace(id FaceID, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > MaxName {
+		return "", fmt.Errorf("a name is 1–%d bytes", MaxName)
+	}
+	var personID string
+	err := p.change(func(named []media.Person) ([]media.Person, error) {
+		if id.N >= len(p.index.Faces(id.Sha256)) {
+			return nil, fmt.Errorf("%w: face %s", ErrNotFound, id)
+		}
+		ref, now, from := p.ref(id), p.store.Now(), p.of[id]
+		i := slices.IndexFunc(named, func(n media.Person) bool { return strings.EqualFold(n.Name, name) })
+		if i < 0 {
+			personID = newPersonID()
+			named = append(named, media.Person{ID: personID, Name: name, SetAt: now})
+			i = len(named) - 1
+		} else {
+			personID = named[i].ID
+		}
+		for j := range named {
+			n := &named[j]
+			switch {
+			case j == i:
+				*n = p.withFaces(*n, []media.FaceRef{ref}, now)
+			case n.ID == from:
+				n.Faces = slices.DeleteFunc(slices.Clone(n.Faces), func(r media.FaceRef) bool { return p.is(r, id) })
+				n.NotFaces = append(slices.Clone(n.NotFaces), ref)
+				n.SetAt = now
+			}
+		}
+		return named, nil
+	})
+	return personID, err
 }
 
 // forget removes the person id; their faces are put in groups again.

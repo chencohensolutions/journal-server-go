@@ -57,6 +57,15 @@ same person.
     It also counts when it is at least 0.3 like that mean and at least 0.5 like one of 64 of those faces: a child
     grows, a face is seen from the side.
   - `moveFace` takes a face from a person, who is never given it again, and gives it to another person or to no one.
+  - A face the user said a person is not also keeps its lookalikes from them (Oct 24, 2026): a face at least 0.5
+    (`NotMatch`) like a rejected face, and more like it than like any of the person's own faces (face to face), isn't
+    theirs. So "Not Mom" on a sister's faces stops her other photos going to Mom, more with each "No" (tested with a
+    sister about 0.8 alike: two "No"s took most of her photos away, and Mom kept all of hers).
+  - `markFaces(person, yes, no)` makes many such choices in one change (each change puts every face together again,
+    a few seconds for a large library), and `nameFace(face, name)` gives one face to a person by name, or to a new
+    person of that name.
+  - The people document a phone keeps (`GET /index/people`) carries each named person's choices (`named`, `not`), so
+    a phone matches faces as the server does and shows a correction at once.
   - `mergePeople` puts people and groups into one person. `forgetPerson` removes a person, and their faces go back
     into groups.
   - The thresholds are first guesses from OpenCV's figures. They are meant to be tuned on the owner's photos.

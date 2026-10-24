@@ -26,6 +26,10 @@ const (
 	nearMatch     = 0.3
 	exemplarMatch = 0.5
 	exemplars     = 64
+	// A face at least this like a face the user said a person is not, and more like it than like any of the person's
+	// own faces (face to face: a mean is closer to every face than faces are to each other), isn't theirs either: the
+	// user's "Not Mom" holds for that face's lookalikes too (a sister, the same stranger again).
+	NotMatch = 0.5
 	// A face no one is named for joins the first group whose mean it is at least this like.
 	GroupJoin = 0.45
 	// Groups of fewer faces are not shown: most are strangers in the background.
@@ -88,6 +92,7 @@ type people struct {
 	seen     map[string]bool // the files grouped so far
 	means    map[string][]float32
 	examples map[string][][]float32 // a named person's exemplars
+	nots     map[string][][]float32 // the vectors of the faces the user said a named person is not
 	recent   []*cluster             // groups of one face, the last recentWindow
 	clusters []*cluster             // groups of two or more
 }
@@ -129,7 +134,7 @@ func (p *people) update() {
 // rebuild puts every face together again: after the user changed a person. Callers hold p.mu.
 func (p *people) rebuild() {
 	p.groups, p.of, p.seen = map[string]*Group{}, map[FaceID]string{}, map[string]bool{}
-	p.means, p.examples = map[string][]float32{}, map[string][][]float32{}
+	p.means, p.examples, p.nots = map[string][]float32{}, map[string][][]float32{}, map[string][][]float32{}
 	p.recent, p.clusters = nil, nil
 	for _, person := range p.named {
 		g := &Group{ID: person.ID, Name: person.Name}
@@ -146,6 +151,11 @@ func (p *people) rebuild() {
 			p.of[id] = g.ID
 			g.Faces = append(g.Faces, id)
 			vectors = append(vectors, p.index.Faces(id.Sha256)[id.N].Vector)
+		}
+		for _, ref := range person.NotFaces {
+			if id, ok := p.find(ref); ok {
+				p.nots[g.ID] = append(p.nots[g.ID], p.index.Faces(id.Sha256)[id.N].Vector)
+			}
 		}
 		if len(vectors) > 0 {
 			p.means[g.ID] = mean(vectors)
@@ -218,26 +228,56 @@ func (p *people) add(files []string) {
 	}
 }
 
-// personFor is the named person face is, or "".
+// personFor is the named person face is, or "": of the people whose mean it is at least nearMatch like, the most
+// like it that it is at least PersonMatch like (or exemplarMatch like one of their faces), and that the user hasn't
+// said it is not (the face itself, or one it is more like than the person: notFor).
 func (p *people) personFor(vector []float32, id FaceID, notFaces map[string]map[FaceID]bool) string {
-	best, bestScore := "", float32(nearMatch)
+	type candidate struct {
+		person string
+		score  float32
+	}
+	var candidates []candidate
 	for person, m := range p.means {
 		if notFaces[person][id] {
 			continue
 		}
-		if s := dot(vector, m); s > bestScore {
-			best, bestScore = person, s
+		if s := dot(vector, m); s > nearMatch {
+			candidates = append(candidates, candidate{person, s})
 		}
 	}
-	if best == "" || bestScore >= PersonMatch {
-		return best
-	}
-	for _, e := range p.examples[best] {
-		if dot(vector, e) >= exemplarMatch {
-			return best
+	slices.SortFunc(candidates, func(a, b candidate) int { return cmp.Or(cmp.Compare(b.score, a.score), strings.Compare(a.person, b.person)) })
+	for _, c := range candidates {
+		if p.notFor(vector, c.person) {
+			continue
+		}
+		if c.score >= PersonMatch {
+			return c.person
+		}
+		for _, e := range p.examples[c.person] {
+			if dot(vector, e) >= exemplarMatch {
+				return c.person
+			}
 		}
 	}
 	return ""
+}
+
+// notFor reports whether vector looks like a face the user said person is not (NotMatch or more) more than like
+// any of the person's own faces (their exemplars).
+func (p *people) notFor(vector []float32, person string) bool {
+	var not float32 = -1
+	for _, v := range p.nots[person] {
+		not = max(not, dot(vector, v))
+	}
+	if not < NotMatch {
+		return false
+	}
+	for _, e := range p.examples[person] {
+		if dot(vector, e) >= not {
+			return false
+		}
+	}
+	return true
 }
 
 // cluster puts a face no one is named for in the first group it is like enough, or starts a group.

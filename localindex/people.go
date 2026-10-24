@@ -31,6 +31,10 @@ type peopleItem struct {
 	Name string `json:"name,omitempty"`
 	// Faces are FaceIDs ("<sha256>:<n>", n counting the file's faces in the faces index's record, biggest first).
 	Faces []string `json:"faces"`
+	// For a named person, the faces the user said are them and those they said are not, to match faces by on the
+	// phone as the server does (faces' personFor).
+	Named []string `json:"named,omitempty"`
+	Not   []string `json:"not,omitempty"`
 }
 
 // ServePeople answers GET /index/people: the user's named people (by name) and groups of alike faces (most files
@@ -67,6 +71,12 @@ func (s *Server) ServePeople(w http.ResponseWriter, r *http.Request) {
 		item := peopleItem{ID: m.ID, Name: m.Name, Faces: make([]string, len(m.Faces))}
 		for i, f := range m.Faces {
 			item.Faces[i] = f.String()
+		}
+		for _, f := range m.Named {
+			item.Named = append(item.Named, f.String())
+		}
+		for _, f := range m.Not {
+			item.Not = append(item.Not, f.String())
 		}
 		doc.People = append(doc.People, item)
 	}

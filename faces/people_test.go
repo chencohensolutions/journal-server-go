@@ -438,3 +438,120 @@ func BenchmarkRebuild(b *testing.B) {
 	b.StopTimer()
 	b.ReportMetric(float64(len(p.list(all, true))), "groups")
 }
+
+// A sister: her own vector, but alike enough to Mom's that the server takes her for Mom until told.
+func (f *fixture) lookalike(of, who string, likeness float32) {
+	base := f.people[of]
+	other := f.randomVector()
+	v := make([]float32, Dim)
+	for i := range v {
+		v[i] = likeness*base[i] + (1-likeness)*other[i]
+	}
+	f.people[who] = unit(v)
+}
+
+func TestNotMomHoldsForHerLookalikes(t *testing.T) {
+	f := newFixture(t)
+	for range 6 {
+		f.photo("mom")
+	}
+	p := f.open()
+	mom, err := p.name(p.list(all, true)[0].ID, "Mom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// About 0.8 alike to Mom: a sister, as SFace sees siblings.
+	f.lookalike("mom", "aunt", 0.6)
+	var aunt []string
+	for range 6 {
+		aunt = append(aunt, f.photo("aunt"))
+	}
+	before := filesOf(t, p, mom)
+	taken := 0
+	for _, sha := range aunt {
+		if slices.Contains(before, sha) {
+			taken++
+		}
+	}
+	if taken < 4 {
+		t.Fatalf("the test's aunt should be taken for Mom first; %d of 6 were", taken)
+	}
+	// "Not Mom" on two of the aunt's faces: most of her other faces are more like those than like Mom's own.
+	if err := p.mark(mom, nil, []FaceID{{aunt[0], 0}, {aunt[1], 0}}); err != nil {
+		t.Fatal(err)
+	}
+	auntsLeft := func(files []string) []string {
+		var left []string
+		for _, sha := range aunt {
+			if slices.Contains(files, sha) {
+				left = append(left, sha)
+			}
+		}
+		return left
+	}
+	after := filesOf(t, p, mom)
+	left := auntsLeft(after)
+	if len(left) >= taken-2 {
+		t.Errorf("Not Mom on two of the aunt's faces took only those: %d of her photos are still Mom's", len(left))
+	}
+	if len(after)-len(left) != 6 {
+		t.Errorf("Mom lost her own photos: %d of 6 left", len(after)-len(left))
+	}
+	// Each "No" teaches more: after the ones left, none is Mom's, and Mom keeps her own.
+	var more []FaceID
+	for _, sha := range left {
+		more = append(more, FaceID{sha, 0})
+	}
+	if err := p.mark(mom, nil, more); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesOf(t, p, mom); len(auntsLeft(got)) != 0 || len(got) != 6 {
+		t.Errorf("after every aunt's face was marked, Mom has %d files, %d of them the aunt's", len(got), len(auntsLeft(got)))
+	}
+	// Kept in people.json: the same after a restart.
+	if got := filesOf(t, f.open(), mom); len(got) != 6 {
+		t.Errorf("after a restart Mom has %d files", len(got))
+	}
+}
+
+func TestMarkingAndNamingOneFace(t *testing.T) {
+	f := newFixture(t)
+	for range 4 {
+		f.photo("mom")
+	}
+	stranger := f.photo("")
+	p := f.open()
+	mom, err := p.name(p.list(all, true)[0].ID, "Mom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Yes: a face the server didn't give her is hers.
+	if err := p.mark(mom, []FaceID{{stranger, 0}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := filesOf(t, p, mom); !slices.Contains(got, stranger) {
+		t.Errorf("Mom isn't in the photo marked hers: %v", got)
+	}
+	// Named as someone new, it leaves Mom and starts that person.
+	dana, err := p.nameFace(FaceID{stranger, 0}, "Dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := filesOf(t, p, dana); !slices.Equal(got, []string{stranger}) {
+		t.Errorf("Dana is in %v", got)
+	}
+	if got := filesOf(t, p, mom); slices.Contains(got, stranger) {
+		t.Errorf("Mom is still in the photo named Dana: %v", got)
+	}
+	// The same name again (ignoring case) is the same person.
+	again, err := p.nameFace(FaceID{stranger, 0}, "dana")
+	if err != nil || again != dana {
+		t.Errorf("naming dana again made %q (%v), want %q", again, err, dana)
+	}
+	if _, err := p.nameFace(FaceID{stranger, 3}, "Avi"); err == nil {
+		t.Error("named a face that isn't there")
+	}
+	if err := p.mark("p-nobody", nil, nil); err == nil {
+		t.Error("marked faces of someone who isn't there")
+	}
+}

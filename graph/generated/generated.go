@@ -175,8 +175,10 @@ type ComplexityRoot struct {
 	Mutation struct {
 		EnrollDevice         func(childComplexity int, input model.EnrollDeviceInput) int
 		ForgetPerson         func(childComplexity int, id string) int
+		MarkFaces            func(childComplexity int, person string, yes []string, no []string) int
 		MergePeople          func(childComplexity int, into string, from []string) int
 		MoveFace             func(childComplexity int, face string, to *string) int
+		NameFace             func(childComplexity int, face string, name string) int
 		NamePerson           func(childComplexity int, id string, name string) int
 		PrepareSearch        func(childComplexity int) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
@@ -293,6 +295,8 @@ type MutationResolver interface {
 	NamePerson(ctx context.Context, id string, name string) (model.PersonResult, error)
 	MergePeople(ctx context.Context, into string, from []string) (model.PersonResult, error)
 	MoveFace(ctx context.Context, face string, to *string) (model.FaceResult, error)
+	MarkFaces(ctx context.Context, person string, yes []string, no []string) (model.PersonResult, error)
+	NameFace(ctx context.Context, face string, name string) (model.PersonResult, error)
 	ForgetPerson(ctx context.Context, id string) (bool, error)
 	PrepareSearch(ctx context.Context) (model.SearchModelState, error)
 }
@@ -858,6 +862,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ForgetPerson(childComplexity, args["id"].(string)), true
+	case "Mutation.markFaces":
+		if e.ComplexityRoot.Mutation.MarkFaces == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_markFaces_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.MarkFaces(childComplexity, args["person"].(string), args["yes"].([]string), args["no"].([]string)), true
 	case "Mutation.mergePeople":
 		if e.ComplexityRoot.Mutation.MergePeople == nil {
 			break
@@ -880,6 +895,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.MoveFace(childComplexity, args["face"].(string), args["to"].(*string)), true
+	case "Mutation.nameFace":
+		if e.ComplexityRoot.Mutation.NameFace == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_nameFace_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.NameFace(childComplexity, args["face"].(string), args["name"].(string)), true
 	case "Mutation.namePerson":
 		if e.ComplexityRoot.Mutation.NamePerson == nil {
 			break
@@ -1851,6 +1877,17 @@ extend type Mutation {
   never gives it to them again.
   """
   moveFace(face: ID!, to: ID): FaceResult!
+  """
+  Says, in one change, that the faces yes are the person's and the faces no are not (Face.id). Yes: as moveFace to
+  them (the face becomes one of the faces they are known by). No: the face leaves them, they are never given it again,
+  and faces more like it than like them (NotMatch, 0.5, or more) aren't given to them either.
+  """
+  markFaces(person: ID!, yes: [ID!]!, no: [ID!]!): PersonResult!
+  """
+  Gives face to the person called name (ignoring case), or to a new person of that name, and takes it from the person
+  it was in (who is never given it again): "Who is this?" on one face.
+  """
+  nameFace(face: ID!, name: String!): PersonResult!
   "Forgets a named person; their faces go back into groups. False when there is no such person."
   forgetPerson(id: ID!): Boolean!
 }
@@ -2609,6 +2646,36 @@ func (ec *executionContext) field_Mutation_forgetPerson_args(ctx context.Context
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_markFaces_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "person",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["person"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "yes",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalNID2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["yes"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "no",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalNID2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["no"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_mergePeople_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2650,6 +2717,28 @@ func (ec *executionContext) field_Mutation_moveFace_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["to"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_nameFace_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "face",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["face"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg1
 	return args, nil
 }
 
@@ -5416,6 +5505,94 @@ func (ec *executionContext) fieldContext_Mutation_moveFace(ctx context.Context, 
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_moveFace_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_markFaces(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_markFaces(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().MarkFaces(ctx, fc.Args["person"].(string), fc.Args["yes"].([]string), fc.Args["no"].([]string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.PersonResult) graphql.Marshaler {
+			return ec.marshalNPersonResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐPersonResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_markFaces(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PersonResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_markFaces_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_nameFace(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_nameFace(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().NameFace(ctx, fc.Args["face"].(string), fc.Args["name"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.PersonResult) graphql.Marshaler {
+			return ec.marshalNPersonResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐPersonResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_nameFace(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PersonResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_nameFace_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -9879,6 +10056,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "moveFace":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_moveFace(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "markFaces":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_markFaces(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "nameFace":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_nameFace(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

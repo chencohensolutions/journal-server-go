@@ -102,6 +102,17 @@ extend type Mutation {
   never gives it to them again.
   """
   moveFace(face: ID!, to: ID): FaceResult!
+  """
+  Says, in one change, that the faces yes are the person's and the faces no are not (Face.id). Yes: as moveFace to
+  them (the face becomes one of the faces they are known by). No: the face leaves them, they are never given it again,
+  and faces more like it than like them (NotMatch, 0.5, or more) aren't given to them either.
+  """
+  markFaces(person: ID!, yes: [ID!]!, no: [ID!]!): PersonResult!
+  """
+  Gives face to the person called name (ignoring case), or to a new person of that name, and takes it from the person
+  it was in (who is never given it again): "Who is this?" on one face.
+  """
+  nameFace(face: ID!, name: String!): PersonResult!
   "Forgets a named person; their faces go back into groups. False when there is no such person."
   forgetPerson(id: ID!): Boolean!
 }
