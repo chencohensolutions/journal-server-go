@@ -14,8 +14,10 @@ import (
 
 // sourceHashes is the sha256 of every file looked at in the folders being imported, kept in the data
 // folder's .cache/source-hashes.tsv ("<path>\t<size>\t<modified, Unix ns>\t<sha256>") so a dry run's hashing
-// isn't done again by the import that follows. A file whose size or modified time changed is hashed again.
-// It is only a cache: deleting it costs a slower next run.
+// isn't done again by the import that follows, nor a run stopped halfway by the run that goes on. A file the import
+// moves (to the imported or not-imported folder) is added where it went, so importing that folder later reads none
+// of it again. A file whose size or modified time changed is hashed again. Each line is written as soon as its file
+// is hashed. It is only a cache: deleting it costs a slower next run.
 type sourceHashes struct {
 	mu     sync.Mutex
 	hashes map[string]sourceHash
@@ -74,11 +76,32 @@ func (t *sourceHashes) sha256(path string, info os.FileInfo) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	t.add(path, info.Size(), modified, sha)
+	return sha, nil
+}
+
+func (t *sourceHashes) add(path string, size, modified int64, sha string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.hashes[path] = sourceHash{info.Size(), modified, sha}
-	fmt.Fprintf(t.file, "%s\t%d\t%d\t%s\n", path, info.Size(), modified, sha)
-	return sha, nil
+	t.hashes[path] = sourceHash{size, modified, sha}
+	fmt.Fprintf(t.file, "%s\t%d\t%d\t%s\n", path, size, modified, sha)
+}
+
+// moved notes that the file at from, whose sha256 is known, is now at to: the same bytes (a move, or a copy and
+// delete to another disk, which may give it another modified time).
+func (t *sourceHashes) moved(from, to string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	known, ok := t.hashes[from]
+	t.mu.Unlock()
+	if !ok {
+		return
+	}
+	if info, err := os.Stat(to); err == nil && info.Size() == known.size {
+		t.add(to, info.Size(), info.ModTime().UnixNano(), known.sha256)
+	}
 }
 
 func (t *sourceHashes) close() error { return t.file.Close() }

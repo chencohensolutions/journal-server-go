@@ -158,7 +158,7 @@ func (im *importer) decideAgain(ctx context.Context, r *rechecked) (keep bool, i
 		if folders := item.folders(); len(folders) > 0 {
 			im.store.AddFolders(item.Sha256, folders)
 		}
-		if _, err := moveFile(item.Path, filepath.Join(im.runFolder, inside)); err != nil {
+		if _, err := im.move(item.Path, filepath.Join(im.runFolder, inside)); err != nil {
 			im.leave(item.Path, "already in the journal, but not moved to the imported folder: "+err.Error())
 			return true, item
 		}
@@ -192,7 +192,7 @@ func (im *importer) decideAgain(ctx context.Context, r *rechecked) (keep bool, i
 		return true, item
 	}
 	im.count(false, r.size)
-	if _, err := moveFile(item.Path, filepath.Join(im.runFolder, inside)); err != nil {
+	if _, err := im.move(item.Path, filepath.Join(im.runFolder, inside)); err != nil {
 		// It is in the journal; the next recheck finds it there and moves it.
 		im.leave(item.Path, "imported, but not moved to the imported folder: "+err.Error())
 	}

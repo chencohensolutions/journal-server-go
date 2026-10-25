@@ -190,7 +190,7 @@ func (im *importer) waitForReview(item reviewItem) {
 	if im.dryRun {
 		return
 	}
-	dest, err := moveFile(item.Path, filepath.Join(im.notImportedRun, notImportedNear, pathInside(im.roots, item.Path)))
+	dest, err := im.move(item.Path, filepath.Join(im.notImportedRun, notImportedNear, pathInside(im.roots, item.Path)))
 	if err != nil {
 		im.leave(item.Path, "a near-duplicate, but not moved to the not-imported folder: "+err.Error())
 	} else {

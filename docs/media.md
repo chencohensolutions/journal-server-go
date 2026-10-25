@@ -527,8 +527,11 @@ the name, as uploads do.
   (those held back before it, when looking alike was enough, too): other shots are imported and moved to the
   imported folder, the same pictures to `same picture`, and the rest keep waiting. The dHash of every photo in
   the data folder is kept in `.cache/dhash.tsv` (by sha256), and the sha256 of every file looked at in
-  `.cache/source-hashes.tsv` (by path, size and modified time), so later runs don't redo them. Videos have no
-  dHash.
+  `.cache/source-hashes.tsv` (by path, size and modified time), so later runs don't redo them. Each line is
+  written as soon as its file is hashed, so a run stopped halfway (Ctrl+C) loses none of it. A file the import moves
+  to the imported or not-imported folder is added there too, so importing that folder later (to clear it with
+  `--delete-duplicates`, say) reads none of it again; only a file about to be deleted is read once more, to be
+  sure. Videos have no dHash.
 
 ### Importing from Google Drive and OneDrive
 

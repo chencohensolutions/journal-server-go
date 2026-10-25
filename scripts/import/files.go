@@ -33,6 +33,15 @@ func pathInside(roots []string, path string) string {
 	return filepath.Base(path)
 }
 
+// move is moveFile, noting where the file went in the table of sha256s (sourceHashes.moved).
+func (im *importer) move(from, to string) (string, error) {
+	dest, err := moveFile(from, to)
+	if err == nil {
+		im.sources.moved(from, dest)
+	}
+	return dest, err
+}
+
 // moveFile moves from to to, or to "name (2).ext", … when to is taken. When it can't be renamed there
 // (another disk), it is copied, then deleted.
 func moveFile(from, to string) (string, error) {

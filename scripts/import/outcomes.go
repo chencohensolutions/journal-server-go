@@ -30,7 +30,7 @@ func (im *importer) done(path, sha, result string) {
 	if im.dryRun {
 		return
 	}
-	if _, err := moveFile(path, filepath.Join(im.runFolder, pathInside(im.roots, path))); err != nil {
+	if _, err := im.move(path, filepath.Join(im.runFolder, pathInside(im.roots, path))); err != nil {
 		// It is in the data folder; only the move failed, so a later run finds it as a duplicate.
 		im.leave(path, "imported, but not moved: "+err.Error())
 	}
@@ -106,7 +106,7 @@ func (im *importer) reject(path, why, reason string) {
 func (im *importer) rejectAs(path, inside, why, reason string) bool {
 	movedTo := "(dry run)"
 	if !im.dryRun {
-		dest, err := moveFile(path, filepath.Join(im.notImportedRun, why, inside))
+		dest, err := im.move(path, filepath.Join(im.notImportedRun, why, inside))
 		if err != nil {
 			im.leave(path, reason+"; not moved to the not-imported folder: "+err.Error())
 			return false

@@ -334,7 +334,7 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 		message = "Imported as " + placed.Path
 		fallthrough
 	default:
-		if _, err := moveFile(item.Path, filepath.Join(im.runFolder, pathInside([]string{item.Root}, item.foundAt()))); err != nil {
+		if _, err := im.move(item.Path, filepath.Join(im.runFolder, pathInside([]string{item.Root}, item.foundAt()))); err != nil {
 			http.Error(w, message+"; not moved to the imported folder: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
