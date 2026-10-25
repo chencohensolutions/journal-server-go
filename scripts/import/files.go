@@ -104,3 +104,6 @@ func timeLeft(elapsed time.Duration, done, total int64) string {
 }
 
 func gb(bytes int64) string { return fmt.Sprintf("%.1f GB", float64(bytes)/(1<<30)) }
+
+// mb is one file's size: "3.4 MB".
+func mb(bytes int64) string { return fmt.Sprintf("%.1f MB", float64(bytes)/(1<<20)) }

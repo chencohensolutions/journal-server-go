@@ -447,6 +447,14 @@ the name, as uploads do.
   (`D:\Archive\phone DCIM\Camera\x.jpg` → `D:\Imported\2026-10-20-19-15-42\phone DCIM\Camera\x.jpg`), so runs
   never mix or overwrite each other and each can be deleted once its result looks right (with the run's
   `dates.tsv` and `near-duplicates.tsv`).
+- **`--delete-duplicates`** deletes a duplicate from where it was found instead of moving it to the imported folder,
+  for clearing folders already imported (an earlier run's imported folder, given with a new `--imported`). It is
+  deleted only when both it and the data folder's original are hashed again and have the same sha256. Otherwise it is
+  moved as before: a file changed meanwhile, an original damaged in the data folder, or a WAV kept as FLAC (not the
+  same bytes). Nothing in the data folder is ever deleted; the duplicate's folder is still added to the original's
+  sidecar. Each deletion is logged with the original's path in the data folder. The summary gives how many and how
+  many GB, and the run's `deleted-duplicates.tsv` lists each one with its size, the original's path and the sha256.
+  With `--dry-run` it only counts.
 - **Files that weren't imported are moved to `--not-imported`**, a separate folder so deleting an imported run
   never deletes them: `<not-imported>\<run time>\<why>\phone DCIM\…`, with `<why>` one of `no date`, `failed`,
   `near-duplicates` (waiting for `--review`), `same picture` (a copy of a photo in the journal), and with `--move-other` also `not photos or videos` and `hidden`

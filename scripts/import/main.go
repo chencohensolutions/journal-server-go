@@ -96,6 +96,7 @@ type importer struct {
 	notImported    string
 	notImportedRun string   // inside notImported, named like runFolder: the files this run didn't import, by why
 	moveOther      bool     // also move files that aren't photos or videos, and hidden ones
+	deleteDups     bool     // delete a source file whose bytes the data folder already has, instead of moving it
 	roots          []string // the folders searched
 	dryRun         bool
 	nearDistance   int
@@ -112,6 +113,8 @@ type importer struct {
 	leftBehind   []string       // report lines: files that stay where they are
 	rejected     []string       // report lines: files moved to the not-imported folder
 	others       []sourceFile   // files that aren't photos or videos, or are hidden: moved with --move-other
+	deleted      []string       // report lines: duplicates deleted with --delete-duplicates
+	verified     map[string]bool // sha256s whose original in the data folder was hashed again: whether it has those bytes
 	dateNotes    []string
 	near         []nearPair
 	pictures     pictureCache // has its own lock
@@ -146,6 +149,8 @@ type nearPair struct {
 type counts struct {
 	imported, duplicates, same, noDate, failed, hidden int
 	importedBytes, duplicateBytes                int64
+	deleted                                      int   // duplicates deleted (--delete-duplicates)
+	deletedBytes                                 int64
 	audio                                        map[string]int // sound recordings imported, by media.AudioCollectionOf
 	encoded                                      int            // WAVs kept as FLAC
 }
@@ -160,6 +165,7 @@ func main() {
 	recheck := flag.Bool("recheck", false, "decide again on the near-duplicates waiting for review, with the same-picture check")
 	noBrowser := flag.Bool("no-browser", false, "with --review, only print the page's address")
 	notImported := flag.String("not-imported", "", "folder the files that weren't imported are moved to, by why (required to import)")
+	deleteDups := flag.Bool("delete-duplicates", false, "delete a source file the data folder already has (same sha256, both hashed again first) instead of moving it to the imported folder; nothing in the data folder is ever deleted")
 	moveOther := flag.Bool("move-other", false, "also move files that aren't photos or videos, and hidden ones (.trashed-…), to the not-imported folder")
 	backfill := flag.Bool("backfill-folders", false, "only add the folders of files looked at by earlier runs (from .cache/source-hashes.tsv) to their sidecars")
 	cloud := flag.String("cloud", "", "import from the cloud instead of folders: gdrive, onedrive, or gdrive,onedrive (through rclone; see cloud.go)")
@@ -209,6 +215,8 @@ func main() {
 		importedFolder: absolute(*imported),
 		runFolder:      filepath.Join(absolute(*imported), started),
 		moveOther:      *moveOther,
+		deleteDups:     *deleteDups,
+		verified:       map[string]bool{},
 		dryRun:         *dryRun,
 		nearDistance:   *near,
 		seen:           map[string]bool{},

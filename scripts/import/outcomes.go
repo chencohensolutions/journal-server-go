@@ -15,19 +15,76 @@ import (
 // What becomes of each file (moved to the imported or not-imported folder, or left), progress and the reports.
 
 // done moves a source file whose content is in the data folder to the imported folder.
-// (A file downloaded from a cloud is deleted from the temp folder instead, and logged.)
+// (A file downloaded from a cloud is deleted from the temp folder instead, and logged.) With --delete-duplicates, a
+// duplicate whose bytes the data folder has is deleted instead (deleteDuplicate).
 func (im *importer) done(path, sha, result string) {
-	if im.dryRun {
+	if im.cloud != nil {
+		if !im.dryRun {
+			im.cloud.finished(path, sha, result, "")
+		}
 		return
 	}
-	if im.cloud != nil {
-		im.cloud.finished(path, sha, result, "")
+	if im.deleteDups && result == resultDuplicate && im.deleteDuplicate(path, sha) {
+		return
+	}
+	if im.dryRun {
 		return
 	}
 	if _, err := moveFile(path, filepath.Join(im.runFolder, pathInside(im.roots, path))); err != nil {
 		// It is in the data folder; only the move failed, so a later run finds it as a duplicate.
 		im.leave(path, "imported, but not moved: "+err.Error())
 	}
+}
+
+// deleteDuplicate deletes the source file at path when the data folder's original of sha has exactly its bytes:
+// both are hashed again first (the data folder's once per run), so a file changed since it was looked at, or an
+// original damaged in the data folder, is never the reason a copy is lost. A WAV found to be kept as FLAC isn't the
+// same bytes and is moved as before. Nothing in the data folder is touched. False when it wasn't deleted.
+func (im *importer) deleteDuplicate(path, sha string) bool {
+	item, ok := im.store.Get(sha)
+	if !ok || within(path, im.dataFolder) {
+		return false
+	}
+	original := filepath.Join(im.dataFolder, filepath.FromSlash(item.Path))
+	im.mu.Lock()
+	same, checked := im.verified[sha]
+	im.mu.Unlock()
+	if !checked {
+		sum, err := media.HashFile(original)
+		same = err == nil && sum == sha
+		im.mu.Lock()
+		im.verified[sha] = same
+		im.mu.Unlock()
+		if !same {
+			log.Printf("%s: THE ORIGINAL IN THE DATA FOLDER DOESN'T HAVE ITS SHA256 (%v); %s is kept", original, err, path)
+		}
+	}
+	if !same {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	if sum, err := media.HashFile(path); err != nil || sum != sha {
+		im.leave(path, "changed since it was looked at, so not deleted")
+		return true
+	}
+	how := "would be deleted (dry run)"
+	if !im.dryRun {
+		if err := os.Remove(path); err != nil {
+			im.leave(path, "a duplicate, but not deleted: "+err.Error())
+			return true
+		}
+		how = "deleted"
+	}
+	im.mu.Lock()
+	im.counts.deleted++
+	im.counts.deletedBytes += info.Size()
+	im.deleted = append(im.deleted, strings.Join([]string{path, mb(info.Size()), original, sha, how}, "\t"))
+	im.mu.Unlock()
+	log.Printf("%s: %s, a duplicate of %s in the data folder (%s)", path, how, original, mb(info.Size()))
+	return true
 }
 
 // What happened to a file, as the cloud log says it.
@@ -131,6 +188,13 @@ func (im *importer) summarize() {
 		fmt.Printf("%s: %d\n", encoded, c.encoded)
 	}
 	fmt.Printf("Duplicates (same sha256 as a file in the data folder or found before): %d (%s)\n", c.duplicates, gb(c.duplicateBytes))
+	if im.deleteDups {
+		verb := "deleted"
+		if im.dryRun {
+			verb = "would be deleted"
+		}
+		fmt.Printf("Of them %s from where they were found (the data folder has the same bytes): %d (%s)\n", verb, c.deleted, gb(c.deletedBytes))
+	}
 	shots, same, waiting := im.nearCounts()
 	fmt.Printf("Look-alikes (dHash within %d bits) found to be other shots, imported: %d\n", im.nearDistance, shots)
 	moved := "moved to " + im.notImportedRun
@@ -171,6 +235,7 @@ func (im *importer) summarize() {
 	}
 
 	sort.Strings(im.leftBehind)
+	sort.Strings(im.deleted)
 	sort.Strings(im.rejected)
 	sort.Strings(im.dateNotes)
 	var near []string
@@ -189,6 +254,7 @@ func (im *importer) summarize() {
 	}{
 		{im.notImportedRun, "not-imported", "The files not imported, and why", "folder\treason\tfound at\tnow at", im.rejected},
 		{im.runFolder, "left-where-they-are", "The files left where they are, and why", "file\treason", im.leftBehind},
+		{im.runFolder, "deleted-duplicates", "Duplicates deleted (the data folder has them)", "file\tsize\tthe same file in the data folder\tsha256\twhat happened", im.deleted},
 		{im.runFolder, "dates", "Files whose name and metadata disagree", "file\tdates", im.dateNotes},
 		{im.runFolder, "near-duplicates", "Near-duplicates", "pixels' score (dB)\tdHash bits apart\tdecision\twhy\tphoto\tlooks like", near},
 	} {
