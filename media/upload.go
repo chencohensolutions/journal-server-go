@@ -139,6 +139,14 @@ func (s *Store) StartUpload(req UploadRequest) (StartResult, error) {
 	s.CatchUp()
 	// A WAV kept as FLAC is there already.
 	if item, ok := s.Find(req.Sha256); ok {
+		// A FLAC stored before the phone said which WAV it was made from learns it now.
+		if req.EncodedFrom != nil && item.Sha256() == req.Sha256 && item.Sidecar.Facts.EncodedFrom == nil {
+			var updated *Item
+			if err := s.Turn(func() error { return s.addEncodedFrom(req.Sha256, *req.EncodedFrom, &updated) }); err != nil {
+				return StartResult{}, err
+			}
+			return StartResult{Existing: updated}, nil
+		}
 		return StartResult{Existing: &item}, nil
 	}
 	if req.EncodedFrom != nil {

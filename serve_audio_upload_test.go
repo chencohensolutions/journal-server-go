@@ -59,6 +59,21 @@ func TestUploadedSoundRecordingsGetTheirFacts(t *testing.T) {
 	if !strings.Contains(string(start.Data["startUpload"]), "MediaExists") {
 		t.Errorf("startUpload of the WAV = %s", start.Data["startUpload"])
 	}
+
+	// A FLAC stored without its WAV learns it when the phone starts it again with encodedFrom.
+	plain := []byte("a FLAC stored before")
+	plainSha := env.uploadPhotoWith(t, phone, plain, "older.flac", map[string]any{"kind": "AUDIO", "mimeType": "audio/flac", "takenAt": modified})
+	otherWav := strings.Repeat("cd", 32)
+	start = env.graphql(t, phone, startUploadMutation, map[string]any{"input": map[string]any{
+		"sha256": plainSha, "size": len(plain), "fileName": "older.flac", "mimeType": "audio/flac", "kind": "AUDIO",
+		"encodedFrom": map[string]any{"sha256": otherWav, "mimeType": "audio/wav", "size": 100},
+	}})
+	if !strings.Contains(string(start.Data["startUpload"]), "MediaExists") {
+		t.Errorf("startUpload of the stored FLAC = %s", start.Data["startUpload"])
+	}
+	if got := string(env.graphql(t, phone, `query($h: [Sha256!]!) { missingMedia(hashes: $h) }`, map[string]any{"h": []string{otherWav}}).Data["missingMedia"]); got != `[]` {
+		t.Errorf("missingMedia = %s, want the WAV found by the FLAC stored before", got)
+	}
 }
 
 // TestAnUploadedWAVIsKeptAsFLAC uploads a WAV as it is: the server keeps a FLAC with both sha256s, and the WAV's
