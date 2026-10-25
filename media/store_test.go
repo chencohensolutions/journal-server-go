@@ -224,7 +224,7 @@ func TestInvalidRequestsAndLimits(t *testing.T) {
 		"uppercase sha":  func(r *UploadRequest) { r.Sha256 = "AB" + r.Sha256[2:] },
 		"empty name":     func(r *UploadRequest) { r.FileName = " " },
 		"no size":        func(r *UploadRequest) { r.Size = 0 },
-		"bad kind":       func(r *UploadRequest) { r.Kind = "audio" },
+		"bad kind":       func(r *UploadRequest) { r.Kind = "document" },
 		"self version":   func(r *UploadRequest) { r.VersionOf = &r.Sha256 },
 		"header in mime": func(r *UploadRequest) { r.MimeType = "image/jpeg\r\nX-Injected: 1" },
 		"no subtype":     func(r *UploadRequest) { r.MimeType = "image" },

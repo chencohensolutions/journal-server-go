@@ -30,12 +30,33 @@ type StartUploadResult interface {
 	IsStartUploadResult()
 }
 
+type AudioHidingInput struct {
+	Recordings    bool `json:"recordings"`
+	Calls         bool `json:"calls"`
+	VoiceMessages bool `json:"voiceMessages"`
+}
+
 // A part of a photo, as fractions of the upright photo's width and height: the same as a preview's crop.
 type Box struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 	W float64 `json:"w"`
 	H float64 `json:"h"`
+}
+
+// Who a recorded phone call was with, as the recorder named the file: usually the contact or, without one, the number,
+// so often only one of the two is known.
+type Call struct {
+	Contact *string `json:"contact,omitempty"`
+	// As the recorder wrote it: 0501234567, +972501234567, *3123.
+	Number *string `json:"number,omitempty"`
+}
+
+type CallInput struct {
+	// Empty or left out: none.
+	Contact *string `json:"contact,omitempty"`
+	// Empty or left out: none.
+	Number *string `json:"number,omitempty"`
 }
 
 type Change struct {
@@ -162,6 +183,12 @@ type HiddenCollections struct {
 	ScreenshotApps []*Collection `json:"screenshotApps"`
 	// The files the nudity scan scored high.
 	Nudity *NudityHiding `json:"nudity"`
+	// Sound recordings that are neither calls nor voice messages. Hidden until the user shows them.
+	Recordings *Collection `json:"recordings"`
+	// Recorded phone calls (Media.call). Hidden until the user shows them.
+	Calls *Collection `json:"calls"`
+	// WhatsApp voice messages and audio (sound recordings with source whatsapp). Hidden until the user shows them.
+	VoiceMessages *Collection `json:"voiceMessages"`
 }
 
 // The whole choice of what to hide: what isn't listed is shown.
@@ -172,6 +199,8 @@ type HiddenCollectionsInput struct {
 	ScreenshotApps []string `json:"screenshotApps"`
 	// Hiding nudity; left out, it stays as it is.
 	Nudity *NudityHidingInput `json:"nudity,omitempty"`
+	// Hiding sound recordings; left out, it stays as it is.
+	Audio *AudioHidingInput `json:"audio,omitempty"`
 }
 
 type Indexing struct {
@@ -238,8 +267,10 @@ type Media struct {
 	FileName string `json:"fileName"`
 	MimeType string `json:"mimeType"`
 	Size     int64  `json:"size"`
-	// When it was taken, with the offset of the place it was taken.
-	TakenAt    *time.Time `json:"takenAt,omitempty"`
+	// When it was taken, with the offset of the place it was taken; for a video or recording, when it started.
+	TakenAt *time.Time `json:"takenAt,omitempty"`
+	// When a video or recording ended: takenAt plus durationMs.
+	EndedAt    *time.Time `json:"endedAt,omitempty"`
 	Width      *int       `json:"width,omitempty"`
 	Height     *int       `json:"height,omitempty"`
 	DurationMs *int64     `json:"durationMs,omitempty"`
@@ -265,6 +296,8 @@ type Media struct {
 	// The user marked it private (setPrivate). Clients hide it while "Show private media" is off, and fetch nothing of
 	// it. Devices the server keeps from private files never get it at all.
 	Private bool `json:"private"`
+	// Who a recorded phone call was with; null for anything but a call.
+	Call *Call `json:"call,omitempty"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
 	// How good the photo looks, about 1 to 10, as people rated photos the model learned from: around 4 to 5 is an
@@ -402,6 +435,8 @@ type ServerInfo struct {
 	Similar bool `json:"similar"`
 	// Photos get aesthetic scores (Media.aesthetic).
 	Aesthetic bool `json:"aesthetic"`
+	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
+	Audio bool `json:"audio"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
@@ -435,11 +470,14 @@ type StartUploadInput struct {
 
 // What the user's originals take up on the server (sidecars and previews not counted).
 type StorageUsage struct {
-	Photos     int   `json:"photos"`
-	Videos     int   `json:"videos"`
+	Photos int `json:"photos"`
+	Videos int `json:"videos"`
+	// Sound recordings.
+	Audio      int   `json:"audio"`
 	PhotoBytes int64 `json:"photoBytes"`
 	VideoBytes int64 `json:"videoBytes"`
-	// photoBytes + videoBytes.
+	AudioBytes int64 `json:"audioBytes"`
+	// photoBytes + videoBytes + audioBytes.
 	Bytes int64 `json:"bytes"`
 }
 
@@ -715,16 +753,19 @@ type MediaKind string
 const (
 	MediaKindPhoto MediaKind = "PHOTO"
 	MediaKindVideo MediaKind = "VIDEO"
+	// A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source whatsapp).
+	MediaKindAudio MediaKind = "AUDIO"
 )
 
 var AllMediaKind = []MediaKind{
 	MediaKindPhoto,
 	MediaKindVideo,
+	MediaKindAudio,
 }
 
 func (e MediaKind) IsValid() bool {
 	switch e {
-	case MediaKindPhoto, MediaKindVideo:
+	case MediaKindPhoto, MediaKindVideo, MediaKindAudio:
 		return true
 	}
 	return false

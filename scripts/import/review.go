@@ -326,7 +326,7 @@ func (r *reviewer) decide(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "no date in its file name or metadata", http.StatusUnprocessableEntity)
 			return
 		}
-		placed, _, err := im.importInto(item.Path, item.foundAt(), item.Sha256, info.Size(), facts, item.folders())
+		placed, _, err := im.importInto(req.Context(), item.Path, item.foundAt(), item.Sha256, info.Size(), facts, item.folders())
 		if err != nil {
 			http.Error(w, "not imported: "+err.Error(), http.StatusInternalServerError)
 			return

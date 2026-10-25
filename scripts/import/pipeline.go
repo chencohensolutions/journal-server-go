@@ -220,6 +220,15 @@ func (im *importer) examine(ctx context.Context, path string) *examined {
 		}
 		return nil
 	}
+	if isWAV(path) {
+		if item, ok := im.store.EncodedFrom(sha); ok { // kept as FLAC by an earlier run
+			if im.addFolder(path, item.Sha256(), folder) {
+				im.count(true, info.Size())
+				im.done(path, sha, resultDuplicate)
+			}
+			return nil
+		}
+	}
 
 	facts := im.readFacts(ctx, path)
 	if ctx.Err() != nil {
@@ -229,6 +238,13 @@ func (im *importer) examine(ctx context.Context, path string) *examined {
 		im.mu.Lock()
 		im.dateNotes = append(im.dateNotes, path+"\t"+facts.note)
 		im.mu.Unlock()
+	}
+	if facts.failed != "" {
+		im.reject(path, notImportedFailed, facts.failed)
+		im.mu.Lock()
+		im.counts.failed++
+		im.mu.Unlock()
+		return nil
 	}
 	if facts.takenAt == nil {
 		im.reject(path, notImportedNoDate, "no date in its file name or metadata")
@@ -298,9 +314,10 @@ func (im *importer) decide(ctx context.Context, e *examined) {
 	if im.dryRun {
 		im.seen[e.sha256] = true
 		im.count(false, e.size)
+		im.countAudio(e)
 		return
 	}
-	_, existed, err := im.importInto(e.path, e.path, e.sha256, e.size, e.facts, folders)
+	_, existed, err := im.importInto(ctx, e.path, e.path, e.sha256, e.size, e.facts, folders)
 	if err != nil {
 		im.reject(e.path, notImportedFailed, err.Error())
 		im.mu.Lock()
@@ -312,6 +329,9 @@ func (im *importer) decide(ctx context.Context, e *examined) {
 		return
 	}
 	im.count(existed, e.size)
+	if !existed {
+		im.countAudio(e)
+	}
 	result := resultImported
 	if existed {
 		result = resultDuplicate
@@ -343,17 +363,47 @@ func folderOf(root, path string) string {
 }
 
 // importInto copies the file at path into the data folder with the facts read from it; foundAt is where
-// it was found (a near-duplicate has moved since), which its source is told from.
-func (im *importer) importInto(path, foundAt, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
+// it was found (a near-duplicate has moved since), which its source is told from. A WAV is encoded as FLAC
+// first (in encodingDir, on the not-imported folder's disk), and the FLAC is copied.
+func (im *importer) importInto(ctx context.Context, path, foundAt, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
 	source := media.SourceOfPath(foundAt)
 	from := foundAt
 	if im.cloud != nil {
 		from = im.cloud.origin(foundAt)
 	}
+	name := filepath.Base(path)
+	var encodedFrom *media.EncodedFrom
+	if isWAV(path) {
+		if err := os.MkdirAll(im.encodingDir(), 0o755); err != nil {
+			return media.Item{}, false, err
+		}
+		work, err := os.MkdirTemp(im.encodingDir(), "flac-")
+		if err != nil {
+			return media.Item{}, false, err
+		}
+		defer os.RemoveAll(work)
+		flac, err := encodeFLAC(ctx, im.ffmpeg, work, path)
+		if err != nil {
+			return media.Item{}, false, err
+		}
+		info, err := os.Stat(flac)
+		if err != nil {
+			return media.Item{}, false, err
+		}
+		flacSha, err := media.HashFile(flac)
+		if err != nil {
+			return media.Item{}, false, err
+		}
+		encodedFrom = &media.EncodedFrom{Sha256: sha, MimeType: facts.mime, Size: size}
+		path, sha, size, name, facts.mime = flac, flacSha, info.Size(), filepath.Base(flac), "audio/flac"
+		im.mu.Lock()
+		im.counts.encoded++
+		im.mu.Unlock()
+	}
 	return im.store.Import(path, media.UploadRequest{
 		Sha256:       sha,
 		Size:         size,
-		FileName:     filepath.Base(path),
+		FileName:     name,
 		MimeType:     facts.mime,
 		Kind:         facts.kind,
 		TakenAt:      facts.takenAt,
@@ -365,8 +415,34 @@ func (im *importer) importInto(path, foundAt, sha string, size int64, facts fact
 		UploadedBy:   "import",
 		ImportedFrom: &from,
 		Folders:      folders,
+		Call:         facts.call,
+		EncodedFrom:  encodedFrom,
 	})
 }
+
+// encodingDir is where WAVs are encoded as FLAC, inside the run's not-imported folder; removed at the end.
+func (im *importer) encodingDir() string { return filepath.Join(im.notImportedRun, ".encoding") }
+
+// countAudio counts a sound recording imported (or that would be), by its collection.
+func (im *importer) countAudio(e *examined) {
+	source := media.SourceOfPath(e.path)
+	c := media.AudioCollectionOf(media.Facts{Kind: e.facts.kind, Call: e.facts.call, Source: &source})
+	if c == "" {
+		return
+	}
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	im.counts.audio[c]++
+	if c == media.AudioCalls && e.facts.call.Contact == nil && e.facts.call.Number == nil {
+		im.counts.audio[callsWithoutName]++
+	}
+	if isWAV(e.path) && im.dryRun {
+		im.counts.encoded++
+	}
+}
+
+// callsWithoutName counts, in counts.audio, the calls whose name says no one (Memento's).
+const callsWithoutName = "calls without a name"
 
 func (im *importer) count(duplicate bool, size int64) {
 	im.mu.Lock()

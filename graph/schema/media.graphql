@@ -9,6 +9,8 @@ scalar Int64
 enum MediaKind {
   PHOTO
   VIDEO
+  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source whatsapp)."
+  AUDIO
 }
 
 type GeoPoint {
@@ -28,8 +30,10 @@ type Media {
   fileName: String!
   mimeType: String!
   size: Int64!
-  "When it was taken, with the offset of the place it was taken."
+  "When it was taken, with the offset of the place it was taken; for a video or recording, when it started."
   takenAt: Time
+  "When a video or recording ended: takenAt plus durationMs."
+  endedAt: Time
   width: Int
   height: Int
   durationMs: Int64
@@ -59,6 +63,8 @@ type Media {
   it. Devices the server keeps from private files never get it at all.
   """
   private: Boolean!
+  "Who a recorded phone call was with; null for anything but a call."
+  call: Call
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -67,9 +73,12 @@ type Media {
 type StorageUsage {
   photos: Int!
   videos: Int!
+  "Sound recordings."
+  audio: Int!
   photoBytes: Int64!
   videoBytes: Int64!
-  "photoBytes + videoBytes."
+  audioBytes: Int64!
+  "photoBytes + videoBytes + audioBytes."
   bytes: Int64!
 }
 

@@ -14,7 +14,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
   registry), the admin API, revocation, withholding private files from a device.
 - [docs/media.md](docs/media.md): the data folder and sidecar format, resumable `PUT /upload/{sha256}`,
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, the change feed, nudity scores, private
-  files, hidden collections, imports, turns between processes.
+  files, hidden collections, sound recordings (recordings, calls, voice messages; hidden until shown), imports,
+  turns between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
   "On the phone": the indexes a phone may keep and search itself (`localIndexes`, `/index/{name}` streams,
   `/index/people`, `/models/…`).
@@ -151,7 +152,7 @@ answer an error). Package `localindex` gives phones the indexes to keep (`newLoc
 as a stream of what was added since a cursor, filtered by the device's `View`, with records of files whose visibility
 changed dropped or sent again from the index's memory (`Cache.Record`); the people whole; and the text half's files. The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
 `Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
-`facts.go` (dates, size, GPS from EXIF/ffprobe), `near.go` (dHash near-duplicates), `same.go` (the same-picture check), `recheck.go` (`--recheck`), `outcomes.go` (moving files,
+`facts.go` (dates, size, GPS from EXIF/ffprobe), `audio.go` (sound recordings: dates, calls, WAV to FLAC), `near.go` (dHash near-duplicates), `same.go` (the same-picture check), `recheck.go` (`--recheck`), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).
 
 ## Conventions worth knowing

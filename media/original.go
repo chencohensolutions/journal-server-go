@@ -40,6 +40,9 @@ var shrinkAbove = 100_000_000
 // Open decodes item's original for the indexes. largest is the longest side any of them will ask for: an original
 // of more than 100 MP is decoded at twice that, not whole.
 func (p *Previews) Open(ctx context.Context, store *Store, item Item, largest int) (*Original, error) {
+	if item.Sidecar.Facts.Kind == KindAudio {
+		return nil, ErrNoPicture
+	}
 	o := &Original{p: p, ctx: ctx, store: store, item: item}
 	sha := item.Sha256()
 	if !p.inProcess(sha) {

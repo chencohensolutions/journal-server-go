@@ -46,6 +46,11 @@ type ComplexityRoot struct {
 		Y func(childComplexity int) int
 	}
 
+	Call struct {
+		Contact func(childComplexity int) int
+		Number  func(childComplexity int) int
+	}
+
 	Change struct {
 		Deleted func(childComplexity int) int
 		Hidden  func(childComplexity int) int
@@ -110,9 +115,12 @@ type ComplexityRoot struct {
 	}
 
 	HiddenCollections struct {
+		Calls                 func(childComplexity int) int
 		Nudity                func(childComplexity int) int
+		Recordings            func(childComplexity int) int
 		ScreenshotApps        func(childComplexity int) int
 		ScreenshotsWithoutApp func(childComplexity int) int
+		VoiceMessages         func(childComplexity int) int
 		Whatsapp              func(childComplexity int) int
 	}
 
@@ -156,7 +164,9 @@ type ComplexityRoot struct {
 	Media struct {
 		Aesthetic  func(childComplexity int) int
 		App        func(childComplexity int) int
+		Call       func(childComplexity int) int
 		DurationMs func(childComplexity int) int
+		EndedAt    func(childComplexity int) int
 		Faces      func(childComplexity int) int
 		FileName   func(childComplexity int) int
 		Height     func(childComplexity int) int
@@ -209,6 +219,7 @@ type ComplexityRoot struct {
 		NamePerson           func(childComplexity int, id string, name string) int
 		PauseIndexing        func(childComplexity int) int
 		PrepareSearch        func(childComplexity int) int
+		SetCall              func(childComplexity int, sha256 string, call model.CallInput) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
 		StartIndexing        func(childComplexity int) int
@@ -270,6 +281,7 @@ type ComplexityRoot struct {
 	ServerInfo struct {
 		API          func(childComplexity int) int
 		Aesthetic    func(childComplexity int) int
+		Audio        func(childComplexity int) int
 		Faces        func(childComplexity int) int
 		Indexing     func(childComplexity int) int
 		LocalIndexes func(childComplexity int) int
@@ -288,6 +300,8 @@ type ComplexityRoot struct {
 	}
 
 	StorageUsage struct {
+		Audio      func(childComplexity int) int
+		AudioBytes func(childComplexity int) int
 		Bytes      func(childComplexity int) int
 		PhotoBytes func(childComplexity int) int
 		Photos     func(childComplexity int) int
@@ -320,6 +334,7 @@ type MediaResolver interface {
 }
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
+	SetCall(ctx context.Context, sha256 string, call model.CallInput) (*model.Media, error)
 	SetHiddenCollections(ctx context.Context, input model.HiddenCollectionsInput) (*model.HiddenCollections, error)
 	StartIndexing(ctx context.Context) (*model.Indexing, error)
 	PauseIndexing(ctx context.Context) (*model.Indexing, error)
@@ -389,6 +404,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Box.Y(childComplexity), true
+
+	case "Call.contact":
+		if e.ComplexityRoot.Call.Contact == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Call.Contact(childComplexity), true
+	case "Call.number":
+		if e.ComplexityRoot.Call.Number == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Call.Number(childComplexity), true
 
 	case "Change.deleted":
 		if e.ComplexityRoot.Change.Deleted == nil {
@@ -598,12 +626,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.GeoPoint.Lon(childComplexity), true
 
+	case "HiddenCollections.calls":
+		if e.ComplexityRoot.HiddenCollections.Calls == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.Calls(childComplexity), true
 	case "HiddenCollections.nudity":
 		if e.ComplexityRoot.HiddenCollections.Nudity == nil {
 			break
 		}
 
 		return e.ComplexityRoot.HiddenCollections.Nudity(childComplexity), true
+	case "HiddenCollections.recordings":
+		if e.ComplexityRoot.HiddenCollections.Recordings == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.Recordings(childComplexity), true
 	case "HiddenCollections.screenshotApps":
 		if e.ComplexityRoot.HiddenCollections.ScreenshotApps == nil {
 			break
@@ -616,6 +656,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.HiddenCollections.ScreenshotsWithoutApp(childComplexity), true
+	case "HiddenCollections.voiceMessages":
+		if e.ComplexityRoot.HiddenCollections.VoiceMessages == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.VoiceMessages(childComplexity), true
 	case "HiddenCollections.whatsapp":
 		if e.ComplexityRoot.HiddenCollections.Whatsapp == nil {
 			break
@@ -789,12 +835,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.App(childComplexity), true
+	case "Media.call":
+		if e.ComplexityRoot.Media.Call == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Call(childComplexity), true
 	case "Media.durationMs":
 		if e.ComplexityRoot.Media.DurationMs == nil {
 			break
 		}
 
 		return e.ComplexityRoot.Media.DurationMs(childComplexity), true
+	case "Media.endedAt":
+		if e.ComplexityRoot.Media.EndedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.EndedAt(childComplexity), true
 	case "Media.faces":
 		if e.ComplexityRoot.Media.Faces == nil {
 			break
@@ -1074,6 +1132,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.PrepareSearch(childComplexity), true
+	case "Mutation.setCall":
+		if e.ComplexityRoot.Mutation.SetCall == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setCall_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetCall(childComplexity, args["sha256"].(string), args["call"].(model.CallInput)), true
 	case "Mutation.setHiddenCollections":
 		if e.ComplexityRoot.Mutation.SetHiddenCollections == nil {
 			break
@@ -1387,6 +1456,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Aesthetic(childComplexity), true
+	case "ServerInfo.audio":
+		if e.ComplexityRoot.ServerInfo.Audio == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Audio(childComplexity), true
 	case "ServerInfo.faces":
 		if e.ComplexityRoot.ServerInfo.Faces == nil {
 			break
@@ -1461,6 +1536,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.SimilarHit.Score(childComplexity), true
 
+	case "StorageUsage.audio":
+		if e.ComplexityRoot.StorageUsage.Audio == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.Audio(childComplexity), true
+	case "StorageUsage.audioBytes":
+		if e.ComplexityRoot.StorageUsage.AudioBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.StorageUsage.AudioBytes(childComplexity), true
 	case "StorageUsage.bytes":
 		if e.ComplexityRoot.StorageUsage.Bytes == nil {
 			break
@@ -1551,6 +1638,8 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputAudioHidingInput,
+		ec.unmarshalInputCallInput,
 		ec.unmarshalInputEnrollDeviceInput,
 		ec.unmarshalInputGeoAreaInput,
 		ec.unmarshalInputGeoPointInput,
@@ -1643,9 +1732,45 @@ extend type Media {
   aesthetic: Float
 }
 `, BuiltIn: false},
+	{Name: "../schema/audio.graphql", Input: `# --- Sound recordings ---------------------------------------------------------
+# Recordings of events, recorded phone calls and WhatsApp voice messages (Media.kind AUDIO), imported by
+# scripts/import. They have no preview (/media/{sha256}/preview answers 404); the original plays from /media with
+# Range. All three are hidden on every device until the user shows them (hiddenCollections.recordings, calls,
+# voiceMessages). A recording's start is takenAt and its end endedAt.
+
+extend type ServerInfo {
+  "Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall)."
+  audio: Boolean!
+}
+
+"""
+Who a recorded phone call was with, as the recorder named the file: usually the contact or, without one, the number,
+so often only one of the two is known.
+"""
+type Call {
+  contact: String
+  "As the recorder wrote it: 0501234567, +972501234567, *3123."
+  number: String
+}
+
+input CallInput {
+  "Empty or left out: none."
+  contact: String
+  "Empty or left out: none."
+  number: String
+}
+
+extend type Mutation {
+  """
+  Corrects who a recorded call was with: both are replaced, and a recording set so becomes a call. Null when the file
+  isn't a sound recording this device may see. The file comes again in the change feed.
+  """
+  setCall(sha256: Sha256!, call: CallInput!): Media
+}
+`, BuiltIn: false},
 	{Name: "../schema/hidden.graphql", Input: `# --- Hidden collections -------------------------------------------------------
-# What the user hides on every device (Settings → Private media → Hidden collections in the apps), and the files the
-# nudity scan scored high. The server does the hiding: a hidden file comes in the change feed as deleted and hidden
+# What the user hides on every device (Settings → Private media → Hidden collections in the apps), the files the
+# nudity scan scored high, and sound recordings (hidden until the user shows them). The server does the hiding: a hidden file comes in the change feed as deleted and hidden
 # (so a device leaves out its own copy too), isn't counted in storageUsage, isn't found by
 # searchMedia, and /media and its preview answer 404. Nothing is deleted; showing a collection again brings its files
 # back. missingMedia, startUpload, uploads and verify still see hidden files, so they are never uploaded again.
@@ -1663,6 +1788,12 @@ type HiddenCollections {
   screenshotApps: [Collection!]!
   "The files the nudity scan scored high."
   nudity: NudityHiding!
+  "Sound recordings that are neither calls nor voice messages. Hidden until the user shows them."
+  recordings: Collection!
+  "Recorded phone calls (Media.call). Hidden until the user shows them."
+  calls: Collection!
+  "WhatsApp voice messages and audio (sound recordings with source whatsapp). Hidden until the user shows them."
+  voiceMessages: Collection!
 }
 
 """
@@ -1694,6 +1825,14 @@ input HiddenCollectionsInput {
   screenshotApps: [String!]!
   "Hiding nudity; left out, it stays as it is."
   nudity: NudityHidingInput
+  "Hiding sound recordings; left out, it stays as it is."
+  audio: AudioHidingInput
+}
+
+input AudioHidingInput {
+  recordings: Boolean!
+  calls: Boolean!
+  voiceMessages: Boolean!
 }
 
 input NudityHidingInput {
@@ -1850,6 +1989,8 @@ scalar Int64
 enum MediaKind {
   PHOTO
   VIDEO
+  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source whatsapp)."
+  AUDIO
 }
 
 type GeoPoint {
@@ -1869,8 +2010,10 @@ type Media {
   fileName: String!
   mimeType: String!
   size: Int64!
-  "When it was taken, with the offset of the place it was taken."
+  "When it was taken, with the offset of the place it was taken; for a video or recording, when it started."
   takenAt: Time
+  "When a video or recording ended: takenAt plus durationMs."
+  endedAt: Time
   width: Int
   height: Int
   durationMs: Int64
@@ -1900,6 +2043,8 @@ type Media {
   it. Devices the server keeps from private files never get it at all.
   """
   private: Boolean!
+  "Who a recorded phone call was with; null for anything but a call."
+  call: Call
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -1908,9 +2053,12 @@ type Media {
 type StorageUsage {
   photos: Int!
   videos: Int!
+  "Sound recordings."
+  audio: Int!
   photoBytes: Int64!
   videoBytes: Int64!
-  "photoBytes + videoBytes."
+  audioBytes: Int64!
+  "photoBytes + videoBytes + audioBytes."
   bytes: Int64!
 }
 
@@ -2415,6 +2563,16 @@ func (ec *executionContext) childFields_Box(ctx context.Context, field graphql.C
 	return nil, fmt.Errorf("no field named %q was found under type Box", field.Name)
 }
 
+func (ec *executionContext) childFields_Call(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "contact":
+		return ec.fieldContext_Call_contact(ctx, field)
+	case "number":
+		return ec.fieldContext_Call_number(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Call", field.Name)
+}
+
 func (ec *executionContext) childFields_Change(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "kind":
@@ -2517,6 +2675,12 @@ func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, f
 		return ec.fieldContext_HiddenCollections_screenshotApps(ctx, field)
 	case "nudity":
 		return ec.fieldContext_HiddenCollections_nudity(ctx, field)
+	case "recordings":
+		return ec.fieldContext_HiddenCollections_recordings(ctx, field)
+	case "calls":
+		return ec.fieldContext_HiddenCollections_calls(ctx, field)
+	case "voiceMessages":
+		return ec.fieldContext_HiddenCollections_voiceMessages(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type HiddenCollections", field.Name)
 }
@@ -2609,6 +2773,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_size(ctx, field)
 	case "takenAt":
 		return ec.fieldContext_Media_takenAt(ctx, field)
+	case "endedAt":
+		return ec.fieldContext_Media_endedAt(ctx, field)
 	case "width":
 		return ec.fieldContext_Media_width(ctx, field)
 	case "height":
@@ -2637,6 +2803,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_nudity(ctx, field)
 	case "private":
 		return ec.fieldContext_Media_private(ctx, field)
+	case "call":
+		return ec.fieldContext_Media_call(ctx, field)
 	case "url":
 		return ec.fieldContext_Media_url(ctx, field)
 	case "aesthetic":
@@ -2759,6 +2927,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_similar(ctx, field)
 	case "aesthetic":
 		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
+	case "audio":
+		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "indexing":
 		return ec.fieldContext_ServerInfo_indexing(ctx, field)
 	case "localIndexes":
@@ -2783,10 +2953,14 @@ func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field 
 		return ec.fieldContext_StorageUsage_photos(ctx, field)
 	case "videos":
 		return ec.fieldContext_StorageUsage_videos(ctx, field)
+	case "audio":
+		return ec.fieldContext_StorageUsage_audio(ctx, field)
 	case "photoBytes":
 		return ec.fieldContext_StorageUsage_photoBytes(ctx, field)
 	case "videoBytes":
 		return ec.fieldContext_StorageUsage_videoBytes(ctx, field)
+	case "audioBytes":
+		return ec.fieldContext_StorageUsage_audioBytes(ctx, field)
 	case "bytes":
 		return ec.fieldContext_StorageUsage_bytes(ctx, field)
 	}
@@ -3064,6 +3238,28 @@ func (ec *executionContext) field_Mutation_namePerson_args(ctx context.Context, 
 		return nil, err
 	}
 	args["name"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setCall_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "sha256",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNSha2562string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sha256"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "call",
+		func(ctx context.Context, v any) (model.CallInput, error) {
+			return ec.unmarshalNCallInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCallInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["call"] = arg1
 	return args, nil
 }
 
@@ -3553,6 +3749,52 @@ func (ec *executionContext) _Box_h(ctx context.Context, field graphql.CollectedF
 }
 func (ec *executionContext) fieldContext_Box_h(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Box", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _Call_contact(ctx context.Context, field graphql.CollectedField, obj *model.Call) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Call_contact(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Contact, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Call_contact(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Call", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Call_number(ctx context.Context, field graphql.CollectedField, obj *model.Call) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Call_number(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Number, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Call_number(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Call", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Change_kind(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
@@ -4496,6 +4738,102 @@ func (ec *executionContext) fieldContext_HiddenCollections_nudity(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _HiddenCollections_recordings(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_recordings(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Recordings, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_recordings(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_calls(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_calls(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Calls, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_calls(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_voiceMessages(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_voiceMessages(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VoiceMessages, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_voiceMessages(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Indexing_state(ctx context.Context, field graphql.CollectedField, obj *model.Indexing) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5236,6 +5574,29 @@ func (ec *executionContext) fieldContext_Media_takenAt(_ context.Context, field 
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Time does not have child fields"))
 }
 
+func (ec *executionContext) _Media_endedAt(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_endedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EndedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_endedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
 func (ec *executionContext) _Media_width(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5565,6 +5926,38 @@ func (ec *executionContext) _Media_private(ctx context.Context, field graphql.Co
 }
 func (ec *executionContext) fieldContext_Media_private(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Media_call(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_call(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Call, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Call) graphql.Marshaler {
+			return ec.marshalOCall2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCall(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_call(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Call(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Media_url(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
@@ -5976,6 +6369,50 @@ func (ec *executionContext) fieldContext_Mutation_enrollDevice(ctx context.Conte
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_enrollDevice_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setCall(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setCall(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetCall(ctx, fc.Args["sha256"].(string), fc.Args["call"].(model.CallInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalOMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setCall(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setCall_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -7848,6 +8285,29 @@ func (ec *executionContext) fieldContext_ServerInfo_aesthetic(_ context.Context,
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_audio(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_audio(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Audio, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_audio(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_indexing(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -7995,6 +8455,29 @@ func (ec *executionContext) fieldContext_StorageUsage_videos(_ context.Context, 
 	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
+func (ec *executionContext) _StorageUsage_audio(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_audio(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Audio, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_audio(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
 func (ec *executionContext) _StorageUsage_photoBytes(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -8038,6 +8521,29 @@ func (ec *executionContext) _StorageUsage_videoBytes(ctx context.Context, field 
 	)
 }
 func (ec *executionContext) fieldContext_StorageUsage_videoBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _StorageUsage_audioBytes(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_StorageUsage_audioBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AudioBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_StorageUsage_audioBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
 }
 
@@ -9316,6 +9822,87 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputAudioHidingInput(ctx context.Context, obj any) (model.AudioHidingInput, error) {
+	var it model.AudioHidingInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"recordings", "calls", "voiceMessages"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "recordings":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("recordings"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Recordings = data
+		case "calls":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("calls"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Calls = data
+		case "voiceMessages":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("voiceMessages"))
+			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.VoiceMessages = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputCallInput(ctx context.Context, obj any) (model.CallInput, error) {
+	var it model.CallInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"contact", "number"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "contact":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("contact"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Contact = data
+		case "number":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("number"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Number = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context, obj any) (model.EnrollDeviceInput, error) {
 	var it model.EnrollDeviceInput
 	if obj == nil {
@@ -9466,7 +10053,7 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity"}
+	fieldsInOrder := [...]string{"whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity", "audio"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -9501,6 +10088,13 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 				return it, err
 			}
 			it.Nudity = data
+		case "audio":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("audio"))
+			data, err := ec.unmarshalOAudioHidingInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐAudioHidingInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Audio = data
 		}
 	}
 	return it, nil
@@ -9838,6 +10432,44 @@ func (ec *executionContext) _Box(ctx context.Context, sel ast.SelectionSet, obj 
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var callImplementors = []string{"Call"}
+
+func (ec *executionContext) _Call(ctx context.Context, sel ast.SelectionSet, obj *model.Call) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, callImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Call")
+		case "contact":
+			out.Values[i] = ec._Call_contact(ctx, field, obj)
+		case "number":
+			out.Values[i] = ec._Call_number(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -10388,6 +11020,21 @@ func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.Sele
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "recordings":
+			out.Values[i] = ec._HiddenCollections_recordings(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "calls":
+			out.Values[i] = ec._HiddenCollections_calls(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "voiceMessages":
+			out.Values[i] = ec._HiddenCollections_voiceMessages(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -10695,6 +11342,8 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "takenAt":
 			out.Values[i] = ec._Media_takenAt(ctx, field, obj)
+		case "endedAt":
+			out.Values[i] = ec._Media_endedAt(ctx, field, obj)
 		case "width":
 			out.Values[i] = ec._Media_width(ctx, field, obj)
 		case "height":
@@ -10738,6 +11387,8 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "call":
+			out.Values[i] = ec._Media_call(ctx, field, obj)
 		case "url":
 			out.Values[i] = ec._Media_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -11049,6 +11700,10 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setCall":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setCall(ctx, field)
+			})
 		case "setHiddenCollections":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setHiddenCollections(ctx, field)
@@ -11856,6 +12511,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "audio":
+			out.Values[i] = ec._ServerInfo_audio(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "indexing":
 			out.Values[i] = ec._ServerInfo_indexing(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -11954,6 +12614,11 @@ func (ec *executionContext) _StorageUsage(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "audio":
+			out.Values[i] = ec._StorageUsage_audio(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "photoBytes":
 			out.Values[i] = ec._StorageUsage_photoBytes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -11961,6 +12626,11 @@ func (ec *executionContext) _StorageUsage(ctx context.Context, sel ast.Selection
 			}
 		case "videoBytes":
 			out.Values[i] = ec._StorageUsage_videoBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "audioBytes":
+			out.Values[i] = ec._StorageUsage_audioBytes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -12493,6 +13163,11 @@ func (ec *executionContext) marshalNBox2ᚖgithubᚗcomᚋjournalᚋserverᚑgo�
 		return graphql.Null
 	}
 	return ec._Box(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNCallInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCallInput(ctx context.Context, v any) (model.CallInput, error) {
+	res, err := ec.unmarshalInputCallInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNChange2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Change) graphql.Marshaler {
@@ -13419,6 +14094,14 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 	return res
 }
 
+func (ec *executionContext) unmarshalOAudioHidingInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐAudioHidingInput(ctx context.Context, v any) (*model.AudioHidingInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAudioHidingInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalOBoolean2bool(ctx context.Context, v any) (bool, error) {
 	res, err := graphql.UnmarshalBoolean(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -13447,6 +14130,13 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	_ = ctx
 	res := graphql.MarshalBoolean(*v)
 	return res
+}
+
+func (ec *executionContext) marshalOCall2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCall(ctx context.Context, sel ast.SelectionSet, v *model.Call) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Call(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOFloat2ᚖfloat64(ctx context.Context, v any) (*float64, error) {

@@ -19,6 +19,8 @@ type Kind string
 const (
 	KindPhoto Kind = "photo"
 	KindVideo Kind = "video"
+	// A sound recording: a recording of an event, a phone call (Facts.Call) or a WhatsApp voice message.
+	KindAudio Kind = "audio"
 )
 
 type GeoPoint struct {
@@ -52,8 +54,35 @@ type Facts struct {
 	// Every folder scripts/import found this file in, from the searched folder down ("phone DCIM/Flowers"):
 	// the albums it was kept in, as clues. Copies found later add theirs.
 	Folders []string `json:"folders,omitempty"`
-	// When the server last corrected a fact clients show (SetSource, SetScreenshotFacts), so the file comes again in the change feed.
+	// Who a phone call was with, as the recorder named the file; set only on calls (audio), and the user may correct it (SetCall).
+	Call *Call `json:"call,omitempty"`
+	// The file this one was encoded from on import (a WAV kept as FLAC), so importing that file again finds this one.
+	EncodedFrom *EncodedFrom `json:"encodedFrom,omitempty"`
+	// When the server last corrected a fact clients show (SetSource, SetScreenshotFacts, SetCall), so the file comes again in the change feed.
 	CorrectedAt *time.Time `json:"correctedAt,omitempty"`
+}
+
+// Call is who a recorded phone call was with. Recorders name the file after the contact or, without one, the
+// number, so usually only one of the two is known.
+type Call struct {
+	Contact *string `json:"contact,omitempty"`
+	Number  *string `json:"number,omitempty"`
+}
+
+// EncodedFrom is the original an imported file was encoded from, which is not kept.
+type EncodedFrom struct {
+	Sha256   string `json:"sha256"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+}
+
+// EndedAt is when a video or recording ended: its start plus its length. Nil without both.
+func (f Facts) EndedAt() *time.Time {
+	if f.TakenAt == nil || f.DurationMs == nil {
+		return nil
+	}
+	end := f.TakenAt.Add(time.Duration(*f.DurationMs) * time.Millisecond)
+	return &end
 }
 
 // Sidecar is the <file>.json next to an original.
@@ -231,6 +260,60 @@ func (s *Store) SetSource(sha, source string) (changed bool, err error) {
 		return s.rewriteSidecar(item, sidecar)
 	})
 	return changed, err
+}
+
+// SetCall replaces who a recorded call was with (Facts.Call), and with it makes a sound recording a call. Like
+// SetSource, it sets CorrectedAt, so the file comes again in the change feed. A file that isn't a sound recording is
+// refused; one already so is left as it is.
+func (s *Store) SetCall(sha string, call Call) (item Item, changed bool, err error) {
+	for _, v := range []**string{&call.Contact, &call.Number} {
+		if *v != nil {
+			if t := strings.TrimSpace(**v); t == "" {
+				*v = nil
+			} else {
+				*v = &t
+			}
+		}
+	}
+	err = s.Turn(func() error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		found, ok := s.items[sha]
+		if !ok {
+			return fmt.Errorf("%s isn't in the data folder", sha)
+		}
+		if found.Sidecar.Facts.Kind != KindAudio {
+			return fmt.Errorf("%s is a %s, not a sound recording", sha, found.Sidecar.Facts.Kind)
+		}
+		if old := found.Sidecar.Facts.Call; old != nil && equalString(old.Contact, call.Contact) && equalString(old.Number, call.Number) {
+			item = *found
+			return nil
+		}
+		sidecar := found.Sidecar
+		now := s.now().UTC()
+		sidecar.Facts.Call = &call
+		sidecar.Facts.CorrectedAt = &now
+		changed = true
+		if err := s.rewriteSidecar(found, sidecar); err != nil {
+			return err
+		}
+		item = *found
+		return nil
+	})
+	return item, changed, err
+}
+
+// EncodedFrom finds the file that was encoded on import from the file with this sha256 (a WAV kept as FLAC).
+func (s *Store) EncodedFrom(sha string) (Item, bool) {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.items {
+		if e := item.Sidecar.Facts.EncodedFrom; e != nil && e.Sha256 == sha {
+			return *item, true
+		}
+	}
+	return Item{}, false
 }
 
 // SetScreenshotFacts gives a file named like a screenshot the facts a new one gets (source screenshots, and the

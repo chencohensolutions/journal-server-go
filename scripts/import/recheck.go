@@ -184,7 +184,7 @@ func (im *importer) decideAgain(ctx context.Context, r *rechecked) (keep bool, i
 		im.count(false, r.size)
 		return false, item
 	}
-	if _, _, err := im.importInto(item.Path, item.foundAt(), item.Sha256, r.size, r.facts, item.folders()); err != nil {
+	if _, _, err := im.importInto(ctx, item.Path, item.foundAt(), item.Sha256, r.size, r.facts, item.folders()); err != nil {
 		im.leave(item.Path, "not imported: "+err.Error())
 		im.mu.Lock()
 		im.counts.failed++

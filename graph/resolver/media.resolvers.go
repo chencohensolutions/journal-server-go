@@ -25,8 +25,11 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 	}
 	store := v.store
 	kind := media.KindPhoto
-	if input.Kind == model.MediaKindVideo {
+	switch input.Kind {
+	case model.MediaKindVideo:
 		kind = media.KindVideo
+	case model.MediaKindAudio:
+		kind = media.KindAudio
 	}
 	request := media.UploadRequest{
 		Sha256:     input.Sha256,
@@ -130,9 +133,11 @@ func (r *queryResolver) StorageUsage(ctx context.Context) (*model.StorageUsage, 
 	return &model.StorageUsage{
 		Photos:     u.Photos,
 		Videos:     u.Videos,
+		Audio:      u.Audio,
 		PhotoBytes: u.PhotoBytes,
 		VideoBytes: u.VideoBytes,
-		Bytes:      u.PhotoBytes + u.VideoBytes,
+		AudioBytes: u.AudioBytes,
+		Bytes:      u.PhotoBytes + u.VideoBytes + u.AudioBytes,
 	}, nil
 }
 

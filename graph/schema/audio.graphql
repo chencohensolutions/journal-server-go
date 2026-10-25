@@ -1,0 +1,35 @@
+# --- Sound recordings ---------------------------------------------------------
+# Recordings of events, recorded phone calls and WhatsApp voice messages (Media.kind AUDIO), imported by
+# scripts/import. They have no preview (/media/{sha256}/preview answers 404); the original plays from /media with
+# Range. All three are hidden on every device until the user shows them (hiddenCollections.recordings, calls,
+# voiceMessages). A recording's start is takenAt and its end endedAt.
+
+extend type ServerInfo {
+  "Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall)."
+  audio: Boolean!
+}
+
+"""
+Who a recorded phone call was with, as the recorder named the file: usually the contact or, without one, the number,
+so often only one of the two is known.
+"""
+type Call {
+  contact: String
+  "As the recorder wrote it: 0501234567, +972501234567, *3123."
+  number: String
+}
+
+input CallInput {
+  "Empty or left out: none."
+  contact: String
+  "Empty or left out: none."
+  number: String
+}
+
+extend type Mutation {
+  """
+  Corrects who a recorded call was with: both are replaced, and a recording set so becomes a call. Null when the file
+  isn't a sound recording this device may see. The file comes again in the change feed.
+  """
+  setCall(sha256: Sha256!, call: CallInput!): Media
+}

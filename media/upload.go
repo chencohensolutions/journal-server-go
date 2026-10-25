@@ -41,8 +41,10 @@ type UploadRequest struct {
 	PairedWith *string    `json:"pairedWith"`
 	UploadedBy string     `json:"uploadedBy"`
 	// Set only by Import.
-	ImportedFrom *string  `json:"importedFrom,omitempty"`
-	Folders      []string `json:"folders,omitempty"`
+	ImportedFrom *string      `json:"importedFrom,omitempty"`
+	Folders      []string     `json:"folders,omitempty"`
+	Call         *Call        `json:"call,omitempty"`
+	EncodedFrom  *EncodedFrom `json:"encodedFrom,omitempty"`
 }
 
 // InvalidRequestError is a request no device should send (a client bug, not a user error).
@@ -58,7 +60,7 @@ func (r UploadRequest) validate() error {
 		return &InvalidRequestError{"size must be positive"}
 	case strings.TrimSpace(r.FileName) == "":
 		return &InvalidRequestError{"fileName is empty"}
-	case r.Kind != KindPhoto && r.Kind != KindVideo:
+	case r.Kind != KindPhoto && r.Kind != KindVideo && r.Kind != KindAudio:
 		return &InvalidRequestError{"unknown kind " + string(r.Kind)}
 	case r.MimeType != "" && !isMimeType(r.MimeType):
 		return &InvalidRequestError{"mimeType must look like image/jpeg"}
@@ -344,6 +346,8 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			UploadedBy:   req.UploadedBy,
 			ImportedFrom: req.ImportedFrom,
 			Folders:      req.Folders,
+			Call:         req.Call,
+			EncodedFrom:  req.EncodedFrom,
 		},
 		Privacy: s.inheritedPrivacy(req),
 	}

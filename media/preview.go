@@ -37,6 +37,9 @@ type Previews struct {
 
 var ErrPreviewsUnavailable = errors.New("libvips is not installed")
 
+// ErrNoPicture is asked of a file that has no picture to show: a sound recording.
+var ErrNoPicture = errors.New("a sound recording has no picture")
+
 // FindVips returns the vips and vipsheader programs: the configured path, the bundle in vips/bin (made
 // on Windows by scripts/bundle-vips, as the official Windows builds can't read HEIC), the PATH, or
 // Homebrew's folders (a server started from an IDE often runs without Homebrew in its PATH).
@@ -107,6 +110,9 @@ func (s *Store) previewDir(sha string) string {
 // temporary folder that release deletes.
 func (p *Previews) Get(ctx context.Context, store *Store, item Item, spec PreviewSpec) (path string, release func(), err error) {
 	release = func() {}
+	if item.Sidecar.Facts.Kind == KindAudio {
+		return "", release, ErrNoPicture
+	}
 	cached := filepath.Join(store.previewDir(item.Sha256()), spec.fileName())
 	if info, err := os.Stat(cached); err == nil {
 		touch(cached, info)

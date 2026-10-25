@@ -1,6 +1,6 @@
 # --- Hidden collections -------------------------------------------------------
-# What the user hides on every device (Settings → Private media → Hidden collections in the apps), and the files the
-# nudity scan scored high. The server does the hiding: a hidden file comes in the change feed as deleted and hidden
+# What the user hides on every device (Settings → Private media → Hidden collections in the apps), the files the
+# nudity scan scored high, and sound recordings (hidden until the user shows them). The server does the hiding: a hidden file comes in the change feed as deleted and hidden
 # (so a device leaves out its own copy too), isn't counted in storageUsage, isn't found by
 # searchMedia, and /media and its preview answer 404. Nothing is deleted; showing a collection again brings its files
 # back. missingMedia, startUpload, uploads and verify still see hidden files, so they are never uploaded again.
@@ -18,6 +18,12 @@ type HiddenCollections {
   screenshotApps: [Collection!]!
   "The files the nudity scan scored high."
   nudity: NudityHiding!
+  "Sound recordings that are neither calls nor voice messages. Hidden until the user shows them."
+  recordings: Collection!
+  "Recorded phone calls (Media.call). Hidden until the user shows them."
+  calls: Collection!
+  "WhatsApp voice messages and audio (sound recordings with source whatsapp). Hidden until the user shows them."
+  voiceMessages: Collection!
 }
 
 """
@@ -49,6 +55,14 @@ input HiddenCollectionsInput {
   screenshotApps: [String!]!
   "Hiding nudity; left out, it stays as it is."
   nudity: NudityHidingInput
+  "Hiding sound recordings; left out, it stays as it is."
+  audio: AudioHidingInput
+}
+
+input AudioHidingInput {
+  recordings: Boolean!
+  calls: Boolean!
+  voiceMessages: Boolean!
 }
 
 input NudityHidingInput {

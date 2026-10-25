@@ -40,7 +40,11 @@ func (r *mutationResolver) SetHiddenCollections(ctx context.Context, input model
 			nudityFrom = n.From
 		}
 	}
-	err = store.SetHidden(media.Hidden{Sources: sources, ScreenshotApps: input.ScreenshotApps, ScreenshotsWithoutApp: input.ScreenshotsWithoutApp, NudityFrom: nudityFrom})
+	audio := hidden.Audio
+	if a := input.Audio; a != nil {
+		audio = media.AudioHiding{Recordings: a.Recordings, Calls: a.Calls, VoiceMessages: a.VoiceMessages}
+	}
+	err = store.SetHidden(media.Hidden{Sources: sources, ScreenshotApps: input.ScreenshotApps, ScreenshotsWithoutApp: input.ScreenshotsWithoutApp, NudityFrom: nudityFrom, Audio: audio})
 	if err != nil {
 		return nil, err
 	}

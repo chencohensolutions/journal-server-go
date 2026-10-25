@@ -72,6 +72,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Aesthetic:    r.AestheticScores != nil,
 		LocalIndexes: r.Local.On(),
 		Indexing:     r.IndexRuns != nil,
+		Audio:        true,
 	}, nil
 }
 

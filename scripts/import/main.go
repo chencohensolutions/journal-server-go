@@ -1,4 +1,4 @@
-// Command import copies the photos and videos found in folders on the server's disk into a user's data
+// Command import copies the photos, videos and sound recordings found in folders on the server's disk into a user's data
 // folder, once each: a file whose sha256 the data folder already has (from a device, an earlier run, or
 // another copy found in this run) is not copied again. Every source file it is done with, copied or a
 // duplicate, is then moved to the --imported folder under its original path, so that folder can be
@@ -70,6 +70,13 @@ var mediaTypes = map[string]struct {
 	".mkv":  {media.KindVideo, "video/x-matroska"},
 	".webm": {media.KindVideo, "video/webm"},
 	".avi":  {media.KindVideo, "video/x-msvideo"},
+	// Only the sound formats found so far; add others as they turn up. A WAV is kept as FLAC (audio.go).
+	".m4a":  {media.KindAudio, "audio/mp4"},
+	".aac":  {media.KindAudio, "audio/aac"},
+	".flac": {media.KindAudio, "audio/flac"},
+	".ogg":  {media.KindAudio, "audio/ogg"},
+	".opus": {media.KindAudio, "audio/ogg"},
+	".wav":  {media.KindAudio, "audio/wav"},
 }
 
 // Folders never searched, besides hidden ones (".thumbnails", ".cache") and the data and imported folders.
@@ -80,6 +87,7 @@ type importer struct {
 	vips           string
 	vipsheader     string
 	ffprobe        string
+	ffmpeg         string // encodes WAVs as FLAC
 	workDir        string // the small previews dHash is made from
 	user           string
 	dataFolder     string
@@ -138,6 +146,8 @@ type nearPair struct {
 type counts struct {
 	imported, duplicates, same, noDate, failed, hidden int
 	importedBytes, duplicateBytes                int64
+	audio                                        map[string]int // sound recordings imported, by media.AudioCollectionOf
+	encoded                                      int            // WAVs kept as FLAC
 }
 
 func main() {
@@ -180,7 +190,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
 	}
-	_, ffprobe, err := media.FindFFmpeg(config.FFmpeg)
+	ffmpeg, ffprobe, err := media.FindFFmpeg(config.FFmpeg)
 	if err != nil {
 		log.Fatalf("%v (brew install ffmpeg; on Windows winget install Gyan.FFmpeg; or set \"ffmpeg\" in config.json)", err)
 	}
@@ -193,6 +203,7 @@ func main() {
 		vips:           vips,
 		vipsheader:     vipsheader,
 		ffprobe:        ffprobe,
+		ffmpeg:         ffmpeg,
 		user:           *user,
 		dataFolder:     absolute(dataFolder),
 		importedFolder: absolute(*imported),
@@ -203,6 +214,7 @@ func main() {
 		seen:           map[string]bool{},
 		waiting:        map[string]int{},
 		notMedia:       map[string]int{},
+		counts:         counts{audio: map[string]int{}},
 		lastProgress:   time.Now(),
 		pictures:       pictureCache{pictures: map[string]*picture{}},
 	}
@@ -238,6 +250,7 @@ func main() {
 		// A run that moved nothing and wrote no report leaves no folders behind.
 		os.Remove(im.runFolder)
 		if im.notImportedRun != "" {
+			os.RemoveAll(im.encodingDir())
 			os.Remove(im.notImportedRun)
 		}
 	}()
@@ -260,7 +273,7 @@ func main() {
 	}
 
 	usage := im.store.Usage(media.View{})
-	log.Printf("Data folder %s: %d photos, %d videos", im.dataFolder, usage.Photos, usage.Videos)
+	log.Printf("Data folder %s: %d photos, %d videos, %d sound recordings", im.dataFolder, usage.Photos, usage.Videos, usage.Audio)
 	im.hashDataFolder(ctx, *jobs)
 	if im.dryRun {
 		log.Print("Dry run: nothing is copied or moved")
@@ -297,7 +310,7 @@ func main() {
 		im.totalBytes += f.size
 	}
 	im.totalFiles = len(files)
-	log.Printf("%d photos and videos to look at, %s", im.totalFiles, gb(im.totalBytes))
+	log.Printf("%d photos, videos and sound recordings to look at, %s", im.totalFiles, gb(im.totalBytes))
 	im.importFiles(ctx, files, *jobs)
 	if ctx.Err() != nil {
 		log.Print("Stopped; running again continues where it stopped")

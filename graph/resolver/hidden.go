@@ -19,6 +19,8 @@ func hiddenCollections(store *media.Store) *model.HiddenCollections {
 	}
 	nudity.Files, nudity.NotScanned = store.NudityCounts(nudity.From)
 	result.Nudity = nudity
+	recordings, calls, voiceMessages := store.AudioCollections()
+	result.Recordings, result.Calls, result.VoiceMessages = toCollection(recordings), toCollection(calls), toCollection(voiceMessages)
 	for i, app := range apps {
 		result.ScreenshotApps[i] = toCollection(app)
 	}

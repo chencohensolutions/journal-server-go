@@ -14,8 +14,8 @@ import (
 )
 
 // Hidden is what the user hides on every device (Settings → Private media → Hidden collections in the apps): whole
-// sources (WhatsApp), the screenshots of some apps, screenshots whose name says no app, and what the nudity scan
-// scored high. Hidden files stay in the data folder as they are; the server leaves them out of what devices see
+// sources (WhatsApp), the screenshots of some apps, screenshots whose name says no app, what the nudity scan
+// scored high, and sound recordings. Hidden files stay in the data folder as they are; the server leaves them out of what devices see
 // (View). It is kept in settings.json at the data folder's root, so it moves with the data.
 type Hidden struct {
 	Sources               []string `json:"sources,omitempty"`
@@ -24,6 +24,53 @@ type Hidden struct {
 	// NudityFrom hides the files the nudity scan scored at this or more, 0 to 1; 0 hides none. Always written, so
 	// that off (0) stays off: a settings.json without it, or no settings.json, hides from DefaultNudityFrom.
 	NudityFrom float64 `json:"nudityFrom"`
+	// Audio is which sound recordings are hidden. Always written, so that shown stays shown: a settings.json without
+	// it, or no settings.json, hides all three (DefaultAudio).
+	Audio AudioHiding `json:"audio"`
+}
+
+// AudioHiding is which of the three kinds of sound recording are hidden (AudioCollectionOf).
+type AudioHiding struct {
+	Recordings    bool `json:"recordings"`
+	Calls         bool `json:"calls"`
+	VoiceMessages bool `json:"voiceMessages"`
+}
+
+// DefaultAudio hides every sound recording until the user shows them.
+var DefaultAudio = AudioHiding{Recordings: true, Calls: true, VoiceMessages: true}
+
+// The audio collections: a phone call (Facts.Call), a WhatsApp voice message, and any other recording.
+const (
+	AudioRecordings    = "recordings"
+	AudioCalls         = "calls"
+	AudioVoiceMessages = "voiceMessages"
+)
+
+// AudioCollectionOf is which audio collection a file is in, or "" for a photo or video.
+func AudioCollectionOf(facts Facts) string {
+	switch {
+	case facts.Kind != KindAudio:
+		return ""
+	case facts.Call != nil:
+		return AudioCalls
+	case facts.Source != nil && *facts.Source == SourceWhatsApp:
+		return AudioVoiceMessages
+	default:
+		return AudioRecordings
+	}
+}
+
+// hides reports whether a hides the audio collection named c.
+func (a AudioHiding) hides(c string) bool {
+	switch c {
+	case AudioRecordings:
+		return a.Recordings
+	case AudioCalls:
+		return a.Calls
+	case AudioVoiceMessages:
+		return a.VoiceMessages
+	}
+	return false
 }
 
 // DefaultNudityFrom is the nudity score from which files are hidden until the user chooses another, or none.
@@ -50,6 +97,9 @@ func (h Hidden) HidesFile(sidecar Sidecar) bool {
 
 // Hides reports whether facts put a file in a hidden collection. Apps are compared ignoring case.
 func (h Hidden) Hides(facts Facts) bool {
+	if h.Audio.hides(AudioCollectionOf(facts)) {
+		return true
+	}
 	source := SourceOther
 	if facts.Source != nil {
 		source = *facts.Source
@@ -92,13 +142,13 @@ func (h Hidden) normalized() Hidden {
 	}
 	return Hidden{
 		Sources: unique(h.Sources), ScreenshotApps: unique(h.ScreenshotApps), ScreenshotsWithoutApp: h.ScreenshotsWithoutApp,
-		NudityFrom: min(max(h.NudityFrom, 0), 1),
+		NudityFrom: min(max(h.NudityFrom, 0), 1), Audio: h.Audio,
 	}
 }
 
 // IsEmpty reports whether nothing is hidden.
 func (h Hidden) IsEmpty() bool {
-	return len(h.Sources) == 0 && len(h.ScreenshotApps) == 0 && !h.ScreenshotsWithoutApp && h.NudityFrom == 0
+	return len(h.Sources) == 0 && len(h.ScreenshotApps) == 0 && !h.ScreenshotsWithoutApp && h.NudityFrom == 0 && h.Audio == AudioHiding{}
 }
 
 // Key is a short name for what is hidden ("" when nothing is), by which the change feed tells whether a cursor's
@@ -116,11 +166,12 @@ func (h Hidden) Key() string {
 	return hex.EncodeToString(sum[:6])
 }
 
-// readHidden reads settings.json; a data folder without one hides only nudity, from DefaultNudityFrom.
+// readHidden reads settings.json; a data folder without one hides nudity from DefaultNudityFrom and every sound
+// recording.
 func (s *Store) readHidden() (Hidden, error) {
 	data, err := os.ReadFile(s.settingsPath())
 	if errors.Is(err, fs.ErrNotExist) {
-		return Hidden{NudityFrom: DefaultNudityFrom}, nil
+		return Hidden{NudityFrom: DefaultNudityFrom, Audio: DefaultAudio}, nil
 	}
 	if err != nil {
 		return Hidden{}, err
@@ -135,11 +186,18 @@ func (s *Store) readHidden() (Hidden, error) {
 	// Written before nudity was hidden here: hidden from the default, as the apps did themselves.
 	var written struct {
 		Hidden struct {
-			NudityFrom *float64 `json:"nudityFrom"`
+			NudityFrom *float64     `json:"nudityFrom"`
+			Audio      *AudioHiding `json:"audio"`
 		} `json:"hidden"`
 	}
-	if json.Unmarshal(data, &written) == nil && written.Hidden.NudityFrom == nil {
-		file.Hidden.NudityFrom = DefaultNudityFrom
+	if json.Unmarshal(data, &written) == nil {
+		if written.Hidden.NudityFrom == nil {
+			file.Hidden.NudityFrom = DefaultNudityFrom
+		}
+		// Written before sound recordings came in: hidden, as they are until the user shows them.
+		if written.Hidden.Audio == nil {
+			file.Hidden.Audio = DefaultAudio
+		}
 	}
 	return file.Hidden.normalized(), nil
 }
@@ -285,13 +343,38 @@ func (s *Store) Collections() (whatsapp, withoutApp Collection, apps []Collectio
 	return whatsapp, withoutApp, apps
 }
 
+// AudioCollections is the three audio collections, with how many files each has (hidden or not).
+func (s *Store) AudioCollections() (recordings, calls, voiceMessages Collection) {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	a := s.hidden.Audio
+	recordings = Collection{Name: AudioRecordings, Hidden: a.Recordings}
+	calls = Collection{Name: AudioCalls, Hidden: a.Calls}
+	voiceMessages = Collection{Name: AudioVoiceMessages, Hidden: a.VoiceMessages}
+	for _, item := range s.items {
+		switch AudioCollectionOf(item.Sidecar.Facts) {
+		case AudioRecordings:
+			recordings.Files++
+		case AudioCalls:
+			calls.Files++
+		case AudioVoiceMessages:
+			voiceMessages.Files++
+		}
+	}
+	return recordings, calls, voiceMessages
+}
+
 // NudityCounts is how many files the nudity scan scored at from or more, and how many it hasn't scanned yet (they
-// can't be hidden for nudity until it has).
+// can't be hidden for nudity until it has). Sound recordings are never scanned and not counted.
 func (s *Store) NudityCounts(from float64) (files, notScanned int) {
 	s.CatchUp()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, item := range s.items {
+		if item.Sidecar.Facts.Kind == KindAudio {
+			continue
+		}
 		switch d := item.Sidecar.Detected; {
 		case d == nil || d.Nudity == nil:
 			notScanned++

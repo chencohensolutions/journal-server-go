@@ -159,7 +159,7 @@ func OriginalHandler(lookup StoreLookup) http.Handler {
 
 // PreviewHandler serves GET /media/{sha256}/preview?w=&h=&fit=&crop=&fmt=&q=: a photo scaled down once
 // from the original to exactly the pixels the client will draw (see PreviewSpec); for a video, its
-// poster frame (see poster.go).
+// poster frame (see poster.go). A sound recording has none: 404.
 func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		store, ok := storeOf(w, r, lookup)
@@ -180,6 +180,9 @@ func PreviewHandler(lookup StoreLookup, previews *Previews) http.Handler {
 		path, release, err := previews.Get(r.Context(), store, item, spec)
 		defer release()
 		switch {
+		case errors.Is(err, ErrNoPicture):
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
 		case errors.Is(err, ErrPreviewsUnavailable), errors.Is(err, ErrPostersUnavailable):
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return

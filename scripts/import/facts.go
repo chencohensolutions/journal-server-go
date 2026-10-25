@@ -26,6 +26,8 @@ type facts struct {
 	height     *int
 	durationMs *int64
 	location   *media.GeoPoint
+	call       *media.Call // a recorded phone call
+	failed     string      // why the file can't be imported (a sound recording ffprobe can't read)
 	note       string            // the name's and the metadata's dates disagree
 	exif       map[string]string // a photo's fields as vipsheader names them, shown by --review
 }
@@ -33,9 +35,12 @@ type facts struct {
 func (im *importer) readFacts(ctx context.Context, path string) facts {
 	t := mediaTypes[strings.ToLower(filepath.Ext(path))]
 	f := facts{kind: t.kind, mime: t.mime}
-	if t.kind == media.KindVideo {
+	switch t.kind {
+	case media.KindVideo:
 		im.videoFacts(ctx, path, &f)
-	} else {
+	case media.KindAudio:
+		im.audioFacts(ctx, path, &f)
+	default:
 		im.photoFacts(ctx, path, &f)
 	}
 	return f

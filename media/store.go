@@ -142,8 +142,8 @@ func (s *Store) Open(item Item) (*os.File, error) {
 // Usage is what the originals take up: how many photos and videos, and their bytes. Sidecars, uploads in progress
 // and previews are left out; they are small, or rebuilt.
 type Usage struct {
-	Photos, Videos         int
-	PhotoBytes, VideoBytes int64
+	Photos, Videos, Audio              int
+	PhotoBytes, VideoBytes, AudioBytes int64
 }
 
 // Usage counts the originals the view shows (View{} for all of them).
@@ -157,10 +157,14 @@ func (s *Store) Usage(v View) Usage {
 			continue
 		}
 		facts := item.Sidecar.Facts
-		if facts.Kind == KindVideo {
+		switch facts.Kind {
+		case KindVideo:
 			u.Videos++
 			u.VideoBytes += facts.Size
-		} else {
+		case KindAudio:
+			u.Audio++
+			u.AudioBytes += facts.Size
+		default:
 			u.Photos++
 			u.PhotoBytes += facts.Size
 		}

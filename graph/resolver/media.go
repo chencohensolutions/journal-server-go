@@ -116,6 +116,7 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		MimeType:   facts.MimeType,
 		Size:       facts.Size,
 		TakenAt:    facts.TakenAt,
+		EndedAt:    facts.EndedAt(),
 		Width:      facts.Width,
 		Height:     facts.Height,
 		DurationMs: facts.DurationMs,
@@ -130,8 +131,14 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		Private:    item.Sidecar.IsPrivate(),
 		URL:        "/media/" + item.Sha256(),
 	}
-	if facts.Kind == media.KindVideo {
+	switch facts.Kind {
+	case media.KindVideo:
 		m.Kind = model.MediaKindVideo
+	case media.KindAudio:
+		m.Kind = model.MediaKindAudio
+	}
+	if c := facts.Call; c != nil {
+		m.Call = &model.Call{Contact: c.Contact, Number: c.Number}
 	}
 	if facts.Location != nil {
 		m.Location = &model.GeoPoint{Lat: facts.Location.Lat, Lon: facts.Location.Lon}

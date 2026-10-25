@@ -84,7 +84,8 @@ func main() {
 	check(err)
 
 	todo := nudity.ToScan(store, *rescan, func(item media.Item) bool {
-		return item.Sidecar.Facts.Kind == media.KindVideo && !withVideos
+		kind := item.Sidecar.Facts.Kind
+		return kind == media.KindAudio || kind == media.KindVideo && !withVideos
 	})
 	files := 0
 	store.Range(func(media.Item) { files++ })

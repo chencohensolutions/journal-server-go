@@ -95,7 +95,8 @@ a RAW (it names the JPEG). A file named like a screenshot (`Screenshot_20240301_
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
-there once the user marked the file private (see [Private files](#private-files)).
+there once the user marked the file private (see [Private files](#private-files)). `kind` is `photo`, `video` or
+`audio`; a sound recording may have `call` and `encodedFrom` (see [Sound recordings](#sound-recordings)).
 
 ## Uploading a file
 
@@ -144,7 +145,7 @@ PUT … the last piece                          ───▶   checks the sha256
 
 `GET /media/{sha256}` returns the original with its MIME type, `ETag: "<sha256>"`, and
 `Cache-Control: private, max-age=31536000, immutable`, since the content of a sha256 never changes.
-It supports `Range`, which is how videos stream and seek; videos are never converted.
+It supports `Range`, which is how videos and sound recordings stream and seek; neither is ever converted.
 
 ## Verifying before a device deletes its copy
 
@@ -224,8 +225,8 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
 `query media(sha256)` returns the facts, plus `versions` (edits of this photo) and `paired` (files
 that name it in `pairedWith`).
 
-`query storageUsage` returns how many photos and videos the user has and the bytes their originals take
-(`photoBytes`, `videoBytes`, `bytes`), counted from the index, so it answers at once. Sidecars, uploads in
+`query storageUsage` returns how many photos, videos and sound recordings (`audio`) the user has and the bytes
+their originals take (`photoBytes`, `videoBytes`, `audioBytes`, `bytes`), counted from the index, so it answers at once. Sidecars, uploads in
 progress and previews aren't counted. The app shows it in Settings → Backup.
 
 All of these need a client certificate, like everything except enrollment
@@ -327,20 +328,23 @@ lost device in any case (see [authentication.md](authentication.md)).
 
 The user can hide whole groups of files on every device, without deleting them (Settings → Private media → Hidden
 collections in the apps): all of WhatsApp, the screenshots of chosen apps (by `facts.app`, compared ignoring case),
-screenshots whose name says no app, and the files the [nudity scan](#nudity-scan) scored at a chosen score or more.
+screenshots whose name says no app, the files the [nudity scan](#nudity-scan) scored at a chosen score or more,
+and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the user shows it.
 `query hiddenCollections` lists them with how many files each has, hidden or not, apps with most files first (a
 hidden app with no files left is listed too, so it can be shown again), and for nudity how many files score that
 much and how many aren't scanned yet. `mutation setHiddenCollections(input:)` replaces the whole choice (its
-`nudity` may be left out to keep it) and answers the same list. The choice is the user's, not a device's, and is
+`nudity` and `audio` may be left out to keep them) and answers the same list. The choice is the user's, not a device's, and is
 kept at the data folder's root, so it moves with the data:
 
 ```json
 // settings.json
-{ "format": 1, "hidden": { "sources": ["whatsapp"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5 } }
+{ "format": 1, "hidden": { "sources": ["whatsapp"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5,
+             "audio": { "recordings": true, "calls": false, "voiceMessages": true } } }
 ```
 
 `nudityFrom` is the score from which files are hidden, `0` for none. A data folder without settings.json, or one
-written before the server hid nudity (no `nudityFrom`), hides from 0.5, as the apps used to do themselves.
+written before the server hid nudity (no `nudityFrom`), hides from 0.5, as the apps used to do themselves. Likewise
+without `audio` every sound recording is hidden.
 
 - **The server does the hiding**, as for a device kept from private files: a hidden file comes in the change feed as
   `deleted` and `hidden` (also in a feed from the start, for the phone's own copy; see below), `media(sha256:)` is `null`, `/media/{sha256}` and
@@ -355,6 +359,39 @@ written before the server hid nudity (no `nudityFrom`), hides from 0.5, as the a
 - `missingMedia`, `startUpload`, uploads and `/verify` still see hidden files, so a phone never uploads one again
   and can still free its own copy. The server can't reach the phone's own copies in its gallery: `hidden` tells the
   app to leave out its copy with that sha256 too (once backup has read it).
+
+## Sound recordings
+
+Recordings of events, recorded phone calls and WhatsApp voice messages are files of `kind` `audio` (GraphQL
+`AUDIO`), brought in by [the import](#importing-files-already-on-the-servers-disk). They sit in the month folder of
+when they started, like any file. Each is in one of three [hidden collections](#hidden-collections), all hidden on
+every device until the user shows them (`media.AudioCollectionOf`):
+
+- **calls**: a sidecar with `call`, who the call was with, as the recorder named the file. Samsung names a call
+  after the contact or, without one, the number, so usually only one is known:
+
+  ```json
+  "call": { "contact": "אבא" }      // or { "number": "0501234567" }, or {} (Memento's Audio/Calls)
+  ```
+
+  `mutation setCall(sha256:, call: {contact, number})` corrects it (both are replaced; empty is none), and makes
+  a recording set so a call. It sets `correctedAt`, so the file comes again in the change feed. `call` is the
+  device's to show, never a model's.
+- **voiceMessages**: `source` `whatsapp` (`PTT-20250208-WA0004.opus`, `AUD-…`).
+- **recordings**: any other.
+
+`takenAt` is when it started and `durationMs` its length; GraphQL's `Media.endedAt` is the two added up, so an app
+can show where a recording starts and ends and the photos taken in between. A WAV is kept as FLAC (the same sound in
+about half the bytes); its sidecar's `encodedFrom` names the WAV, which isn't kept:
+
+```json
+"encodedFrom": { "sha256": "4be1…09", "mimeType": "audio/wav", "size": 51732524 }
+```
+
+so importing that WAV again finds the FLAC (`Store.EncodedFrom`). A sound recording has no picture:
+`/media/{sha256}/preview` answers 404, and no index reads it (nudity, faces, text search, OCR, similar photos and
+aesthetic scores all list the kinds they read). It plays from `/media/{sha256}` with `Range`, as a video does.
+`serverInfo.audio` says the server knows sound recordings.
 
 ## Search
 
@@ -385,8 +422,8 @@ file copied elsewhere before it was imported lost it; they now look at the name 
 
 ## Importing files already on the server's disk
 
-`scripts/import` copies photos and videos from folders on the server's disk (old phone backups) into a user's
-data folder, once each. **The server may keep running**: phones keep backing up, and imported files reach them at
+`scripts/import` copies photos, videos and sound recordings from folders on the server's disk (old phone backups)
+into a user's data folder, once each. **The server may keep running**: phones keep backing up, and imported files reach them at
 once (see "Several processes on one data folder"). Run from the server folder; try `--dry-run` first (it only
 counts):
 
@@ -395,8 +432,10 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
 ```
 
 - Each folder given is searched at any depth, except hidden folders (`.thumbnails`), `$RECYCLE.BIN`,
-  `System Volume Information`, the data folder and the imported folder. Hidden files (Android's `.trashed-…`)
-  and files that aren't photos or videos are counted, not touched.
+  `System Volume Information`, the data folder and the imported folder. Hidden files (Android's `.trashed-…`,
+  Samsung's `.evr_recently_deleted_…`) and files that aren't photos, videos or sound recordings are counted, not
+  touched. The sound formats are those found so far, more to be added as they turn up: `.m4a`, `.aac`, `.flac`,
+  `.ogg`, `.opus` and `.wav`.
 - Each file is hashed; one whose sha256 the data folder already has (an earlier run, a device, or another copy
   found in this run) is a **duplicate** and isn't copied. A new file is copied to `.cache/import/`, hashed again,
   and placed like an upload (month folder, safe name, sidecar), with `source` from its folder like the Android
@@ -431,6 +470,18 @@ the name, as uploads do.
   `com.apple.quicktime.creationdate`, or ffprobe's `creation_time` (UTC), from which the offset is worked out against
   the name's local time. A time without an offset is in the server machine's time zone. Name and metadata more
   than a day apart are listed in `dates.tsv`. Files with no date stay where they are.
+- **Sound recordings** (`audio.go`) are dated by their name: `recording-20220925-195923.flac` (what follows a `~` is
+  not when it ended), `20250207 152917 12.aac`, `2020-04-10 00.02.41.ogg`, `PTT-20250208-WA0004.opus` (noon), and
+  Samsung's calls, `Call recording <contact or number>_250206_142813.m4a` (also `הקלטת שיחה …` and `שיחה …`), which
+  give `call` too. Android writes a recording's `creation_time` when it stops, so the start is that less the length;
+  when it shows the name's local time, it gives the offset (Samsung also writes `com.samsung.android.utc_offset`).
+  Without a date in the name, that start is used; without either, the file goes to `no date`. One ffprobe can't
+  read (Samsung's newer `שיחה …` calls copied before they were finished have no `moov`) goes to `failed`. The MIME
+  type is the format ffprobe finds, as some recorders write MP4 into `.aac` files. A file in a folder
+  named `Call` or `Calls` with no contact in its name is a call with no one named. **A WAV is encoded as FLAC**
+  with ffmpeg (metadata kept), in `.encoding` inside the run's not-imported folder, and the FLAC is imported; the WAV
+  is then moved to the imported folder like any original. The summary counts recordings, calls and voice messages,
+  and the WAVs kept as FLAC. Sound recordings have no dHash.
 - Width and height (upright), length, and GPS location (EXIF, or a video's ISO 6709 `location` tag) are read too.
 - **Folders are kept as clues.** The data folder stays arranged by date (`media/YYYY/YYYY-MM/`); the folder each
   file was found in, from the searched folder down (`phone DCIM/Flowers`, `phone DCIM/2026-06/2025`), goes in the
@@ -524,7 +575,8 @@ stream takes as long as it takes. Instead: headers must arrive within 10 s; Grap
 
 `query serverInfo { api version search previews posters nudityScan }` says what works on this server, so an app
 shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed),
-`nudityScan` (new files are scanned for nudity, so hiding nudity works), the
+`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the
+library), the
 server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
 (1 today). An app asks once when it connects, rather than learning from errors.
 

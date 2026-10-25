@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/journal/server-go/media"
 )
 
 // What becomes of each file (moved to the imported or not-imported folder, or left), progress and the reports.
@@ -117,6 +119,17 @@ func (im *importer) summarize() {
 		verb = "Would import"
 	}
 	fmt.Printf("\n%s %d files (%s)\n", verb, c.imported, gb(c.importedBytes))
+	if a := c.audio; len(a) > 0 {
+		fmt.Printf("Of them sound recordings, hidden on devices until shown: %d recordings, %d calls (%d with no one named), %d voice messages\n",
+			a[media.AudioRecordings], a[media.AudioCalls], a[callsWithoutName], a[media.AudioVoiceMessages])
+	}
+	if c.encoded > 0 {
+		encoded := "WAVs kept as FLAC"
+		if im.dryRun {
+			encoded = "WAVs that would be kept as FLAC"
+		}
+		fmt.Printf("%s: %d\n", encoded, c.encoded)
+	}
 	fmt.Printf("Duplicates (same sha256 as a file in the data folder or found before): %d (%s)\n", c.duplicates, gb(c.duplicateBytes))
 	shots, same, waiting := im.nearCounts()
 	fmt.Printf("Look-alikes (dHash within %d bits) found to be other shots, imported: %d\n", im.nearDistance, shots)
