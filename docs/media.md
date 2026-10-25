@@ -402,7 +402,8 @@ aesthetic scores all list the kinds they read). It plays from `/media/{sha256}` 
 **Uploaded** (Oct 25, 2026): a phone uploads sound recordings like photos, with `kind: AUDIO` and two optional
 fields of `StartUploadInput`:
 - `call: {contact, number}`, for a file from a folder of calls; `{}` is a call with no one named.
-- `encodedFrom: {sha256, mimeType, size}`, for a FLAC the phone made from a WAV.
+- `encodedFrom: {sha256, mimeType, size}`, for a FLAC the phone made from a WAV. When that FLAC is stored already
+  without it, `startUpload` answers `MediaExists` and records the WAV on it, so the WAV is found from then on.
 
 Before placing the file (outside the turn, as it is slow), the server reads it with ffprobe (`media.ProbeAudio`,
 shared with the import in `media/audionames.go`):
