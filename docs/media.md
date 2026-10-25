@@ -462,6 +462,9 @@ the name, as uploads do.
   `not-imported.tsv` lists each with its reason, where it was found and where it is now. Only files that can't
   be moved stay where they are (`left-where-they-are.tsv`). Running again continues where it stopped (also after
   Ctrl+C); neither folder is ever searched.
+- **Folders left empty are deleted** at the end of a run (not a dry run): every folder in the searched folders with
+  nothing left in it, deepest first. A folder with anything in it (a hidden file too) stays, and so do hidden folders,
+  the folders never searched and the searched folders themselves. The summary says how many.
 - **Several imports may run at once**, next to the server (different source folders, a cloud import, `--review`);
   each claims its own run folder (`…-2` when two start in the same second), and the review list is changed by one
   at a time. See "Several processes on one data folder".

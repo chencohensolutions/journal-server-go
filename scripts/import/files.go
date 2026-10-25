@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,37 @@ func pathInside(roots []string, path string) string {
 		return filepath.Join(name, rel)
 	}
 	return filepath.Base(path)
+}
+
+// removeEmptyFolders deletes the folders the run left empty in the searched folders (every file in them moved or
+// deleted), deepest first, so a folder holding only empty folders goes too. The searched folders themselves stay, and
+// so do the folders the import never searches (hidden ones, $RECYCLE.BIN, the data, imported and not-imported
+// folders). A folder with anything in it, a hidden file too, is never touched: Windows and Unix both refuse to remove
+// a folder that isn't empty. Not in a dry run.
+func (im *importer) removeEmptyFolders() {
+	if im.dryRun {
+		return
+	}
+	for _, root := range im.roots {
+		var folders []string
+		filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if entry == nil || !entry.IsDir() || path == root {
+				return nil
+			}
+			name := entry.Name()
+			if err != nil || strings.HasPrefix(name, ".") || skippedFolders[strings.ToLower(name)] || im.excluded(path) {
+				return filepath.SkipDir
+			}
+			folders = append(folders, path)
+			return nil
+		})
+		// Walked parents first, so backwards each folder's own folders go before it.
+		for i := len(folders) - 1; i >= 0; i-- {
+			if os.Remove(folders[i]) == nil {
+				im.counts.emptyFolders++
+			}
+		}
+	}
 }
 
 // move is moveFile, noting where the file went in the table of sha256s (sourceHashes.moved).

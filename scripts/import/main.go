@@ -150,6 +150,7 @@ type counts struct {
 	imported, duplicates, same, noDate, failed, hidden int
 	importedBytes, duplicateBytes                int64
 	deleted                                      int   // duplicates deleted (--delete-duplicates)
+	emptyFolders                                 int   // folders left empty in the searched folders, deleted
 	deletedBytes                                 int64
 	audio                                        map[string]int // sound recordings imported, by media.AudioCollectionOf
 	encoded                                      int            // WAVs kept as FLAC
@@ -326,6 +327,7 @@ func main() {
 	if im.moveOther && ctx.Err() == nil {
 		im.moveOthers()
 	}
+	im.removeEmptyFolders()
 	im.summarize()
 	im.addToReview()
 }

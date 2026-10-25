@@ -204,6 +204,9 @@ func (im *importer) summarize() {
 	fmt.Printf("The same picture as one in the journal, not imported (%s, %s): %d\n", moved, notImportedSame, same)
 	fmt.Printf("Near-duplicates for you to decide, larger copies or not sure (%s, %s): %d\n", moved, notImportedNear, waiting)
 	fmt.Printf("Not imported, %s: %d without a date, %d failed\n", moved, c.noDate, c.failed)
+	if c.emptyFolders > 0 {
+		fmt.Printf("Folders left empty in the searched folders, deleted: %d\n", c.emptyFolders)
+	}
 	if len(im.leftBehind) > 0 {
 		fmt.Printf("Left where they are (they couldn't be moved): %d\n", len(im.leftBehind))
 	}
