@@ -30,7 +30,8 @@ const (
 // it deletes its own copy. Nothing is remembered between calls. An error means the file could not be
 // read (or ctx ended), not that it is wrong.
 func (s *Store) Verify(ctx context.Context, sha string) (Verdict, error) {
-	item, ok := s.Get(sha)
+	// A WAV kept as FLAC is verified by its FLAC.
+	item, ok := s.Find(sha)
 	if !ok {
 		return VerifyMissing, nil
 	}
@@ -53,7 +54,7 @@ func (s *Store) Verify(ctx context.Context, sha string) (Verdict, error) {
 	if err != nil {
 		return "", err
 	}
-	if n != item.Sidecar.Facts.Size || hex.EncodeToString(h.Sum(nil)) != sha {
+	if n != item.Sidecar.Facts.Size || hex.EncodeToString(h.Sum(nil)) != item.Sha256() {
 		log.Printf("media: verify %s: THE ORIGINAL IS DAMAGED: its bytes don't have its sha256 (%d bytes, the sidecar says %d)",
 			item.Path, n, item.Sidecar.Facts.Size)
 		return VerifyMismatch, nil

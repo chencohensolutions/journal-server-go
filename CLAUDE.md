@@ -109,7 +109,8 @@ upload, `feed.go` the change feed (ordered by when a sidecar last changed; the o
 the device's `View`, so a view change sends only the files whose visibility changed, an unreadable cursor restarts
 the feed, and notes and stories can join later), `library.go` the per-user map, `sidecar.go` the
 sidecar format and the only code that rewrites one (`rewriteSidecar`; a rewrite clients must see sets a time that
-`Sidecar.ChangedAt` counts). `source.go` tells a file's source from its path and name. HTTP handlers for
+`Sidecar.ChangedAt` counts). `source.go` tells a file's source from its path and name; `audionames.go` reads sound recordings (dates, calls,
+ffprobe, WAV to FLAC) for the import and uploads alike. HTTP handlers for
 upload/original/preview/verify are in `http.go` and `verify.go`. Previews: `previewspec.go` parses and plans a
 request, `preview.go` makes previews with libvips (NumCPU/2 at once), inside the server through `vipslib*.go`
 (purego, fixed-argument calls only: an operation built by name and its properties; `vips.exe` as the fallback for

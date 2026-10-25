@@ -95,6 +95,19 @@ type DuplicateGroup struct {
 	Score float64 `json:"score"`
 }
 
+// The file a sound recording was encoded from, which isn't kept: a WAV kept as FLAC.
+type EncodedFrom struct {
+	Sha256   string `json:"sha256"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+}
+
+type EncodedFromInput struct {
+	Sha256   string `json:"sha256"`
+	MimeType string `json:"mimeType"`
+	Size     int64  `json:"size"`
+}
+
 type EnrollDeviceInput struct {
 	// As shown by `journal-server enroll-code`; case, dashes and spaces are ignored.
 	Code string `json:"code"`
@@ -298,6 +311,8 @@ type Media struct {
 	Private bool `json:"private"`
 	// Who a recorded phone call was with; null for anything but a call.
 	Call *Call `json:"call,omitempty"`
+	// The WAV this FLAC was made from (on a device, by the server or by the import); asking for its sha256 finds this file.
+	EncodedFrom *EncodedFrom `json:"encodedFrom,omitempty"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
 	// How good the photo looks, about 1 to 10, as people rated photos the model learned from: around 4 to 5 is an
@@ -437,6 +452,8 @@ type ServerInfo struct {
 	Aesthetic bool `json:"aesthetic"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
+	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
+	EncodesWav bool `json:"encodesWav"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
@@ -466,6 +483,12 @@ type StartUploadInput struct {
 	VersionOf *string `json:"versionOf,omitempty"`
 	// Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first.
 	PairedWith *string `json:"pairedWith,omitempty"`
+	// A sound recording that is a phone call (from a folder of calls), with who it was with when the device knows; an
+	// empty one is a call with no one named. The server also reads it from the file name (Samsung's call recorder).
+	Call *CallInput `json:"call,omitempty"`
+	// The WAV this FLAC was made from on the device. A WAV is never kept: it is answered as its FLAC (missingMedia,
+	// startUpload, media, verify), so neither is sent again. A WAV uploaded as it is, the server keeps as FLAC.
+	EncodedFrom *EncodedFromInput `json:"encodedFrom,omitempty"`
 }
 
 // What the user's originals take up on the server (sidecars and previews not counted).

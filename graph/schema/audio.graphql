@@ -1,12 +1,14 @@
 # --- Sound recordings ---------------------------------------------------------
 # Recordings of events, recorded phone calls and WhatsApp voice messages (Media.kind AUDIO), imported by
-# scripts/import. They have no preview (/media/{sha256}/preview answers 404); the original plays from /media with
+# scripts/import or uploaded by devices (their length, format, start and caller are read from the file by the server). They have no preview (/media/{sha256}/preview answers 404); the original plays from /media with
 # Range. All three are hidden on every device until the user shows them (hiddenCollections.recordings, calls,
 # voiceMessages). A recording's start is takenAt and its end endedAt.
 
 extend type ServerInfo {
   "Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall)."
   audio: Boolean!
+  "The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503."
+  encodesWav: Boolean!
 }
 
 """

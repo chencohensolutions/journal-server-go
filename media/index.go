@@ -198,7 +198,7 @@ func (s *Store) scan() error {
 			log.Printf("media: %s is a second copy of %s; skipped", f.path, existing.Path)
 			continue
 		}
-		s.items[f.sidecar.Sha256] = &Item{Path: f.path, Sidecar: f.sidecar}
+		s.indexItem(&Item{Path: f.path, Sidecar: f.sidecar})
 	}
 	return nil
 }

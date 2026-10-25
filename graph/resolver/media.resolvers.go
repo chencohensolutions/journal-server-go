@@ -46,6 +46,12 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 		PairedWith: input.PairedWith,
 		UploadedBy: auth.DeviceNameFromContext(ctx),
 	}
+	if c := input.Call; c != nil {
+		request.Call = &media.Call{Contact: blankToNil(c.Contact), Number: blankToNil(c.Number)}
+	}
+	if e := input.EncodedFrom; e != nil {
+		request.EncodedFrom = &media.EncodedFrom{Sha256: e.Sha256, MimeType: e.MimeType, Size: e.Size}
+	}
 	if input.Location != nil {
 		request.Location = &media.GeoPoint{Lat: input.Location.Lat, Lon: input.Location.Lon}
 	}
@@ -116,7 +122,8 @@ func (r *queryResolver) Media(ctx context.Context, sha256 string) (*model.Media,
 	if err != nil {
 		return nil, err
 	}
-	item, ok := v.store.Get(sha256)
+	// A WAV kept as FLAC answers as its FLAC.
+	item, ok := v.store.Find(sha256)
 	if !ok || v.hides(item) {
 		return nil, nil
 	}

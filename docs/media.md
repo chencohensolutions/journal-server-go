@@ -363,7 +363,8 @@ without `audio` every sound recording is hidden.
 ## Sound recordings
 
 Recordings of events, recorded phone calls and WhatsApp voice messages are files of `kind` `audio` (GraphQL
-`AUDIO`), brought in by [the import](#importing-files-already-on-the-servers-disk). They sit in the month folder of
+`AUDIO`), brought in by [the import](#importing-files-already-on-the-servers-disk) or uploaded by a phone backing up
+folders the user picked (see "Uploaded" below). They sit in the month folder of
 when they started, like any file. Each is in one of three [hidden collections](#hidden-collections), all hidden on
 every device until the user shows them (`media.AudioCollectionOf`):
 
@@ -388,10 +389,31 @@ about half the bytes); its sidecar's `encodedFrom` names the WAV, which isn't ke
 "encodedFrom": { "sha256": "4be1…09", "mimeType": "audio/wav", "size": 51732524 }
 ```
 
-so importing that WAV again finds the FLAC (`Store.EncodedFrom`). A sound recording has no picture:
+**A WAV is never kept**: wherever it comes from (the import, a phone that encoded it, or an upload of the WAV itself,
+which the server encodes with ffmpeg), there is only the FLAC, with both sha256s. Everything a device asks by sha256
+answers a WAV's as its FLAC (`Store.Find`, with an index of `encodedFrom`): `missingMedia` doesn't list it,
+`startUpload` answers `MediaExists`, `media(sha256:)` is the FLAC, and `/verify` re-hashes the FLAC against its own
+sha256. So neither the WAV nor the FLAC is sent again, and a phone freeing space can verify whichever it holds.
+Importing that WAV again finds the FLAC too (`Store.EncodedFrom`). A sound recording has no picture:
 `/media/{sha256}/preview` answers 404, and no index reads it (nudity, faces, text search, OCR, similar photos and
 aesthetic scores all list the kinds they read). It plays from `/media/{sha256}` with `Range`, as a video does.
 `serverInfo.audio` says the server knows sound recordings.
+
+**Uploaded** (Oct 25, 2026): a phone uploads sound recordings like photos, with `kind: AUDIO` and two optional
+fields of `StartUploadInput`:
+- `call: {contact, number}`, for a file from a folder of calls; `{}` is a call with no one named.
+- `encodedFrom: {sha256, mimeType, size}`, for a FLAC the phone made from a WAV.
+
+Before placing the file (outside the turn, as it is slow), the server reads it with ffprobe (`media.ProbeAudio`,
+shared with the import in `media/audionames.go`):
+- its length and the format inside;
+- when it started, from the name or ffprobe's creation time less the length, with names read in the zone of the
+  phone's `takenAt`;
+- who a call was with, from Samsung's names.
+
+`AUD-`/`PTT-` names get `source` `whatsapp`. When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
+is encoded to FLAC first (`Store.keepAsFLAC`). Without ffmpeg its last piece answers 503 and the upload is kept for a
+later try; `serverInfo.encodesWav` says whether it can.
 
 ## Search
 

@@ -190,6 +190,6 @@ func (s *Store) Reload(path string) error {
 	if existing, ok := s.items[sidecar.Sha256]; ok && existing.Path != path {
 		return nil // a second copy; the first stays, as when the store is opened
 	}
-	s.items[sidecar.Sha256] = &Item{Path: path, Sidecar: sidecar}
+	s.indexItem(&Item{Path: path, Sidecar: sidecar})
 	return nil
 }

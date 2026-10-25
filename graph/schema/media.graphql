@@ -2,6 +2,13 @@
 # Originals in the user's data folder, identified by the sha256 of their content.
 # The bytes travel over plain HTTP (PUT /upload/{sha256}, GET /media/{sha256}); see docs/media.md.
 
+"The file a sound recording was encoded from, which isn't kept: a WAV kept as FLAC."
+type EncodedFrom {
+  sha256: Sha256!
+  mimeType: String!
+  size: Int64!
+}
+
 "64 lowercase hex characters: the sha256 of a file's content."
 scalar Sha256
 scalar Int64
@@ -65,6 +72,8 @@ type Media {
   private: Boolean!
   "Who a recorded phone call was with; null for anything but a call."
   call: Call
+  "The WAV this FLAC was made from (on a device, by the server or by the import); asking for its sha256 finds this file."
+  encodedFrom: EncodedFrom
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -105,6 +114,22 @@ input StartUploadInput {
   versionOf: Sha256
   "Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first."
   pairedWith: Sha256
+  """
+  A sound recording that is a phone call (from a folder of calls), with who it was with when the device knows; an
+  empty one is a call with no one named. The server also reads it from the file name (Samsung's call recorder).
+  """
+  call: CallInput
+  """
+  The WAV this FLAC was made from on the device. A WAV is never kept: it is answered as its FLAC (missingMedia,
+  startUpload, media, verify), so neither is sent again. A WAV uploaded as it is, the server keeps as FLAC.
+  """
+  encodedFrom: EncodedFromInput
+}
+
+input EncodedFromInput {
+  sha256: Sha256!
+  mimeType: String!
+  size: Int64!
 }
 
 union StartUploadResult = UploadReady | MediaExists | UploadRejected

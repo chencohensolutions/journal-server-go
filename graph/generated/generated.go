@@ -77,6 +77,12 @@ type ComplexityRoot struct {
 		Score func(childComplexity int) int
 	}
 
+	EncodedFrom struct {
+		MimeType func(childComplexity int) int
+		Sha256   func(childComplexity int) int
+		Size     func(childComplexity int) int
+	}
+
 	EnrolledDevice struct {
 		Certificate func(childComplexity int) int
 		DeviceName  func(childComplexity int) int
@@ -162,32 +168,33 @@ type ComplexityRoot struct {
 	}
 
 	Media struct {
-		Aesthetic  func(childComplexity int) int
-		App        func(childComplexity int) int
-		Call       func(childComplexity int) int
-		DurationMs func(childComplexity int) int
-		EndedAt    func(childComplexity int) int
-		Faces      func(childComplexity int) int
-		FileName   func(childComplexity int) int
-		Height     func(childComplexity int) int
-		Kind       func(childComplexity int) int
-		Location   func(childComplexity int) int
-		MimeType   func(childComplexity int) int
-		Nudity     func(childComplexity int) int
-		Paired     func(childComplexity int) int
-		PairedWith func(childComplexity int) int
-		Private    func(childComplexity int) int
-		Sha256     func(childComplexity int) int
-		Size       func(childComplexity int) int
-		Source     func(childComplexity int) int
-		TakenAt    func(childComplexity int) int
-		Text       func(childComplexity int) int
-		URL        func(childComplexity int) int
-		UploadedAt func(childComplexity int) int
-		UploadedBy func(childComplexity int) int
-		VersionOf  func(childComplexity int) int
-		Versions   func(childComplexity int) int
-		Width      func(childComplexity int) int
+		Aesthetic   func(childComplexity int) int
+		App         func(childComplexity int) int
+		Call        func(childComplexity int) int
+		DurationMs  func(childComplexity int) int
+		EncodedFrom func(childComplexity int) int
+		EndedAt     func(childComplexity int) int
+		Faces       func(childComplexity int) int
+		FileName    func(childComplexity int) int
+		Height      func(childComplexity int) int
+		Kind        func(childComplexity int) int
+		Location    func(childComplexity int) int
+		MimeType    func(childComplexity int) int
+		Nudity      func(childComplexity int) int
+		Paired      func(childComplexity int) int
+		PairedWith  func(childComplexity int) int
+		Private     func(childComplexity int) int
+		Sha256      func(childComplexity int) int
+		Size        func(childComplexity int) int
+		Source      func(childComplexity int) int
+		TakenAt     func(childComplexity int) int
+		Text        func(childComplexity int) int
+		URL         func(childComplexity int) int
+		UploadedAt  func(childComplexity int) int
+		UploadedBy  func(childComplexity int) int
+		VersionOf   func(childComplexity int) int
+		Versions    func(childComplexity int) int
+		Width       func(childComplexity int) int
 	}
 
 	MediaExists struct {
@@ -282,6 +289,7 @@ type ComplexityRoot struct {
 		API          func(childComplexity int) int
 		Aesthetic    func(childComplexity int) int
 		Audio        func(childComplexity int) int
+		EncodesWav   func(childComplexity int) int
 		Faces        func(childComplexity int) int
 		Indexing     func(childComplexity int) int
 		LocalIndexes func(childComplexity int) int
@@ -505,6 +513,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.DuplicateGroup.Score(childComplexity), true
+
+	case "EncodedFrom.mimeType":
+		if e.ComplexityRoot.EncodedFrom.MimeType == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EncodedFrom.MimeType(childComplexity), true
+	case "EncodedFrom.sha256":
+		if e.ComplexityRoot.EncodedFrom.Sha256 == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EncodedFrom.Sha256(childComplexity), true
+	case "EncodedFrom.size":
+		if e.ComplexityRoot.EncodedFrom.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EncodedFrom.Size(childComplexity), true
 
 	case "EnrolledDevice.certificate":
 		if e.ComplexityRoot.EnrolledDevice.Certificate == nil {
@@ -847,6 +874,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.DurationMs(childComplexity), true
+	case "Media.encodedFrom":
+		if e.ComplexityRoot.Media.EncodedFrom == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.EncodedFrom(childComplexity), true
 	case "Media.endedAt":
 		if e.ComplexityRoot.Media.EndedAt == nil {
 			break
@@ -1462,6 +1495,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Audio(childComplexity), true
+	case "ServerInfo.encodesWav":
+		if e.ComplexityRoot.ServerInfo.EncodesWav == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.EncodesWav(childComplexity), true
 	case "ServerInfo.faces":
 		if e.ComplexityRoot.ServerInfo.Faces == nil {
 			break
@@ -1640,6 +1679,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputAudioHidingInput,
 		ec.unmarshalInputCallInput,
+		ec.unmarshalInputEncodedFromInput,
 		ec.unmarshalInputEnrollDeviceInput,
 		ec.unmarshalInputGeoAreaInput,
 		ec.unmarshalInputGeoPointInput,
@@ -1734,13 +1774,15 @@ extend type Media {
 `, BuiltIn: false},
 	{Name: "../schema/audio.graphql", Input: `# --- Sound recordings ---------------------------------------------------------
 # Recordings of events, recorded phone calls and WhatsApp voice messages (Media.kind AUDIO), imported by
-# scripts/import. They have no preview (/media/{sha256}/preview answers 404); the original plays from /media with
+# scripts/import or uploaded by devices (their length, format, start and caller are read from the file by the server). They have no preview (/media/{sha256}/preview answers 404); the original plays from /media with
 # Range. All three are hidden on every device until the user shows them (hiddenCollections.recordings, calls,
 # voiceMessages). A recording's start is takenAt and its end endedAt.
 
 extend type ServerInfo {
   "Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall)."
   audio: Boolean!
+  "The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503."
+  encodesWav: Boolean!
 }
 
 """
@@ -1982,6 +2024,13 @@ type ModelFile {
 # Originals in the user's data folder, identified by the sha256 of their content.
 # The bytes travel over plain HTTP (PUT /upload/{sha256}, GET /media/{sha256}); see docs/media.md.
 
+"The file a sound recording was encoded from, which isn't kept: a WAV kept as FLAC."
+type EncodedFrom {
+  sha256: Sha256!
+  mimeType: String!
+  size: Int64!
+}
+
 "64 lowercase hex characters: the sha256 of a file's content."
 scalar Sha256
 scalar Int64
@@ -2045,6 +2094,8 @@ type Media {
   private: Boolean!
   "Who a recorded phone call was with; null for anything but a call."
   call: Call
+  "The WAV this FLAC was made from (on a device, by the server or by the import); asking for its sha256 finds this file."
+  encodedFrom: EncodedFrom
   "The original: /media/{sha256}, with Range support."
   url: String!
 }
@@ -2085,6 +2136,22 @@ input StartUploadInput {
   versionOf: Sha256
   "Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first."
   pairedWith: Sha256
+  """
+  A sound recording that is a phone call (from a folder of calls), with who it was with when the device knows; an
+  empty one is a call with no one named. The server also reads it from the file name (Samsung's call recorder).
+  """
+  call: CallInput
+  """
+  The WAV this FLAC was made from on the device. A WAV is never kept: it is answered as its FLAC (missingMedia,
+  startUpload, media, verify), so neither is sent again. A WAV uploaded as it is, the server keeps as FLAC.
+  """
+  encodedFrom: EncodedFromInput
+}
+
+input EncodedFromInput {
+  sha256: Sha256!
+  mimeType: String!
+  size: Int64!
 }
 
 union StartUploadResult = UploadReady | MediaExists | UploadRejected
@@ -2625,6 +2692,18 @@ func (ec *executionContext) childFields_DuplicateGroup(ctx context.Context, fiel
 	return nil, fmt.Errorf("no field named %q was found under type DuplicateGroup", field.Name)
 }
 
+func (ec *executionContext) childFields_EncodedFrom(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "sha256":
+		return ec.fieldContext_EncodedFrom_sha256(ctx, field)
+	case "mimeType":
+		return ec.fieldContext_EncodedFrom_mimeType(ctx, field)
+	case "size":
+		return ec.fieldContext_EncodedFrom_size(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type EncodedFrom", field.Name)
+}
+
 func (ec *executionContext) childFields_Face(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "id":
@@ -2805,6 +2884,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_private(ctx, field)
 	case "call":
 		return ec.fieldContext_Media_call(ctx, field)
+	case "encodedFrom":
+		return ec.fieldContext_Media_encodedFrom(ctx, field)
 	case "url":
 		return ec.fieldContext_Media_url(ctx, field)
 	case "aesthetic":
@@ -2929,6 +3010,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
 	case "audio":
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
+	case "encodesWav":
+		return ec.fieldContext_ServerInfo_encodesWav(ctx, field)
 	case "indexing":
 		return ec.fieldContext_ServerInfo_indexing(ctx, field)
 	case "localIndexes":
@@ -4144,6 +4227,75 @@ func (ec *executionContext) _DuplicateGroup_score(ctx context.Context, field gra
 }
 func (ec *executionContext) fieldContext_DuplicateGroup_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("DuplicateGroup", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _EncodedFrom_sha256(ctx context.Context, field graphql.CollectedField, obj *model.EncodedFrom) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EncodedFrom_sha256(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Sha256, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNSha2562string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EncodedFrom_sha256(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EncodedFrom", field, false, false, errors.New("field of type Sha256 does not have child fields"))
+}
+
+func (ec *executionContext) _EncodedFrom_mimeType(ctx context.Context, field graphql.CollectedField, obj *model.EncodedFrom) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EncodedFrom_mimeType(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MimeType, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EncodedFrom_mimeType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EncodedFrom", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EncodedFrom_size(ctx context.Context, field graphql.CollectedField, obj *model.EncodedFrom) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EncodedFrom_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_EncodedFrom_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EncodedFrom", field, false, false, errors.New("field of type Int64 does not have child fields"))
 }
 
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
@@ -5955,6 +6107,38 @@ func (ec *executionContext) fieldContext_Media_call(_ context.Context, field gra
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_Call(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Media_encodedFrom(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_encodedFrom(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EncodedFrom, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.EncodedFrom) graphql.Marshaler {
+			return ec.marshalOEncodedFrom2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEncodedFrom(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_encodedFrom(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_EncodedFrom(ctx, field)
 		},
 	}
 	return fc, nil
@@ -8308,6 +8492,29 @@ func (ec *executionContext) fieldContext_ServerInfo_audio(_ context.Context, fie
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_encodesWav(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_encodesWav(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EncodesWav, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_encodesWav(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_indexing(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -9903,6 +10110,50 @@ func (ec *executionContext) unmarshalInputCallInput(ctx context.Context, obj any
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputEncodedFromInput(ctx context.Context, obj any) (model.EncodedFromInput, error) {
+	var it model.EncodedFromInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"sha256", "mimeType", "size"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "sha256":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sha256"))
+			data, err := ec.unmarshalNSha2562string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Sha256 = data
+		case "mimeType":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("mimeType"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MimeType = data
+		case "size":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("size"))
+			data, err := ec.unmarshalNInt642int64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Size = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context, obj any) (model.EnrollDeviceInput, error) {
 	var it model.EnrollDeviceInput
 	if obj == nil {
@@ -10148,7 +10399,7 @@ func (ec *executionContext) unmarshalInputStartUploadInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"sha256", "size", "fileName", "mimeType", "kind", "takenAt", "width", "height", "durationMs", "location", "source", "versionOf", "pairedWith"}
+	fieldsInOrder := [...]string{"sha256", "size", "fileName", "mimeType", "kind", "takenAt", "width", "height", "durationMs", "location", "source", "versionOf", "pairedWith", "call", "encodedFrom"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -10246,6 +10497,20 @@ func (ec *executionContext) unmarshalInputStartUploadInput(ctx context.Context, 
 				return it, err
 			}
 			it.PairedWith = data
+		case "call":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("call"))
+			data, err := ec.unmarshalOCallInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCallInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Call = data
+		case "encodedFrom":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("encodedFrom"))
+			data, err := ec.unmarshalOEncodedFromInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEncodedFromInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.EncodedFrom = data
 		}
 	}
 	return it, nil
@@ -10670,6 +10935,55 @@ func (ec *executionContext) _DuplicateGroup(ctx context.Context, sel ast.Selecti
 			}
 		case "score":
 			out.Values[i] = ec._DuplicateGroup_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var encodedFromImplementors = []string{"EncodedFrom"}
+
+func (ec *executionContext) _EncodedFrom(ctx context.Context, sel ast.SelectionSet, obj *model.EncodedFrom) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, encodedFromImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("EncodedFrom")
+		case "sha256":
+			out.Values[i] = ec._EncodedFrom_sha256(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "mimeType":
+			out.Values[i] = ec._EncodedFrom_mimeType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._EncodedFrom_size(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -11389,6 +11703,8 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			}
 		case "call":
 			out.Values[i] = ec._Media_call(ctx, field, obj)
+		case "encodedFrom":
+			out.Values[i] = ec._Media_encodedFrom(ctx, field, obj)
 		case "url":
 			out.Values[i] = ec._Media_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -12513,6 +12829,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "audio":
 			out.Values[i] = ec._ServerInfo_audio(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "encodesWav":
+			out.Values[i] = ec._ServerInfo_encodesWav(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -14137,6 +14458,29 @@ func (ec *executionContext) marshalOCall2ᚖgithubᚗcomᚋjournalᚋserverᚑgo
 		return graphql.Null
 	}
 	return ec._Call(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOCallInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCallInput(ctx context.Context, v any) (*model.CallInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputCallInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOEncodedFrom2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEncodedFrom(ctx context.Context, sel ast.SelectionSet, v *model.EncodedFrom) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._EncodedFrom(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOEncodedFromInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEncodedFromInput(ctx context.Context, v any) (*model.EncodedFromInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputEncodedFromInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOFloat2ᚖfloat64(ctx context.Context, v any) (*float64, error) {

@@ -39,9 +39,12 @@ func openLibrary(config auth.AppConfig) (*media.Library, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Uploaded sound recordings are read with ffprobe, and an uploaded WAV is kept as FLAC with ffmpeg.
+	ffmpeg, ffprobe, _ := media.FindFFmpeg(config.FFmpeg)
 	for _, user := range config.Users {
 		if store := library.Store(user.Username); store != nil {
 			store.CachePreviews = user.PreviewCache
+			store.FFmpeg, store.FFprobe = ffmpeg, ffprobe
 		}
 	}
 	return library, nil

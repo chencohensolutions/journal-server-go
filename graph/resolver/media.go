@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"strings"
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/graph/model"
@@ -140,6 +141,9 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 	if c := facts.Call; c != nil {
 		m.Call = &model.Call{Contact: c.Contact, Number: c.Number}
 	}
+	if e := facts.EncodedFrom; e != nil {
+		m.EncodedFrom = &model.EncodedFrom{Sha256: e.Sha256, MimeType: e.MimeType, Size: e.Size}
+	}
 	if facts.Location != nil {
 		m.Location = &model.GeoPoint{Lat: facts.Location.Lat, Lon: facts.Location.Lon}
 	}
@@ -148,4 +152,13 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		m.Nudity = &score
 	}
 	return m
+}
+
+// blankToNil is nil for a missing or blank name.
+func blankToNil(s *string) *string {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	return &t
 }

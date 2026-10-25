@@ -93,6 +93,10 @@ func UploadHandler(lookup StoreLookup) http.Handler {
 		case errors.Is(err, ErrHashMismatch):
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
+		case errors.Is(err, ErrNoEncoder):
+			// A WAV the server can't keep as FLAC: it keeps the upload, and the device tries again later.
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
 		case errors.Is(err, ErrIncompleteChunk):
 			w.Header().Set("Upload-Offset", strconv.FormatInt(result.Offset, 10))
 			http.Error(w, err.Error(), http.StatusBadRequest)

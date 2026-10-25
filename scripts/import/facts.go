@@ -26,8 +26,8 @@ type facts struct {
 	height     *int
 	durationMs *int64
 	location   *media.GeoPoint
-	call       *media.Call // a recorded phone call
-	failed     string      // why the file can't be imported (a sound recording ffprobe can't read)
+	call       *media.Call       // a recorded phone call
+	failed     string            // why the file can't be imported (a sound recording ffprobe can't read)
 	note       string            // the name's and the metadata's dates disagree
 	exif       map[string]string // a photo's fields as vipsheader names them, shown by --review
 }
@@ -115,10 +115,8 @@ func nameFirst(named, metadata *time.Time, slack time.Duration) (*time.Time, str
 	return named, ""
 }
 
-// wallClock is t's local date and time, as if it were UTC, to compare times written in different zones.
-func wallClock(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
-}
+// wallClock is media.WallClock.
+func wallClock(t time.Time) time.Time { return media.WallClock(t) }
 
 // videoFacts reads the video's size, length and date with ffprobe. Phones write the date in UTC
 // (creation_time) and the local time in the file name, so the two together give the offset; Apple's
@@ -202,26 +200,10 @@ func (im *importer) videoFacts(ctx context.Context, path string, f *facts) {
 	}
 }
 
-// withOffsetFromName returns the video's UTC creation time in the time zone it was filmed in: this
-// machine's when the local time in its name matches (the name is when filming started, the creation
-// time may be when it stopped), else the offset between the two, to the quarter hour. When they are
-// too far apart for any time zone, the camera's clock was off and the name is used.
+// withOffsetFromName is media.WithOffsetFromName in this machine's time zone: a video's UTC creation time in the
+// zone it was filmed in.
 func withOffsetFromName(created, named time.Time, durationMs *int64) *time.Time {
-	var length time.Duration
-	if durationMs != nil {
-		length = time.Duration(*durationMs) * time.Millisecond
-	}
-	if gap := created.Sub(named); gap >= -2*time.Minute && gap <= length+2*time.Minute {
-		local := created.In(time.Local)
-		return &local
-	}
-	wall := time.Date(named.Year(), named.Month(), named.Day(), named.Hour(), named.Minute(), named.Second(), 0, time.UTC)
-	offset := wall.Sub(created).Round(15 * time.Minute)
-	if offset < -12*time.Hour || offset > 14*time.Hour {
-		return &named
-	}
-	t := created.In(time.FixedZone("", int(offset.Seconds())))
-	return &t
+	return media.WithOffsetFromName(created, named, durationMs, time.Local)
 }
 
 // exifTime parses an EXIF date ("2019:05:12 14:30:22") with its offset ("+03:00"), or in this machine's
@@ -243,35 +225,14 @@ func exifTime(value, offset string) *time.Time {
 	return &t
 }
 
-// Dates in file names: 20190512_143022, IMG_20190512_143022123, VID-20190512-WA0001 (no time),
-// 2019-05-12 14.30.22.
-var (
-	dateTimeInName = regexp.MustCompile(`(?:^|\D)((?:19|20)\d\d)[-_.]?(\d\d)[-_.]?(\d\d)[ _\-T.]?(\d\d)[-_.:]?(\d\d)[-_.:]?(\d\d)`)
-	dateInName     = regexp.MustCompile(`(?:^|\D)((?:19|20)\d\d)-?(\d\d)-?(\d\d)(?:\D|$)`)
-)
+// dateTimeInName finds a date and time in a file name (media.DateTimeInName).
+var dateTimeInName = media.DateTimeInName
 
-// timeInName reads a date in the file name, in this machine's time zone. A date without a time is taken
-// as noon, so it stays on its day.
-func timeInName(name string) *time.Time {
-	if m := dateTimeInName.FindStringSubmatch(name); m != nil {
-		t, err := time.ParseInLocation("2006 01 02 15 04 05", strings.Join(m[1:], " "), time.Local)
-		if err == nil && plausible(t) {
-			return &t
-		}
-	}
-	if m := dateInName.FindStringSubmatch(name); m != nil {
-		t, err := time.ParseInLocation("2006 01 02 15", strings.Join(m[1:], " ")+" 12", time.Local)
-		if err == nil && plausible(t) {
-			return &t
-		}
-	}
-	return nil
-}
+// timeInName reads a date in the file name, in this machine's time zone (media.TimeInName).
+func timeInName(name string) *time.Time { return media.TimeInName(name, time.Local) }
 
-// plausible rules out empty dates (QuickTime's 1904, Unix's 1970) and dates in the future.
-func plausible(t time.Time) bool {
-	return t.Year() >= 1990 && t.Before(time.Now().Add(48*time.Hour))
-}
+// plausible rules out empty dates and dates in the future (media.Plausible).
+func plausible(t time.Time) bool { return media.Plausible(t) }
 
 // gpsDegrees parses EXIF's degrees, minutes and seconds ("32/1 50/1 49947000/1000000"), negative when
 // ref is negativeRef ("S" or "W").

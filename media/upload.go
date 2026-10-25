@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,7 +41,8 @@ type UploadRequest struct {
 	VersionOf  *string    `json:"versionOf"`
 	PairedWith *string    `json:"pairedWith"`
 	UploadedBy string     `json:"uploadedBy"`
-	// Set only by Import.
+	// Set by Import, and by devices for a sound recording (Call: an empty one is a call with no one named; EncodedFrom:
+	// the WAV a FLAC was made from on the device).
 	ImportedFrom *string      `json:"importedFrom,omitempty"`
 	Folders      []string     `json:"folders,omitempty"`
 	Call         *Call        `json:"call,omitempty"`
@@ -135,8 +137,14 @@ func (s *Store) StartUpload(req UploadRequest) (StartResult, error) {
 	defer unlock()
 
 	s.CatchUp()
-	if item, ok := s.Get(req.Sha256); ok {
+	// A WAV kept as FLAC is there already.
+	if item, ok := s.Find(req.Sha256); ok {
 		return StartResult{Existing: &item}, nil
+	}
+	if req.EncodedFrom != nil {
+		if item, ok := s.Find(req.EncodedFrom.Sha256); ok {
+			return StartResult{Existing: &item}, nil
+		}
 	}
 	if req.VersionOf != nil {
 		if _, ok := s.Get(*req.VersionOf); !ok {
@@ -196,8 +204,8 @@ func (s *Store) loadSession(sha string) (uploadSession, error) {
 func (s *Store) Offset(sha string) (offset int64, complete bool, err error) {
 	unlock := s.uploadLocks.Lock(sha)
 	defer unlock()
-	if item, ok := s.Get(sha); ok {
-		return item.Sidecar.Facts.Size, true, nil
+	if item, ok := s.Find(sha); ok {
+		return s.uploadedSize(sha, item), true, nil
 	}
 	if _, err := s.loadSession(sha); err != nil {
 		return 0, false, ErrNoUpload
@@ -217,8 +225,8 @@ func (s *Store) WriteChunk(sha string, start, total int64, body io.Reader, lengt
 	unlock := s.uploadLocks.Lock(sha)
 	defer unlock()
 
-	if item, ok := s.Get(sha); ok {
-		return ChunkResult{Offset: item.Sidecar.Facts.Size, Item: &item}, nil
+	if item, ok := s.Find(sha); ok {
+		return ChunkResult{Offset: s.uploadedSize(sha, item), Item: &item}, nil
 	}
 	session, err := s.loadSession(sha)
 	if err != nil {
@@ -273,7 +281,16 @@ func (s *Store) WriteChunk(sha string, start, total int64, body io.Reader, lengt
 	return ChunkResult{Offset: total, Item: item}, nil
 }
 
-// finish checks the received file, moves it to its month folder and writes its sidecar.
+// uploadedSize is the size a device uploading sha sent: the WAV's for a WAV kept as FLAC.
+func (s *Store) uploadedSize(sha string, item Item) int64 {
+	if e := item.Sidecar.Facts.EncodedFrom; e != nil && e.Sha256 == sha && item.Sidecar.Sha256 != sha {
+		return e.Size
+	}
+	return item.Sidecar.Facts.Size
+}
+
+// finish checks the received file, moves it to its month folder and writes its sidecar. A sound recording first gets
+// what its file says (soundFacts), and a WAV is kept as FLAC (keepAsFLAC); both run before the turn, as they are slow.
 func (s *Store) finish(req UploadRequest) (*Item, error) {
 	partialPath := s.partialPath(req.Sha256)
 	sum, err := HashFile(partialPath)
@@ -285,16 +302,33 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 		os.Remove(s.sessionPath(req.Sha256))
 		return nil, ErrHashMismatch
 	}
+	from := partialPath
+	if req.Kind == KindAudio && IsWAV(req.FileName, req.MimeType) {
+		flac, flacReq, err := s.keepAsFLAC(partialPath, req)
+		if err != nil {
+			return nil, err
+		}
+		defer os.Remove(flac)
+		os.Remove(partialPath)
+		from, req = flac, flacReq
+	}
+	if req.Kind == KindAudio {
+		req = s.soundFacts(from, req)
+	}
 	var item *Item
 	err = s.Turn(func() error {
-		// An import running meanwhile may have placed the same file.
+		// An import running meanwhile may have placed the same file; or the FLAC of this WAV is there already, and
+		// learns the WAV's sha256.
 		if existing, ok := s.Get(req.Sha256); ok {
-			os.Remove(partialPath)
+			os.Remove(from)
+			if req.EncodedFrom != nil && existing.Sidecar.Facts.EncodedFrom == nil {
+				return s.addEncodedFrom(req.Sha256, *req.EncodedFrom, &item)
+			}
 			item = &existing
 			return nil
 		}
 		var err error
-		item, err = s.place(partialPath, req)
+		item, err = s.place(from, req)
 		return err
 	})
 	if err != nil {
@@ -358,7 +392,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 		return nil, err
 	}
 	item := &Item{Path: dirRel + "/" + name, Sidecar: sidecar}
-	s.items[req.Sha256] = item
+	s.indexItem(item)
 	s.wrote(item)
 	copied := *item
 	return &copied, nil
@@ -391,5 +425,92 @@ func (s *Store) PurgeExpiredUploads() error {
 			os.Remove(s.sessionPath(sha))
 		}()
 	}
+	return nil
+}
+
+// keepAsFLAC encodes an uploaded WAV as FLAC (ffmpeg) beside it, and returns the FLAC and the request for it: its own
+// sha256 and size, named .flac, with EncodedFrom naming the WAV, which isn't kept.
+func (s *Store) keepAsFLAC(wav string, req UploadRequest) (string, UploadRequest, error) {
+	if s.FFmpeg == "" {
+		return "", req, ErrNoEncoder
+	}
+	work, err := os.MkdirTemp(s.uploadsDir(), req.Sha256+".flac-")
+	if err != nil {
+		return "", req, err
+	}
+	// The FLAC is moved out of work before it is used.
+	defer os.RemoveAll(work)
+	encoded, err := EncodeFLAC(context.Background(), s.FFmpeg, work, wav)
+	if err != nil {
+		return "", req, err
+	}
+	flac := filepath.Join(s.uploadsDir(), req.Sha256+".flac")
+	if err := rename(encoded, flac); err != nil {
+		return "", req, err
+	}
+	sum, err := HashFile(flac)
+	if err != nil {
+		os.Remove(flac)
+		return "", req, err
+	}
+	info, err := os.Stat(flac)
+	if err != nil {
+		os.Remove(flac)
+		return "", req, err
+	}
+	mime := req.MimeType
+	if mime == "" || !strings.HasPrefix(strings.ToLower(mime), "audio/") {
+		mime = "audio/wav"
+	}
+	out := req
+	out.EncodedFrom = &EncodedFrom{Sha256: req.Sha256, MimeType: mime, Size: req.Size}
+	out.Sha256, out.Size, out.MimeType = sum, info.Size(), "audio/flac"
+	out.FileName = strings.TrimSuffix(req.FileName, filepath.Ext(req.FileName)) + ".flac"
+	return flac, out, nil
+}
+
+// soundFacts fills an uploaded sound recording's facts from its file (ProbeAudio): its length and format, when it
+// started (the name's local time, or ffprobe's creation time less the length), and who a call was with from its
+// name. What ffprobe can't read keeps the device's facts; a device's call keeps its names over the file name's.
+func (s *Store) soundFacts(path string, req UploadRequest) UploadRequest {
+	a := ProbeAudio(context.Background(), s.FFprobe, path, req.FileName, "", req.TakenAt)
+	if a.DurationMs != nil {
+		req.DurationMs = a.DurationMs
+	}
+	if a.MimeType != "" {
+		req.MimeType = a.MimeType
+	}
+	if a.TakenAt != nil {
+		req.TakenAt = a.TakenAt
+	}
+	if a.Call != nil {
+		if req.Call == nil {
+			req.Call = a.Call
+		} else if req.Call.Contact == nil && req.Call.Number == nil {
+			req.Call = a.Call
+		}
+	}
+	if req.Source == nil && IsWhatsAppName(req.FileName) {
+		source := SourceWhatsApp
+		req.Source = &source
+	}
+	return req
+}
+
+// addEncodedFrom records on a stored FLAC the WAV it was made from, during a turn; item is set to it.
+func (s *Store) addEncodedFrom(sha string, from EncodedFrom, item **Item) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found, ok := s.items[sha]
+	if !ok {
+		return fmt.Errorf("%s isn't in the data folder", sha)
+	}
+	sidecar := found.Sidecar
+	sidecar.Facts.EncodedFrom = &from
+	if err := s.rewriteSidecar(found, sidecar); err != nil {
+		return err
+	}
+	copied := *found
+	*item = &copied
 	return nil
 }

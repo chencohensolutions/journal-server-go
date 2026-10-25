@@ -170,6 +170,7 @@ func (s *Store) rewriteSidecar(item *Item, sidecar Sidecar) error {
 		return err
 	}
 	item.Sidecar = sidecar
+	s.indexItem(item)
 	s.wrote(item)
 	return nil
 }
@@ -308,8 +309,8 @@ func (s *Store) EncodedFrom(sha string) (Item, bool) {
 	s.CatchUp()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, item := range s.items {
-		if e := item.Sidecar.Facts.EncodedFrom; e != nil && e.Sha256 == sha {
+	if flac, ok := s.encoded[sha]; ok {
+		if item, ok := s.items[flac]; ok {
 			return *item, true
 		}
 	}

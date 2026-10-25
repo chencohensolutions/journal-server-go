@@ -20,9 +20,11 @@ type Store struct {
 	root string
 	now  func() time.Time
 
-	mu     sync.RWMutex
-	items  map[string]*Item // by sha256
-	hidden Hidden           // what the user hides on every device (hidden.go)
+	mu    sync.RWMutex
+	items map[string]*Item // by sha256
+	// The sha256 of each WAV kept as FLAC (Facts.EncodedFrom), to its FLAC's: a WAV is only ever answered as its FLAC.
+	encoded map[string]string
+	hidden  Hidden // what the user hides on every device (hidden.go)
 
 	// Held while a file's upload is started, written to or finished, so the same file arriving from
 	// two devices (or a retry racing the first try) is written once.
@@ -40,11 +42,15 @@ type Store struct {
 	// Keep previews (and developed DNGs) in .cache/previews; else each is made, sent and deleted.
 	// Set once, before the store serves requests (config.json "preview_cache").
 	CachePreviews bool
+
+	// The ffmpeg and ffprobe programs, when installed: an uploaded sound recording's facts are read with ffprobe, and
+	// an uploaded WAV is kept as FLAC with ffmpeg. Set once, before the store serves requests.
+	FFmpeg, FFprobe string
 }
 
 // OpenStore creates the folders it needs and indexes the sidecars already in root.
 func OpenStore(root string, now func() time.Time) (*Store, error) {
-	s := &Store{root: root, now: now, items: map[string]*Item{}}
+	s := &Store{root: root, now: now, items: map[string]*Item{}, encoded: map[string]string{}}
 	for _, dir := range []string{filepath.Join(root, "media"), s.uploadsDir()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
@@ -69,6 +75,38 @@ func (s *Store) Root() string { return s.root }
 
 func (s *Store) uploadsDir() string { return filepath.Join(s.root, ".cache", "uploads") }
 
+// indexItem puts item in the index, with the WAV it was encoded from. Callers hold s.mu.
+func (s *Store) indexItem(item *Item) {
+	s.items[item.Sidecar.Sha256] = item
+	if e := item.Sidecar.Facts.EncodedFrom; e != nil {
+		s.encoded[e.Sha256] = item.Sidecar.Sha256
+	}
+}
+
+// find is the original with sha256, or the FLAC a WAV with that sha256 was kept as. Callers hold s.mu.
+func (s *Store) find(sha256 string) (*Item, bool) {
+	if item, ok := s.items[sha256]; ok {
+		return item, true
+	}
+	if flac, ok := s.encoded[sha256]; ok {
+		item, ok := s.items[flac]
+		return item, ok
+	}
+	return nil, false
+}
+
+// Find is the original with sha256, or, for a WAV kept as FLAC (by an upload or the import), that FLAC: what a device
+// holding either one asks about. Get answers only an original's own sha256.
+func (s *Store) Find(sha256 string) (Item, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.find(sha256)
+	if !ok {
+		return Item{}, false
+	}
+	return *item, true
+}
+
 func (s *Store) Get(sha256 string) (Item, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -90,7 +128,8 @@ func (s *Store) Range(fn func(Item)) {
 	}
 }
 
-// Missing returns the hashes the store does not have, in the order given, without repeats.
+// Missing returns the hashes the store does not have, in the order given, without repeats. A WAV kept as FLAC isn't
+// missing.
 func (s *Store) Missing(hashes []string) []string {
 	s.CatchUp()
 	s.mu.RLock()
@@ -98,7 +137,7 @@ func (s *Store) Missing(hashes []string) []string {
 	missing := []string{}
 	seen := map[string]bool{}
 	for _, h := range hashes {
-		if _, ok := s.items[h]; !ok && !seen[h] {
+		if _, ok := s.find(h); !ok && !seen[h] {
 			missing = append(missing, h)
 		}
 		seen[h] = true
