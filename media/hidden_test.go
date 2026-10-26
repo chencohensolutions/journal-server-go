@@ -84,7 +84,7 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 
 	whatsapp, withoutApp, apps := f.store.Collections()
 	if whatsapp.Files != 0 || whatsapp.Hidden || withoutApp.Files != 0 || len(apps) != 2 ||
-		apps[0] != (Collection{"Bumble", 1, true}) || apps[1] != (Collection{"OkCupid", 0, true}) {
+		apps[0] != (Collection{"Bumble", 1, 0, true}) || apps[1] != (Collection{"OkCupid", 0, 0, true}) {
 		t.Fatalf("collections: %+v %+v %+v", whatsapp, withoutApp, apps)
 	}
 
@@ -105,6 +105,34 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 	items, _, _, _ = f.store.Changes(shownCursor, 10, view)
 	if len(items) != 2 || items[0].Sha256() != bumble.Sha256() || f.store.Hides(view, items[1]) {
 		t.Fatalf("shown again: %v", items)
+	}
+}
+
+// Each collection says how many of its files the import placed, so apps can tell them from what phones uploaded.
+func TestCollectionsCountWhatWasImported(t *testing.T) {
+	f := newFixture(t)
+	place := func(data []byte, name, by string) {
+		req := photoRequest(data, name)
+		req.UploadedBy = by
+		if IsWhatsAppName(name) {
+			req.Source = ptr(SourceWhatsApp)
+		}
+		f.start(req)
+		if result, err := f.chunk(data, 0, int64(len(data))); err != nil || result.Item == nil {
+			t.Fatal(result, err)
+		}
+	}
+	place([]byte("phone whatsapp"), "IMG-20240301-WA0001.jpg", "Galaxy S25")
+	place([]byte("imported whatsapp"), "IMG-20240302-WA0002.jpg", "import")
+	place([]byte("imported whatsapp 2"), "IMG-20240303-WA0003.jpg", "import")
+	place([]byte("phone bumble"), "Screenshot_20240301_030715_Bumble.jpg", "Galaxy S25")
+	place([]byte("imported bumble"), "Screenshot_20240302_101010_Bumble.jpg", "import")
+	place([]byte("imported screenshot"), "Screenshot_20240303_101010.jpg", "import")
+
+	whatsapp, withoutApp, apps := f.store.Collections()
+	if whatsapp != (Collection{"WhatsApp", 3, 2, false}) || withoutApp != (Collection{"", 1, 1, false}) ||
+		len(apps) != 1 || apps[0] != (Collection{"Bumble", 2, 1, false}) {
+		t.Fatalf("collections: %+v %+v %+v", whatsapp, withoutApp, apps)
 	}
 }
 

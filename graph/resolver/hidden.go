@@ -28,5 +28,5 @@ func hiddenCollections(store *media.Store) *model.HiddenCollections {
 }
 
 func toCollection(c media.Collection) *model.Collection {
-	return &model.Collection{Name: c.Name, Files: c.Files, Hidden: c.Hidden}
+	return &model.Collection{Name: c.Name, Files: c.Files, Imported: c.Imported, Hidden: c.Hidden}
 }

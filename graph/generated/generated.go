@@ -67,9 +67,10 @@ type ComplexityRoot struct {
 	}
 
 	Collection struct {
-		Files  func(childComplexity int) int
-		Hidden func(childComplexity int) int
-		Name   func(childComplexity int) int
+		Files    func(childComplexity int) int
+		Hidden   func(childComplexity int) int
+		Imported func(childComplexity int) int
+		Name     func(childComplexity int) int
 	}
 
 	DuplicateGroup struct {
@@ -494,6 +495,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Collection.Hidden(childComplexity), true
+	case "Collection.imported":
+		if e.ComplexityRoot.Collection.Imported == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Collection.Imported(childComplexity), true
 	case "Collection.name":
 		if e.ComplexityRoot.Collection.Name == nil {
 			break
@@ -1856,6 +1863,8 @@ type NudityHiding {
 type Collection {
   name: String!
   files: Int!
+  "Of files, how many the import placed (uploadedBy import); the rest came from devices."
+  imported: Int!
   hidden: Boolean!
 }
 
@@ -2676,6 +2685,8 @@ func (ec *executionContext) childFields_Collection(ctx context.Context, field gr
 		return ec.fieldContext_Collection_name(ctx, field)
 	case "files":
 		return ec.fieldContext_Collection_files(ctx, field)
+	case "imported":
+		return ec.fieldContext_Collection_imported(ctx, field)
 	case "hidden":
 		return ec.fieldContext_Collection_hidden(ctx, field)
 	}
@@ -4148,6 +4159,29 @@ func (ec *executionContext) _Collection_files(ctx context.Context, field graphql
 	)
 }
 func (ec *executionContext) fieldContext_Collection_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Collection", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Collection_imported(ctx context.Context, field graphql.CollectedField, obj *model.Collection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Collection_imported(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Imported, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Collection_imported(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Collection", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
@@ -10886,6 +10920,11 @@ func (ec *executionContext) _Collection(ctx context.Context, sel ast.SelectionSe
 			}
 		case "files":
 			out.Values[i] = ec._Collection_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "imported":
+			out.Values[i] = ec._Collection_imported(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

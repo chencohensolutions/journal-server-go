@@ -44,6 +44,8 @@ type NudityHiding {
 type Collection {
   name: String!
   files: Int!
+  "Of files, how many the import placed (uploadedBy import); the rest came from devices."
+  imported: Int!
   hidden: Boolean!
 }
 

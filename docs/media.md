@@ -330,7 +330,9 @@ The user can hide whole groups of files on every device, without deleting them (
 collections in the apps): all of WhatsApp, the screenshots of chosen apps (by `facts.app`, compared ignoring case),
 screenshots whose name says no app, the files the [nudity scan](#nudity-scan) scored at a chosen score or more,
 and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the user shows it.
-`query hiddenCollections` lists them with how many files each has, hidden or not, apps with most files first (a
+`query hiddenCollections` lists them with how many files each has, hidden or not, and how many of those the import
+placed (`imported`, files whose `uploadedBy` is `import`; the rest came from devices, so apps can say what is hidden of
+each), apps with most files first (a
 hidden app with no files left is listed too, so it can be shown again), and for nudity how many files score that
 much and how many aren't scanned yet. `mutation setHiddenCollections(input:)` replaces the whole choice (its
 `nudity` and `audio` may be left out to keep them) and answers the same list. The choice is the user's, not a device's, and is

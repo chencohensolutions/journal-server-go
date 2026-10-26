@@ -83,9 +83,11 @@ type ChangePage struct {
 
 // One group of files: how many it has, hidden or not, and whether it is hidden.
 type Collection struct {
-	Name   string `json:"name"`
-	Files  int    `json:"files"`
-	Hidden bool   `json:"hidden"`
+	Name  string `json:"name"`
+	Files int    `json:"files"`
+	// Of files, how many the import placed (uploadedBy import); the rest came from devices.
+	Imported int  `json:"imported"`
+	Hidden   bool `json:"hidden"`
 }
 
 type DuplicateGroup struct {

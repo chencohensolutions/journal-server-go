@@ -62,6 +62,11 @@ type Facts struct {
 	CorrectedAt *time.Time `json:"correctedAt,omitempty"`
 }
 
+// Imported reports whether scripts/import placed the file, rather than a device uploading it.
+func (f Facts) Imported() bool {
+	return f.UploadedBy == "import"
+}
+
 // Call is who a recorded phone call was with. Recorders name the file after the contact or, without one, the
 // number, so usually only one of the two is known.
 type Call struct {

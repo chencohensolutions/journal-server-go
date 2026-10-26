@@ -55,7 +55,8 @@ func TestAudioIsHiddenUntilShown(t *testing.T) {
 		t.Errorf("usage of everything: %+v", u)
 	}
 	recordings, calls, voiceMessages := f.store.AudioCollections()
-	if recordings != (Collection{AudioRecordings, 1, true}) || calls != (Collection{AudioCalls, 1, true}) || voiceMessages != (Collection{AudioVoiceMessages, 1, true}) {
+	// All three came from the import.
+	if recordings != (Collection{AudioRecordings, 1, 1, true}) || calls != (Collection{AudioCalls, 1, 1, true}) || voiceMessages != (Collection{AudioVoiceMessages, 1, 1, true}) {
 		t.Errorf("collections: %+v %+v %+v", recordings, calls, voiceMessages)
 	}
 	// Never scanned for nudity, so not waiting for it.

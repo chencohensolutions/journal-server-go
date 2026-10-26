@@ -282,11 +282,21 @@ func (s *Store) hides(v View, item Item) bool {
 	return false
 }
 
-// Collection is one group of files the user can hide: how many files it has and whether it is hidden.
+// Collection is one group of files the user can hide: how many files it has, how many of them scripts/import placed,
+// and whether it is hidden.
 type Collection struct {
-	Name   string
-	Files  int
-	Hidden bool
+	Name     string
+	Files    int
+	Imported int
+	Hidden   bool
+}
+
+// count adds a file to the collection.
+func (c *Collection) count(facts Facts) {
+	c.Files++
+	if facts.Imported() {
+		c.Imported++
+	}
 }
 
 // Collections is what the user can hide, with how many files each has (hidden or not): all of WhatsApp,
@@ -300,18 +310,22 @@ func (s *Store) Collections() (whatsapp, withoutApp Collection, apps []Collectio
 	whatsapp = Collection{Name: "WhatsApp", Hidden: h.Hides(Facts{Source: ptr(SourceWhatsApp)})}
 	withoutApp = Collection{Name: "", Hidden: h.ScreenshotsWithoutApp}
 	counts := map[string]int{}
+	imported := map[string]int{}
 	spellings := map[string]map[string]int{}
 	for _, item := range s.items {
 		facts := item.Sidecar.Facts
 		switch {
 		case facts.Source == nil:
 		case *facts.Source == SourceWhatsApp:
-			whatsapp.Files++
+			whatsapp.count(facts)
 		case *facts.Source == SourceScreenshots && facts.App == nil:
-			withoutApp.Files++
+			withoutApp.count(facts)
 		case *facts.Source == SourceScreenshots:
 			key := strings.ToLower(*facts.App)
 			counts[key]++
+			if facts.Imported() {
+				imported[key]++
+			}
 			if spellings[key] == nil {
 				spellings[key] = map[string]int{}
 			}
@@ -332,7 +346,7 @@ func (s *Store) Collections() (whatsapp, withoutApp Collection, apps []Collectio
 				name = spelling
 			}
 		}
-		apps = append(apps, Collection{Name: name, Files: n, Hidden: h.Hides(Facts{Source: ptr(SourceScreenshots), App: &name})})
+		apps = append(apps, Collection{Name: name, Files: n, Imported: imported[key], Hidden: h.Hides(Facts{Source: ptr(SourceScreenshots), App: &name})})
 	}
 	sort.Slice(apps, func(i, j int) bool {
 		if apps[i].Files != apps[j].Files {
@@ -353,13 +367,14 @@ func (s *Store) AudioCollections() (recordings, calls, voiceMessages Collection)
 	calls = Collection{Name: AudioCalls, Hidden: a.Calls}
 	voiceMessages = Collection{Name: AudioVoiceMessages, Hidden: a.VoiceMessages}
 	for _, item := range s.items {
-		switch AudioCollectionOf(item.Sidecar.Facts) {
+		facts := item.Sidecar.Facts
+		switch AudioCollectionOf(facts) {
 		case AudioRecordings:
-			recordings.Files++
+			recordings.count(facts)
 		case AudioCalls:
-			calls.Files++
+			calls.count(facts)
 		case AudioVoiceMessages:
-			voiceMessages.Files++
+			voiceMessages.count(facts)
 		}
 	}
 	return recordings, calls, voiceMessages

@@ -34,10 +34,10 @@ func TestHiddenCollectionsAreHiddenOnEveryDevice(t *testing.T) {
 		t.Fatalf("before hiding: %v", changes)
 	}
 
-	const collections = `{ whatsapp { name files hidden } screenshotsWithoutApp { files hidden } screenshotApps { name files hidden } }`
+	const collections = `{ whatsapp { name files hidden } screenshotsWithoutApp { files hidden } screenshotApps { name files imported hidden } }`
 	set := env.graphql(t, phone, `mutation($i: HiddenCollectionsInput!) { setHiddenCollections(input: $i) `+collections+` }`,
 		map[string]any{"i": map[string]any{"whatsapp": true, "screenshotsWithoutApp": false, "screenshotApps": []string{"bumble"}}})
-	want := `{"whatsapp":{"name":"WhatsApp","files":0,"hidden":true},"screenshotsWithoutApp":{"files":0,"hidden":false},"screenshotApps":[{"name":"Bumble","files":1,"hidden":true}]}`
+	want := `{"whatsapp":{"name":"WhatsApp","files":0,"hidden":true},"screenshotsWithoutApp":{"files":0,"hidden":false},"screenshotApps":[{"name":"Bumble","files":1,"imported":0,"hidden":true}]}`
 	if got := string(set.Data["setHiddenCollections"]); got != want {
 		t.Fatalf("setHiddenCollections = %s %+v", got, set.Errors)
 	}
