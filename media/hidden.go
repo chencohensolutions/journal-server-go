@@ -15,9 +15,10 @@ import (
 
 // Hidden is what the user hides on every device (Settings → Private media → Hidden collections in the apps): whole
 // sources (any app's folder kind: folder:whatsapp, folder:telegram; compared ignoring case, and an old "whatsapp"
-// read as folder:whatsapp), the screenshots of some apps, screenshots whose name says no app, what the nudity scan
-// scored high, and sound recordings. Hidden files stay in the data folder as they are; the server leaves them out of what devices see
-// (View). It is kept in settings.json at the data folder's root, so it moves with the data.
+// read as folder:whatsapp; received hides what was sent to the user, "Sent to you"), the screenshots of some apps,
+// screenshots whose name says no app, what the nudity scan scored high, and sound recordings. Hidden files stay in the
+// data folder as they are; the server leaves them out of what devices see (View). It is kept in settings.json at the
+// data folder's root, so it moves with the data.
 type Hidden struct {
 	Sources               []string `json:"sources,omitempty"`
 	ScreenshotApps        []string `json:"screenshotApps,omitempty"`
@@ -417,6 +418,21 @@ func (s *Store) AppCollections() []Collection {
 		return strings.ToLower(apps[i].Name) < strings.ToLower(apps[j].Name)
 	})
 	return apps
+}
+
+// SentToYouCollection is every file sent to the user (source received: photos from a camera that is not theirs,
+// and the like), with how many files it has (hidden or not). Hiding it puts received in Hidden.Sources.
+func (s *Store) SentToYouCollection() Collection {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c := Collection{Name: "Sent to you", Hidden: s.hidden.Hides(Facts{Source: ptr(SourceReceived)})}
+	for _, item := range s.items {
+		if facts := item.Sidecar.Facts; facts.Source != nil && SameSource(*facts.Source, SourceReceived) {
+			c.count(facts)
+		}
+	}
+	return c
 }
 
 // AudioCollections is the three audio collections, with how many files each has (hidden or not).

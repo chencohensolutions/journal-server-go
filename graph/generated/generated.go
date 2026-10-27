@@ -149,6 +149,7 @@ type ComplexityRoot struct {
 		Recordings            func(childComplexity int) int
 		ScreenshotApps        func(childComplexity int) int
 		ScreenshotsWithoutApp func(childComplexity int) int
+		SentToYou             func(childComplexity int) int
 		VoiceMessages         func(childComplexity int) int
 		Whatsapp              func(childComplexity int) int
 	}
@@ -816,6 +817,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.HiddenCollections.ScreenshotsWithoutApp(childComplexity), true
+	case "HiddenCollections.sentToYou":
+		if e.ComplexityRoot.HiddenCollections.SentToYou == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.SentToYou(childComplexity), true
 	case "HiddenCollections.voiceMessages":
 		if e.ComplexityRoot.HiddenCollections.VoiceMessages == nil {
 			break
@@ -2133,6 +2140,11 @@ type HiddenCollections {
   calls: Collection!
   "WhatsApp voice messages and audio (sound recordings with source folder:whatsapp). Hidden until the user shows them."
   voiceMessages: Collection!
+  """
+  Every file sent to the user (source received: photos from a camera they marked not theirs, see cameras). Its
+  name is "Sent to you".
+  """
+  sentToYou: Collection!
 }
 
 """
@@ -2172,6 +2184,8 @@ input HiddenCollectionsInput {
   screenshotApps: [String!]!
   "Hiding nudity; left out, it stays as it is."
   nudity: NudityHidingInput
+  "Hides the files sent to the user (sentToYou), or shows them; left out, it stays as it is."
+  sentToYou: Boolean
   "Hiding sound recordings; left out, it stays as it is."
   audio: AudioHidingInput
 }
@@ -3200,6 +3214,8 @@ func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, f
 		return ec.fieldContext_HiddenCollections_calls(ctx, field)
 	case "voiceMessages":
 		return ec.fieldContext_HiddenCollections_voiceMessages(ctx, field)
+	case "sentToYou":
+		return ec.fieldContext_HiddenCollections_sentToYou(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type HiddenCollections", field.Name)
 }
@@ -5823,6 +5839,38 @@ func (ec *executionContext) _HiddenCollections_voiceMessages(ctx context.Context
 	)
 }
 func (ec *executionContext) fieldContext_HiddenCollections_voiceMessages(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_sentToYou(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_sentToYou(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SentToYou, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_sentToYou(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "HiddenCollections",
 		Field:      field,
@@ -11576,7 +11624,7 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"apps", "whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity", "audio"}
+	fieldsInOrder := [...]string{"apps", "whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity", "sentToYou", "audio"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -11618,6 +11666,13 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 				return it, err
 			}
 			it.Nudity = data
+		case "sentToYou":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sentToYou"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SentToYou = data
 		case "audio":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("audio"))
 			data, err := ec.unmarshalOAudioHidingInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐAudioHidingInput(ctx, v)
@@ -12804,6 +12859,11 @@ func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.Sele
 			}
 		case "voiceMessages":
 			out.Values[i] = ec._HiddenCollections_voiceMessages(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sentToYou":
+			out.Values[i] = ec._HiddenCollections_sentToYou(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

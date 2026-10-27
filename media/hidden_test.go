@@ -355,3 +355,62 @@ func (s *Store) mustGet(t *testing.T, sha string) *Item {
 	}
 	return &item
 }
+
+// Sent to you (source received) can be hidden on every device like an app's folder: it is kept in hidden.sources,
+// counted in its own collection, and its files come in the feed as hidden.
+func TestHidingSentToYou(t *testing.T) {
+	f := newFixture(t)
+	if err := f.store.SetCamera("canon", "canon eos 80d", false); err != nil {
+		t.Fatal(err)
+	}
+	upload := func(data []byte, name string) Item {
+		req := photoRequest(data, name)
+		req.MimeType, req.Source = "image/x-adobe-dng", ptr(SourceCamera)
+		f.start(req)
+		result, err := f.chunk(data, 0, int64(len(data)))
+		if err != nil || result.Item == nil {
+			t.Fatal(result, err)
+		}
+		return *result.Item
+	}
+	sent := upload(cameraTIFF("Canon", "Canon EOS 80D"), "a.dng")
+	mine := upload(cameraTIFF("samsung", "SM-S931B"), "b.dng")
+	if *sent.Sidecar.Facts.Source != SourceReceived || *mine.Sidecar.Facts.Source != SourceCamera {
+		t.Fatalf("sources: %s %s", *sent.Sidecar.Facts.Source, *mine.Sidecar.Facts.Source)
+	}
+	if c := f.store.SentToYouCollection(); c != (Collection{"Sent to you", 1, 0, false}) {
+		t.Fatalf("before hiding: %+v", c)
+	}
+	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false))
+
+	f.now = f.now.Add(time.Hour)
+	if err := f.store.SetHidden(Hidden{Sources: []string{" Received "}}); err != nil {
+		t.Fatal(err)
+	}
+	if h := f.store.Hidden(); len(h.Sources) != 1 || h.Sources[0] != SourceReceived {
+		t.Fatalf("kept as: %+v", h.Sources)
+	}
+	view := f.store.ViewFor(false)
+	if !f.store.Hides(view, sent) || f.store.Hides(view, mine) {
+		t.Fatal("only what was sent is hidden")
+	}
+	if items, _, _, _ := f.store.Changes(cursor, 10, view); len(items) != 1 || items[0].Sha256() != sent.Sha256() || !f.store.Hides(view, items[0]) {
+		t.Fatalf("feed after hiding: %v", items)
+	}
+	if u := f.store.Usage(view); u.Photos != 1 {
+		t.Fatalf("usage: %+v", u)
+	}
+	if c := f.store.SentToYouCollection(); c != (Collection{"Sent to you", 1, 0, true}) {
+		t.Fatalf("after hiding: %+v", c)
+	}
+	// The apps' list of folders doesn't have it: it isn't a folder kind.
+	for _, app := range f.store.AppCollections() {
+		if app.Hidden {
+			t.Fatalf("apps: %+v", app)
+		}
+	}
+	f.reopen()
+	if c := f.store.SentToYouCollection(); !c.Hidden {
+		t.Fatal("not kept in settings.json")
+	}
+}

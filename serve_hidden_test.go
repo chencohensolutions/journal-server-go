@@ -150,3 +150,52 @@ func TestNudityIsHiddenOnEveryDevice(t *testing.T) {
 		t.Fatalf("from 0: %s", got)
 	}
 }
+
+// Sent to you (source received) is hidden and shown again by sentToYou; left out, it stays as it is.
+func TestSentToYouIsHiddenOnEveryDevice(t *testing.T) {
+	env := newTestEnv(t)
+	phone := env.enrolledClient(t)
+	if resp := env.graphql(t, phone, `mutation { setCamera(make: "canon", model: "canon eos 80d", mine: false) { make } }`, nil); len(resp.Errors) > 0 {
+		t.Fatalf("setCamera: %+v", resp.Errors)
+	}
+	sent := env.uploadPhotoWith(t, phone, cameraDNG("Canon", "Canon EOS 80D", 1), "IMG_0001.dng", map[string]any{"source": "camera"})
+	mine := env.uploadPhotoWith(t, phone, []byte("a beach"), "20251101_110819.jpg", nil)
+	media := func(sha string) string {
+		t.Helper()
+		return string(env.graphql(t, phone, `query($s: Sha256!) { media(sha256: $s) { source } }`, map[string]any{"s": sha}).Data["media"])
+	}
+	if got := media(sent); got != `{"source":"received"}` {
+		t.Fatalf("sent: %s", got)
+	}
+
+	const collections = `{ sentToYou { name files imported hidden } }`
+	set := func(input map[string]any) string {
+		t.Helper()
+		input["screenshotsWithoutApp"], input["screenshotApps"] = false, []string{}
+		resp := env.graphql(t, phone, `mutation($i: HiddenCollectionsInput!) { setHiddenCollections(input: $i) `+collections+` }`, map[string]any{"i": input})
+		if len(resp.Errors) > 0 {
+			t.Fatalf("setHiddenCollections: %+v", resp.Errors)
+		}
+		return string(resp.Data["setHiddenCollections"])
+	}
+	const hidden, shown = `{"sentToYou":{"name":"Sent to you","files":1,"imported":0,"hidden":true}}`, `{"sentToYou":{"name":"Sent to you","files":1,"imported":0,"hidden":false}}`
+	if got := string(env.graphql(t, phone, `{ hiddenCollections `+collections+` }`, nil).Data["hiddenCollections"]); got != shown {
+		t.Fatalf("hiddenCollections = %s", got)
+	}
+	if got := set(map[string]any{"sentToYou": true}); got != hidden {
+		t.Fatalf("hiding: %s", got)
+	}
+	if media(sent) != "null" || media(mine) == "null" {
+		t.Fatal("only what was sent is hidden")
+	}
+	// Left out, and beside apps: it stays hidden.
+	if got := set(map[string]any{"apps": []string{"Telegram"}}); got != hidden {
+		t.Fatalf("left out: %s", got)
+	}
+	if got := set(map[string]any{"sentToYou": false}); got != shown {
+		t.Fatalf("showing: %s", got)
+	}
+	if media(sent) == "null" {
+		t.Fatal("not shown again")
+	}
+}

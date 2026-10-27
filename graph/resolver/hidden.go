@@ -28,6 +28,7 @@ func hiddenCollections(store *media.Store) *model.HiddenCollections {
 	result.Nudity = nudity
 	recordings, calls, voiceMessages := store.AudioCollections()
 	result.Recordings, result.Calls, result.VoiceMessages = toCollection(recordings), toCollection(calls), toCollection(voiceMessages)
+	result.SentToYou = toCollection(store.SentToYouCollection())
 	for i, app := range apps {
 		result.ScreenshotApps[i] = toCollection(app)
 	}
@@ -40,8 +41,9 @@ func toCollection(c media.Collection) *model.Collection {
 
 // hiddenSources is the sources setHiddenCollections hides: the folder kinds apps names (or, left out, those hidden
 // now), with WhatsApp added or taken out when whatsapp says (an app from before apps sends only whatsapp), and the
-// other sources hidden now kept.
-func hiddenSources(current, apps []string, whatsapp *bool) []string {
+// other sources hidden now kept; received (Sent to you) is added or taken out when sentToYou says, and kept as it is
+// when left out.
+func hiddenSources(current, apps []string, whatsapp, sentToYou *bool) []string {
 	var sources []string
 	for _, s := range current {
 		if apps == nil || media.FolderName(s) == "" {
@@ -67,6 +69,18 @@ func hiddenSources(current, apps []string, whatsapp *bool) []string {
 		sources = kept
 		if *whatsapp {
 			sources = append(sources, media.SourceWhatsApp)
+		}
+	}
+	if sentToYou != nil {
+		kept := make([]string, 0, len(sources)+1)
+		for _, s := range sources {
+			if !media.SameSource(s, media.SourceReceived) {
+				kept = append(kept, s)
+			}
+		}
+		sources = kept
+		if *sentToYou {
+			sources = append(sources, media.SourceReceived)
 		}
 	}
 	return sources

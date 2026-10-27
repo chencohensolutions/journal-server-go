@@ -31,6 +31,11 @@ type HiddenCollections {
   calls: Collection!
   "WhatsApp voice messages and audio (sound recordings with source folder:whatsapp). Hidden until the user shows them."
   voiceMessages: Collection!
+  """
+  Every file sent to the user (source received: photos from a camera they marked not theirs, see cameras). Its
+  name is "Sent to you".
+  """
+  sentToYou: Collection!
 }
 
 """
@@ -70,6 +75,8 @@ input HiddenCollectionsInput {
   screenshotApps: [String!]!
   "Hiding nudity; left out, it stays as it is."
   nudity: NudityHidingInput
+  "Hides the files sent to the user (sentToYou), or shows them; left out, it stays as it is."
+  sentToYou: Boolean
   "Hiding sound recordings; left out, it stays as it is."
   audio: AudioHidingInput
 }

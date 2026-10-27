@@ -20,7 +20,7 @@ func (r *mutationResolver) SetHiddenCollections(ctx context.Context, input model
 		return nil, err
 	}
 	hidden := store.Hidden()
-	sources := hiddenSources(hidden.Sources, input.Apps, input.Whatsapp)
+	sources := hiddenSources(hidden.Sources, input.Apps, input.Whatsapp, input.SentToYou)
 	nudityFrom := hidden.NudityFrom
 	if n := input.Nudity; n != nil {
 		switch {

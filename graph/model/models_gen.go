@@ -245,6 +245,9 @@ type HiddenCollections struct {
 	Calls *Collection `json:"calls"`
 	// WhatsApp voice messages and audio (sound recordings with source folder:whatsapp). Hidden until the user shows them.
 	VoiceMessages *Collection `json:"voiceMessages"`
+	// Every file sent to the user (source received: photos from a camera they marked not theirs, see cameras). Its
+	// name is "Sent to you".
+	SentToYou *Collection `json:"sentToYou"`
 }
 
 // The whole choice of what to hide: what isn't listed is shown.
@@ -259,6 +262,8 @@ type HiddenCollectionsInput struct {
 	ScreenshotApps []string `json:"screenshotApps"`
 	// Hiding nudity; left out, it stays as it is.
 	Nudity *NudityHidingInput `json:"nudity,omitempty"`
+	// Hides the files sent to the user (sentToYou), or shows them; left out, it stays as it is.
+	SentToYou *bool `json:"sentToYou,omitempty"`
 	// Hiding sound recordings; left out, it stays as it is.
 	Audio *AudioHidingInput `json:"audio,omitempty"`
 }

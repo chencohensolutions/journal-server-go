@@ -499,8 +499,10 @@ lost device in any case (see [authentication.md](authentication.md)).
 The user can hide whole groups of files on every device, without deleting them (Settings → Private media → Hidden
 collections in the apps): all the files of any app or folder they came from (a folder kind: WhatsApp, Telegram,
 Petcube; `hiddenCollections.apps`), the screenshots of chosen apps (by `facts.screenshotApp`, compared ignoring case),
-screenshots whose name says no app, the files the [nudity scan](#nudity-scan) scored at a chosen score or more,
-and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the user shows it.
+screenshots whose name says no app, the files sent to the user (source `received`, "Sent to you": photos from a
+camera they marked not theirs; see [Cameras](#cameras)), the files the [nudity scan](#nudity-scan) scored at a chosen
+score or more, and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the
+user shows it.
 `query hiddenCollections` lists them with how many files each has, hidden or not, and how many of those the import
 placed (`imported`, files whose `uploadedBy` is `import`; the rest came from devices, so apps can say what is hidden of
 each), apps with most files first (a
@@ -524,6 +526,10 @@ exactly and hid no folder kind but WhatsApp: hiding any other app is new, so goi
 input it is optional and, when sent, hides or shows WhatsApp beside `apps` (left out, `apps` keep what is hidden
 now). `Hidden.Key` hashes the normalized ids, so the first read of an old `settings.json` restarts every device's
 feed once.
+
+Sent to you is hidden by `received` in `sources`. It is not a folder kind, so `apps` doesn't list it and sending
+`apps` leaves it as it is: `hiddenCollections.sentToYou` (named "Sent to you") counts its files, and
+`setHiddenCollections` takes `sentToYou: Boolean` to hide or show it (left out, it stays as it is).
 
 `nudityFrom` is the score from which files are hidden, `0` for none. A data folder without settings.json, or one
 written before the server hid nudity (no `nudityFrom`), hides from 0.5, as the apps used to do themselves. Likewise
