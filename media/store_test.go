@@ -387,7 +387,7 @@ func TestRelabelComesAgainInTheFeed(t *testing.T) {
 		t.Fatal(changed, err)
 	}
 	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
-	if len(items) != 1 || *items[0].Sidecar.Facts.Source != "folder:Telegram" {
+	if len(items) != 1 || *items[0].Sidecar.Facts.Source != "folder:telegram" {
 		t.Fatalf("after the correction: %v", items)
 	}
 
@@ -405,7 +405,7 @@ func TestRelabelComesAgainInTheFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := again.Get(item.Sha256())
-	if c := got.Sidecar.Facts.CorrectedAt; c == nil || *got.Sidecar.Facts.Source != "folder:Telegram" || got.Sidecar.Facts.FileName != "photo.jpg" {
+	if c := got.Sidecar.Facts.CorrectedAt; c == nil || *got.Sidecar.Facts.Source != "folder:telegram" || got.Sidecar.Facts.FileName != "photo.jpg" {
 		t.Fatalf("reopened: %+v", got.Sidecar.Facts)
 	}
 }

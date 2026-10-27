@@ -197,6 +197,14 @@ type FaceHit struct {
 	Score float64 `json:"score"`
 }
 
+// A folder kind and the name it is shown by.
+type FolderName struct {
+	// The folder kind's id, in lower case: folder:whatsapp, folder:calls.
+	ID string `json:"id"`
+	// As it is shown: an app the server knows as it spells it (WhatsApp), else as most of its files spell their folder (Calls).
+	Name string `json:"name"`
+}
+
 // A box on the map, in degrees. When east is less than west the box crosses the 180° meridian.
 type GeoAreaInput struct {
 	South float64 `json:"south"`
@@ -217,10 +225,10 @@ type GeoPointInput struct {
 
 // Groups of files the user can hide on every device.
 type HiddenCollections struct {
-	// Every file WhatsApp saved (source folder:WhatsApp): the WhatsApp entry of apps, for apps from before apps.
+	// Every file WhatsApp saved (source folder:whatsapp): the WhatsApp entry of apps, for apps from before apps.
 	Whatsapp *Collection `json:"whatsapp"`
-	// The files of each app and folder they came from (every folder kind: source folder:WhatsApp, folder:Telegram,
-	// folder:Petcube, …), named by the folder (WhatsApp, Telegram), most files first. Hiding one hides all its files;
+	// The files of each app and folder they came from (every folder kind: source folder:whatsapp, folder:telegram,
+	// folder:petcube, …), named as folderNames names them (WhatsApp, Telegram, Petcube), most files first. Hiding one hides all its files;
 	// screenshots are not among them (their source is screenshots: see screenshotApps). A hidden one with no files left is
 	// listed too, so it can be shown again.
 	Apps []*Collection `json:"apps"`
@@ -231,18 +239,18 @@ type HiddenCollections struct {
 	ScreenshotApps []*Collection `json:"screenshotApps"`
 	// The files the nudity scan scored high.
 	Nudity *NudityHiding `json:"nudity"`
-	// Sound recordings that are neither calls nor voice messages. Hidden until the user shows them.
+	// Sound recordings that are neither calls nor voice messages (source recording, or any other). Hidden until the user shows them.
 	Recordings *Collection `json:"recordings"`
-	// Recorded phone calls (Media.call). Hidden until the user shows them.
+	// Recorded phone calls (source call, or Media.call). Hidden until the user shows them.
 	Calls *Collection `json:"calls"`
-	// WhatsApp voice messages and audio (sound recordings with source folder:WhatsApp). Hidden until the user shows them.
+	// WhatsApp voice messages and audio (sound recordings with source folder:whatsapp). Hidden until the user shows them.
 	VoiceMessages *Collection `json:"voiceMessages"`
 }
 
 // The whole choice of what to hide: what isn't listed is shown.
 type HiddenCollectionsInput struct {
 	// The apps and folders whose files are hidden, by name (WhatsApp, Telegram, as apps names them; a kind such as
-	// folder:Telegram is taken too), compared ignoring case. Left out, they stay as they are.
+	// folder:telegram is taken too), compared ignoring case. Left out, they stay as they are.
 	Apps []string `json:"apps,omitempty"`
 	// Hides WhatsApp, or shows it, whatever apps say; left out, apps decide. For apps from before apps.
 	Whatsapp              *bool `json:"whatsapp,omitempty"`
@@ -328,9 +336,10 @@ type Media struct {
 	DurationMs *int64     `json:"durationMs,omitempty"`
 	Location   *GeoPoint  `json:"location,omitempty"`
 	// What the file is and where it came from, as the server's one rule decides it (docs/media.md, "Sources"): camera,
-	// screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), other, or a folder
-	// kind, "folder:" and the folder's name (folder:WhatsApp, folder:Telegram, folder:Petcube). Compared ignoring case.
-	// Before Oct 27, 2026 WhatsApp was whatsapp, which apps read as folder:WhatsApp.
+	// screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), call and recording
+	// (sound recordings: see soundFolders), other, or a folder kind, "folder:" and the folder's name in lower case
+	// (folder:whatsapp, folder:telegram, folder:petcube; shown by folderNames). Compared ignoring case. Before Oct 27, 2026
+	// WhatsApp was whatsapp and folder kinds kept their folder's case, which apps read as folder:whatsapp and in lower case.
 	Source *string `json:"source,omitempty"`
 	// The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble).
 	ScreenshotApp *string `json:"screenshotApp,omitempty"`
@@ -506,6 +515,8 @@ type ServerInfo struct {
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
 	LocalIndexes bool `json:"localIndexes"`
+	// Folder kinds' ids are in lower case, named by folderNames; sound recordings can be call or recording, and soundFolders and setSoundFolder are there.
+	SoundFolders bool `json:"soundFolders"`
 }
 
 type SimilarHit struct {
@@ -513,6 +524,24 @@ type SimilarHit struct {
 	// How alike the two photos look: the cosine similarity of their DINOv2 vectors, -1 to 1. A copy of the same photo
 	// scores about 0.97 or more, the same scene shot again seconds later 0.90 to 0.95.
 	Score float64 `json:"score"`
+}
+
+// One folder sound recordings came from, and the user's mark on it.
+type SoundFolder struct {
+	// The folder's kind, in lower case: folder:calls, folder:voice recorder.
+	ID string `json:"id"`
+	// As most of its files spell the folder: Calls, Voice Recorder.
+	Name string `json:"name"`
+	// How many sound recordings came from it, hidden or not, by what their sidecars say of where they were (the folder
+	// the phone sent, the phone's folder, the folder the import found them in): recordings already merged into calls or
+	// recordings count here still.
+	Files int `json:"files"`
+	// Of files, how many the import placed (uploadedBy import); the rest came from devices.
+	Imported int             `json:"imported"`
+	As       SoundFolderMark `json:"as"`
+	// How many of its files are still being moved after its mark changed: to call or recording, or back. 0 once they all
+	// have; each moved file comes again in the change feed.
+	Pending int `json:"pending"`
 }
 
 type StartUploadInput struct {
@@ -828,7 +857,7 @@ type MediaKind string
 const (
 	MediaKindPhoto MediaKind = "PHOTO"
 	MediaKindVideo MediaKind = "VIDEO"
-	// A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source folder:WhatsApp).
+	// A sound recording: of an event (source recording), a phone call (call, source call) or a WhatsApp voice message (source folder:whatsapp).
 	MediaKindAudio MediaKind = "AUDIO"
 )
 
@@ -941,6 +970,67 @@ func (e *SearchModelState) UnmarshalJSON(b []byte) error {
 }
 
 func (e SearchModelState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// Where a sound folder's recordings go.
+type SoundFolderMark string
+
+const (
+	// Merged into calls: its recordings' source is call.
+	SoundFolderMarkCall SoundFolderMark = "CALL"
+	// Merged into recordings: its recordings' source is recording.
+	SoundFolderMarkRecording SoundFolderMark = "RECORDING"
+	// Not merged: its recordings keep their own kind (the folder's, folder:calls).
+	SoundFolderMarkNone SoundFolderMark = "NONE"
+)
+
+var AllSoundFolderMark = []SoundFolderMark{
+	SoundFolderMarkCall,
+	SoundFolderMarkRecording,
+	SoundFolderMarkNone,
+}
+
+func (e SoundFolderMark) IsValid() bool {
+	switch e {
+	case SoundFolderMarkCall, SoundFolderMarkRecording, SoundFolderMarkNone:
+		return true
+	}
+	return false
+}
+
+func (e SoundFolderMark) String() string {
+	return string(e)
+}
+
+func (e *SoundFolderMark) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SoundFolderMark(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SoundFolderMark", str)
+	}
+	return nil
+}
+
+func (e SoundFolderMark) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SoundFolderMark) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SoundFolderMark) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

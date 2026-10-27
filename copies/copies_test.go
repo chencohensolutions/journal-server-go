@@ -81,18 +81,19 @@ func TestPassCopiesTruthFilesAndLeavesTheDataFolderAlone(t *testing.T) {
 	addPhoto(t, store, "IMG_1.jpg", "first photo")
 	addPhoto(t, store, "IMG_2.jpg", "second photo")
 	store.SetPeople([]media.Person{})
-	// The user's cameras and a relabel's journal, the only way to undo it, come too.
+	// The user's cameras and sound folders and a relabel's journal, the only way to undo it, come too.
 	os.WriteFile(filepath.Join(store.Root(), "cameras.json"), []byte(`{"format":1,"cameras":[]}`), 0o644)
+	os.WriteFile(filepath.Join(store.Root(), "sound-folders.json"), []byte(`{"format":1,"folders":[{"id":"folder:calls","as":"call"}]}`), 0o644)
 	os.MkdirAll(filepath.Join(store.Root(), "relabels"), 0o755)
 	os.WriteFile(filepath.Join(store.Root(), "relabels", "2026-10-27T120000Z.tsv"), []byte("# a relabel\n"), 0o644)
 
 	report, err := c.Check(context.Background(), true)
-	if err != nil || report.Originals != 2 || report.Sidecars != 5 || report.OriginalBytes != int64(len("first photo")+len("second photo")) {
+	if err != nil || report.Originals != 2 || report.Sidecars != 6 || report.OriginalBytes != int64(len("first photo")+len("second photo")) {
 		t.Fatalf("before a pass: %+v %v", report, err)
 	}
 	before := tree(t, store.Root())
 	pass := c.Run(context.Background())
-	if pass.Err != nil || pass.Files != 7 || pass.Failed != 0 {
+	if pass.Err != nil || pass.Files != 8 || pass.Failed != 0 {
 		t.Fatalf("pass: %+v", pass)
 	}
 	if after := tree(t, store.Root()); !equalTrees(before, after) {
@@ -111,7 +112,7 @@ func TestPassCopiesTruthFilesAndLeavesTheDataFolderAlone(t *testing.T) {
 	}
 	sort.Strings(names)
 	want := "cameras.json media/2026/2026-10/IMG_1.jpg media/2026/2026-10/IMG_1.jpg.json media/2026/2026-10/IMG_2.jpg " +
-		"media/2026/2026-10/IMG_2.jpg.json people.json relabels/2026-10-27T120000Z.tsv"
+		"media/2026/2026-10/IMG_2.jpg.json people.json relabels/2026-10-27T120000Z.tsv sound-folders.json"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("the copy holds %s", got)
 	}

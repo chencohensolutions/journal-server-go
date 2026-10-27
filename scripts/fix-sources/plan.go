@@ -148,7 +148,8 @@ func differ(disk, next media.Labels) bool {
 // relabelDecider gives each file the rule's source (media.SourceOf, with the user's camera marks and the folder
 // kinds counted once for the run, so the dry run and the real one decide by the same counts) and, for a
 // screenshot whose name says, its app; an app the rule doesn't give is kept. Ids come as the server writes them
-// (folder:WhatsApp for whatsapp), and a rewritten sidecar has its app under screenshotApp.
+// (folder:whatsapp for whatsapp and folder:WhatsApp, every folder kind in lower case), and a rewritten sidecar has
+// its app under screenshotApp.
 func relabelDecider(marks media.CameraMarks, kinds *media.FolderKinds) decider {
 	return func(item media.Item, disk media.Labels) (media.Labels, bool) {
 		source, app := media.SourceOf(item.Sidecar.Facts, marks, kinds)
@@ -163,20 +164,28 @@ func relabelDecider(marks media.CameraMarks, kinds *media.FolderKinds) decider {
 	}
 }
 
-// relabelSources writes hidden.sources' ids as the server does (whatsapp → folder:WhatsApp).
+// relabelSources writes hidden.sources' ids as the server does (whatsapp → folder:whatsapp, folder:Telegram →
+// folder:telegram).
 func relabelSources(sources []string) ([]string, []idChange) {
 	return mapSources(sources, func(id string) string { return media.NormalizeSource(id) })
 }
 
-// oldIdsDecider writes the ids an older server and app know: folder:WhatsApp as whatsapp, received as camera, and a
-// screenshot's app under the key app.
-func oldIdsDecider(_ media.Item, disk media.Labels) (media.Labels, bool) {
+// oldIdsDecider writes the ids an older server and app know: folder:whatsapp as whatsapp, received as camera, a
+// sound recording merged into call or recording as its folder (media.SoundFolderOf; other without one), and a
+// screenshot's app under the key app. Other folder kinds stay in lower case: an older server shows them as they are,
+// and hid no folder kind but WhatsApp.
+func oldIdsDecider(item media.Item, disk media.Labels) (media.Labels, bool) {
 	next := disk
 	switch {
 	case media.SameSource(disk.Source, media.SourceWhatsApp):
 		next.Source = media.OldSourceWhatsApp
 	case media.SameSource(disk.Source, media.SourceReceived):
 		next.Source = media.SourceCamera
+	case media.SameSource(disk.Source, media.SourceCall), media.SameSource(disk.Source, media.SourceRecording):
+		next.Source = media.SoundFolderOf(item.Sidecar.Facts)
+		if next.Source == "" {
+			next.Source = media.SourceOther
+		}
 	}
 	if next.ScreenshotApp != "" {
 		next.OldAppKey = true
@@ -184,7 +193,7 @@ func oldIdsDecider(_ media.Item, disk media.Labels) (media.Labels, bool) {
 	return next, differ(disk, next)
 }
 
-// oldIdsSources writes folder:WhatsApp in hidden.sources as whatsapp. (received is left: as camera it would hide
+// oldIdsSources writes folder:whatsapp in hidden.sources as whatsapp. (received is left: as camera it would hide
 // every camera photo.)
 func oldIdsSources(sources []string) ([]string, []idChange) {
 	return mapSources(sources, func(id string) string {

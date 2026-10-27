@@ -1,0 +1,72 @@
+# --- Folder names and sound folders ----------------------------------------------
+# A folder kind's id is "folder:" and its folder's name in lower case (folder:whatsapp, folder:calls, folder:dine-out),
+# so folders that differ only by case are one kind. folderNames gives the name to show for each: an app the server
+# knows as it spells it (WhatsApp, Telegram), else as most of its files spell their folder (Calls).
+# Sound recordings have two kinds of their own, call and recording, and the user merges the folders sound recordings
+# came from (Call, Voice Recorder…) into them: the marks are kept in sound-folders.json at the data folder's root. A
+# folder nobody marked keeps its own kind (folder:calls), so nothing moves until the user marks one. See
+# docs/media.md, "Sound folders".
+
+extend type ServerInfo {
+  "Folder kinds' ids are in lower case, named by folderNames; sound recordings can be call or recording, and soundFolders and setSoundFolder are there."
+  soundFolders: Boolean!
+}
+
+"A folder kind and the name it is shown by."
+type FolderName {
+  "The folder kind's id, in lower case: folder:whatsapp, folder:calls."
+  id: String!
+  "As it is shown: an app the server knows as it spells it (WhatsApp), else as most of its files spell their folder (Calls)."
+  name: String!
+}
+
+"Where a sound folder's recordings go."
+enum SoundFolderMark {
+  "Merged into calls: its recordings' source is call."
+  CALL
+  "Merged into recordings: its recordings' source is recording."
+  RECORDING
+  "Not merged: its recordings keep their own kind (the folder's, folder:calls)."
+  NONE
+}
+
+"One folder sound recordings came from, and the user's mark on it."
+type SoundFolder {
+  "The folder's kind, in lower case: folder:calls, folder:voice recorder."
+  id: String!
+  "As most of its files spell the folder: Calls, Voice Recorder."
+  name: String!
+  """
+  How many sound recordings came from it, hidden or not, by what their sidecars say of where they were (the folder
+  the phone sent, the phone's folder, the folder the import found them in): recordings already merged into calls or
+  recordings count here still.
+  """
+  files: Int!
+  "Of files, how many the import placed (uploadedBy import); the rest came from devices."
+  imported: Int!
+  as: SoundFolderMark!
+  """
+  How many of its files are still being moved after its mark changed: to call or recording, or back. 0 once they all
+  have; each moved file comes again in the change feed.
+  """
+  pending: Int!
+}
+
+extend type Query {
+  "Every folder kind the user's files take or came from, hidden or marked, by id, with the name to show for it."
+  folderNames: [FolderName!]!
+  "Every folder the user's sound recordings came from, most files first; a marked folder with no files left is listed too."
+  soundFolders: [SoundFolder!]!
+}
+
+extend type Mutation {
+  """
+  Merges a sound folder into calls or recordings, or takes the mark back (NONE), and answers at once with every sound
+  folder. id is the folder's kind (folder:calls) or its name (Calls), compared ignoring case. The folder's recordings
+  then move in the background: to call or recording, or, with NONE, back to what they had before (their folder's own
+  kind); soundFolders.pending counts what is left, and each file comes again in the change feed once moved. Only
+  sidecars change; each move is journaled in relabels/ at the data folder's root, so fix-sources --undo takes it back.
+  A WhatsApp voice message stays one. A mark changed while files still move is applied after them.
+  """
+  setSoundFolder(id: String!, as: SoundFolderMark!): [SoundFolder!]!
+}

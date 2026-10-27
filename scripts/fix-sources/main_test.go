@@ -209,7 +209,7 @@ func TestADryRunWritesNothing(t *testing.T) {
 	before := snapshot(t, f.root)
 
 	var out string
-	for _, o := range []options{{user: "hen", dryRun: true}, {user: "hen", dryRun: true, list: "other:folder:WhatsApp"},
+	for _, o := range []options{{user: "hen", dryRun: true}, {user: "hen", dryRun: true, list: "other:folder:whatsapp"},
 		{user: "hen", dryRun: true, oldIds: true}} {
 		store, err := media.OpenStoreReadOnly(f.root, time.Now)
 		if err != nil {
@@ -221,9 +221,9 @@ func TestADryRunWritesNothing(t *testing.T) {
 	if after := snapshot(t, f.root); !mapsEqual(before, after) {
 		t.Fatalf("a dry run wrote in the data folder:\nbefore %v\nafter  %v", before, after)
 	}
-	for _, want := range []string{"other → folder:WhatsApp: 1", "whatsapp → folder:WhatsApp: 1", "camera → folder:WhatsApp: 1",
-		"other → camera: 1", "other → screenshots: 1", "other → folder:Telegram: 1", "stays other: 1",
-		"settings.json hidden.sources: whatsapp → folder:WhatsApp", "IMG-20230115-WA0012.jpg", "Bumble"} {
+	for _, want := range []string{"other → folder:whatsapp: 1", "whatsapp → folder:whatsapp: 1", "camera → folder:whatsapp: 1",
+		"other → camera: 1", "other → screenshots: 1", "other → folder:telegram: 1", "stays other: 1",
+		"settings.json hidden.sources: whatsapp → folder:whatsapp", "IMG-20230115-WA0012.jpg", "Bumble"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the dry run doesn't say %q:\n%s", want, out)
 		}
@@ -255,19 +255,19 @@ func TestARelabelIsUndone(t *testing.T) {
 	}
 	runOrFail(t, store, options{user: "hen"}, c.now)
 
-	f.want("IMG-20230115-WA0012.jpg", "source", "folder:WhatsApp")
+	f.want("IMG-20230115-WA0012.jpg", "source", "folder:whatsapp")
 	f.want("IMG-20230115-WA0012.jpg", "sentFrom", "other")
-	f.want("IMG-20230116-WA0001.jpg", "source", "folder:WhatsApp")
+	f.want("IMG-20230116-WA0001.jpg", "source", "folder:whatsapp")
 	f.want("IMG-20230116-WA0001.jpg", "sentFrom", "whatsapp")
 	f.want("Screenshot_20240301_030715_Bumble.jpg", "source", "screenshots")
 	f.want("Screenshot_20240301_030715_Bumble.jpg", "screenshotApp", "Bumble")
 	f.want("1740850503547.jpg", "source", "camera")
-	f.want("photo_2023-01-15_12-34-56.jpg", "source", "folder:Telegram")
+	f.want("photo_2023-01-15_12-34-56.jpg", "source", "folder:telegram")
 	f.want("meme.jpg", "source", "other")
 	f.want("meme.jpg", "correctedAt", nil)
 	f.want("Screenshot_20220917_160207_Tinder.jpg", "app", "Tinder") // already right: not rewritten
 	f.want("Screenshot_20220917_160207_Tinder.jpg", "correctedAt", nil)
-	if got := f.hiddenSources(); !slices.Equal(got, []string{"folder:WhatsApp"}) {
+	if got := f.hiddenSources(); !slices.Equal(got, []string{"folder:whatsapp"}) {
 		t.Fatalf("settings.json after the relabel: %v", got)
 	}
 	journals := f.journals()
@@ -304,7 +304,7 @@ func TestARelabelIsUndone(t *testing.T) {
 		t.Fatal(err)
 	}
 	hidden := store.Hidden()
-	hidden.Sources = append(hidden.Sources, "folder:Telegram")
+	hidden.Sources = append(hidden.Sources, "folder:telegram")
 	if err := store.SetHidden(hidden); err != nil {
 		t.Fatal(err)
 	}
@@ -326,14 +326,14 @@ func TestARelabelIsUndone(t *testing.T) {
 	if undone := f.facts("IMG-20230115-WA0012.jpg")["correctedAt"].(string); undone <= relabelled {
 		t.Fatalf("correctedAt %s after the undo, %s after the relabel", undone, relabelled)
 	}
-	if got := f.hiddenSources(); !slices.Equal(got, []string{"folder:Telegram", "whatsapp"}) {
+	if got := f.hiddenSources(); !slices.Equal(got, []string{"folder:telegram", "whatsapp"}) {
 		t.Fatalf("settings.json after the undo: %v", got)
 	}
 	again, err := media.OpenStore(f.root, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	telegram := "folder:Telegram"
+	telegram := "folder:telegram"
 	if !again.Hidden().Hides(media.Facts{Source: &telegram}) {
 		t.Fatal("Telegram, hidden after the relabel, is shown after the undo")
 	}
@@ -350,8 +350,8 @@ func TestToOldIdsAndBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	runOrFail(t, store, options{user: "hen"}, c.now)
-	// After the relabel: a file a phone uploads as folder:WhatsApp, and a camera marked not mine.
-	sha := f.add("IMG-20260101-WA0002.jpg", map[string]any{"source": "folder:WhatsApp", "sentFrom": "folder:WhatsApp", "uploadedBy": "pixel-8"})
+	// After the relabel: a file a phone uploads as folder:whatsapp, and a camera marked not mine.
+	sha := f.add("IMG-20260101-WA0002.jpg", map[string]any{"source": "folder:whatsapp", "sentFrom": "folder:WhatsApp", "uploadedBy": "pixel-8"})
 	if err := store.Turn(func() error { return store.Reload(f.path["IMG-20260101-WA0002.jpg"]) }); err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestToOldIdsAndBack(t *testing.T) {
 	f.want("Screenshot_20240301_030715_Bumble.jpg", "app", "Bumble")
 	f.want("Screenshot_20240301_030715_Bumble.jpg", "screenshotApp", nil)
 	f.want("Screenshot_20220917_160207_Tinder.jpg", "app", "Tinder")
-	f.want("photo_2023-01-15_12-34-56.jpg", "source", "folder:Telegram")
+	f.want("photo_2023-01-15_12-34-56.jpg", "source", "folder:telegram")
 	if got := f.hiddenSources(); !slices.Equal(got, []string{"whatsapp"}) {
 		t.Fatalf("settings.json: %v", got)
 	}
@@ -389,13 +389,13 @@ func TestToOldIdsAndBack(t *testing.T) {
 	}
 	runOrFail(t, store, options{user: "hen", undo: journals[1]}, c.now)
 	for _, name := range []string{"IMG-20230115-WA0012.jpg", "IMG-20230116-WA0001.jpg", "IMG-20260101-WA0002.jpg"} {
-		f.want(name, "source", "folder:WhatsApp")
+		f.want(name, "source", "folder:whatsapp")
 	}
 	f.want("1740850503547.jpg", "source", "received")
 	f.want("Screenshot_20240301_030715_Bumble.jpg", "screenshotApp", "Bumble")
 	f.want("Screenshot_20240301_030715_Bumble.jpg", "app", nil)
 	f.want("Screenshot_20220917_160207_Tinder.jpg", "app", "Tinder") // it had app before --to-old-ids
-	if got := f.hiddenSources(); !slices.Equal(got, []string{"folder:WhatsApp"}) {
+	if got := f.hiddenSources(); !slices.Equal(got, []string{"folder:whatsapp"}) {
 		t.Fatalf("settings.json after undoing: %v", got)
 	}
 }
@@ -457,5 +457,51 @@ func TestJournalValuesRoundTrip(t *testing.T) {
 	}
 	if count(28900) != "28,900" || count(7) != "7" || count(1234567) != "1,234,567" {
 		t.Fatal(count(28900), count(1234567))
+	}
+}
+
+// The server's own moves of sound recordings (setSoundFolder) are journaled as a relabel is, so --undo takes them
+// back; --to-old-ids writes call and recording as the folder each came from, for an older server.
+func TestSoundFolderMovesAreUndoneAndOld(t *testing.T) {
+	f := newFolder(t)
+	call := f.add("Call_1.m4a", map[string]any{"kind": "audio", "mimeType": "audio/mp4", "uploadedBy": "pixel-8",
+		"source": "folder:Call", "sentFrom": "folder:Call", "deviceFolder": "Recordings/Call/"})
+	f.add("x.m4a", map[string]any{"kind": "audio", "mimeType": "audio/mp4", "source": "other",
+		"importedFrom": "D:/Backups/phone/Call/x.m4a", "folders": []string{"phone/Call"}})
+	c := newClock()
+	store, err := media.OpenStore(f.root, c.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetSoundFolder("folder:call", media.SourceCall); err != nil {
+		t.Fatal(err)
+	}
+	store.WaitSoundFolderMoves()
+	f.want("Call_1.m4a", "source", "call")
+	f.want("x.m4a", "source", "call")
+	journals := f.journals()
+	if len(journals) != 1 || !strings.HasSuffix(journals[0], "-sound-folders.tsv") {
+		t.Fatalf("journals: %v", journals)
+	}
+
+	// A relabel by the rule keeps what the mark gives.
+	if out := runOrFail(t, store, options{user: "hen", dryRun: true}, c.now); !strings.Contains(out, "0 would change") {
+		t.Fatalf("the rule disagrees with the mark:\n%s", out)
+	}
+
+	// For an older server: each as its folder, and back.
+	runOrFail(t, store, options{user: "hen", oldIds: true}, c.now)
+	f.want("Call_1.m4a", "source", "folder:call")
+	f.want("x.m4a", "source", "folder:call")
+	journals = f.journals()
+	runOrFail(t, store, options{user: "hen", undo: journals[len(journals)-1]}, c.now)
+	f.want("Call_1.m4a", "source", "call")
+
+	// Undoing the server's own journal puts back what each had.
+	runOrFail(t, store, options{user: "hen", undo: journals[0]}, c.now)
+	f.want("Call_1.m4a", "source", "folder:Call")
+	f.want("x.m4a", "source", "other")
+	if item, _ := store.Get(call); *item.Sidecar.Facts.Source != "folder:call" {
+		t.Fatalf("as the server reads it: %s", *item.Sidecar.Facts.Source)
 	}
 }

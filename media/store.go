@@ -27,7 +27,11 @@ type Store struct {
 	hidden  Hidden // what the user hides on every device (hidden.go)
 	// The user's marks on their cameras (cameras.json, cameras.go), and the moves of files they started.
 	cameraMarks CameraMarks
-	cameraMoves cameraMoves
+	cameraMoves backgroundMoves
+	// The user's marks on the folders sound recordings came from (sound-folders.json, soundfolders.go), and the
+	// moves of files they started.
+	soundMarks SoundFolderMarks
+	soundMoves backgroundMoves
 
 	// Held while a file's upload is started, written to or finished, so the same file arriving from
 	// two devices (or a retry racing the first try) is written once.
@@ -83,6 +87,9 @@ func openStore(root string, now func() time.Time, readOnly bool) (*Store, error)
 	}
 	s.hidden = hidden
 	if s.cameraMarks, err = s.readCameraMarks(); err != nil {
+		return nil, err
+	}
+	if s.soundMarks, err = s.readSoundFolderMarks(); err != nil {
 		return nil, err
 	}
 	s.startJournal()

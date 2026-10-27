@@ -7,11 +7,11 @@
 
 "Groups of files the user can hide on every device."
 type HiddenCollections {
-  "Every file WhatsApp saved (source folder:WhatsApp): the WhatsApp entry of apps, for apps from before apps."
+  "Every file WhatsApp saved (source folder:whatsapp): the WhatsApp entry of apps, for apps from before apps."
   whatsapp: Collection! @deprecated(reason: "Use apps: WhatsApp is one of them.")
   """
-  The files of each app and folder they came from (every folder kind: source folder:WhatsApp, folder:Telegram,
-  folder:Petcube, …), named by the folder (WhatsApp, Telegram), most files first. Hiding one hides all its files;
+  The files of each app and folder they came from (every folder kind: source folder:whatsapp, folder:telegram,
+  folder:petcube, …), named as folderNames names them (WhatsApp, Telegram, Petcube), most files first. Hiding one hides all its files;
   screenshots are not among them (their source is screenshots: see screenshotApps). A hidden one with no files left is
   listed too, so it can be shown again.
   """
@@ -25,11 +25,11 @@ type HiddenCollections {
   screenshotApps: [Collection!]!
   "The files the nudity scan scored high."
   nudity: NudityHiding!
-  "Sound recordings that are neither calls nor voice messages. Hidden until the user shows them."
+  "Sound recordings that are neither calls nor voice messages (source recording, or any other). Hidden until the user shows them."
   recordings: Collection!
-  "Recorded phone calls (Media.call). Hidden until the user shows them."
+  "Recorded phone calls (source call, or Media.call). Hidden until the user shows them."
   calls: Collection!
-  "WhatsApp voice messages and audio (sound recordings with source folder:WhatsApp). Hidden until the user shows them."
+  "WhatsApp voice messages and audio (sound recordings with source folder:whatsapp). Hidden until the user shows them."
   voiceMessages: Collection!
 }
 
@@ -60,7 +60,7 @@ type Collection {
 input HiddenCollectionsInput {
   """
   The apps and folders whose files are hidden, by name (WhatsApp, Telegram, as apps names them; a kind such as
-  folder:Telegram is taken too), compared ignoring case. Left out, they stay as they are.
+  folder:telegram is taken too), compared ignoring case. Left out, they stay as they are.
   """
   apps: [String!]
   "Hides WhatsApp, or shows it, whatever apps say; left out, apps decide. For apps from before apps."

@@ -14,8 +14,8 @@ import (
 )
 
 // Hidden is what the user hides on every device (Settings → Private media → Hidden collections in the apps): whole
-// sources (any app's folder kind: folder:WhatsApp, folder:Telegram; compared ignoring case, and an old "whatsapp"
-// read as folder:WhatsApp), the screenshots of some apps, screenshots whose name says no app, what the nudity scan
+// sources (any app's folder kind: folder:whatsapp, folder:telegram; compared ignoring case, and an old "whatsapp"
+// read as folder:whatsapp), the screenshots of some apps, screenshots whose name says no app, what the nudity scan
 // scored high, and sound recordings. Hidden files stay in the data folder as they are; the server leaves them out of what devices see
 // (View). It is kept in settings.json at the data folder's root, so it moves with the data.
 type Hidden struct {
@@ -40,25 +40,34 @@ type AudioHiding struct {
 // DefaultAudio hides every sound recording until the user shows them.
 var DefaultAudio = AudioHiding{Recordings: true, Calls: true, VoiceMessages: true}
 
-// The audio collections: a phone call (Facts.Call), a WhatsApp voice message, and any other recording.
+// The audio collections: a phone call, a WhatsApp voice message, and any other recording.
 const (
 	AudioRecordings    = "recordings"
 	AudioCalls         = "calls"
 	AudioVoiceMessages = "voiceMessages"
 )
 
-// AudioCollectionOf is which audio collection a file is in, or "" for a photo or video.
+// AudioCollectionOf is which audio collection a file is in, or "" for a photo or video: by its kind first (call is
+// a call, recording a recording, folder:whatsapp a voice message), then a call by Facts.Call, and any other is a
+// recording.
 func AudioCollectionOf(facts Facts) string {
-	switch {
-	case facts.Kind != KindAudio:
+	if facts.Kind != KindAudio {
 		return ""
-	case facts.Call != nil:
-		return AudioCalls
-	case facts.Source != nil && strings.EqualFold(*facts.Source, SourceWhatsApp):
-		return AudioVoiceMessages
-	default:
-		return AudioRecordings
 	}
+	if facts.Source != nil {
+		switch NormalizeSource(*facts.Source) {
+		case SourceCall:
+			return AudioCalls
+		case SourceRecording:
+			return AudioRecordings
+		case SourceWhatsApp:
+			return AudioVoiceMessages
+		}
+	}
+	if facts.Call != nil {
+		return AudioCalls
+	}
+	return AudioRecordings
 }
 
 // hides reports whether a hides the audio collection named c.
@@ -366,53 +375,39 @@ func (s *Store) Collections() (whatsapp, withoutApp Collection, apps []Collectio
 }
 
 // AppCollections is every folder kind in the library (the apps and folders files came from: WhatsApp, Telegram,
-// Petcube…), with how many files each has (hidden or not), most files first, named by the folder ("Telegram"). Kinds
-// are told apart ignoring case, and each is named as most of its files spell it; a hidden one with no files left is
-// listed too, so it can be shown again.
+// Petcube…), with how many files each has (hidden or not), most files first, named as it is shown (FolderNames:
+// "WhatsApp", "Calls"). A hidden one with no files left is listed too, so it can be shown again.
 func (s *Store) AppCollections() []Collection {
 	s.CatchUp()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	h := s.hidden
 	counts := map[string]*Collection{}
-	spellings := map[string]map[string]int{}
-	add := func(name string, facts *Facts) {
-		key := strings.ToLower(name)
-		c := counts[key]
+	add := func(id string, facts *Facts) {
+		c := counts[id]
 		if c == nil {
 			c = &Collection{}
-			counts[key] = c
-			spellings[key] = map[string]int{}
+			counts[id] = c
 		}
 		if facts != nil {
 			c.count(*facts)
-			spellings[key][name]++
-		} else if len(spellings[key]) == 0 {
-			spellings[key][name] = 0
 		}
 	}
 	for _, item := range s.items {
-		if facts := item.Sidecar.Facts; facts.Source != nil {
-			if name := FolderName(*facts.Source); name != "" {
-				add(name, &facts)
-			}
+		if facts := item.Sidecar.Facts; facts.Source != nil && FolderName(*facts.Source) != "" {
+			add(NormalizeSource(*facts.Source), &facts)
 		}
 	}
 	for _, source := range h.Sources {
-		if name := FolderName(source); name != "" {
-			add(name, nil)
+		if FolderName(source) != "" {
+			add(NormalizeSource(source), nil)
 		}
 	}
+	names := s.folderNamesLocked()
 	apps := make([]Collection, 0, len(counts))
-	for key, c := range counts {
-		name := ""
-		for spelling, n := range spellings[key] {
-			if name == "" || n > spellings[key][name] || n == spellings[key][name] && spelling < name {
-				name = spelling
-			}
-		}
-		c.Name = name
-		c.Hidden = h.Hides(Facts{Source: ptr(folderPrefix + name)})
+	for id, c := range counts {
+		c.Name = names.name(id)
+		c.Hidden = h.Hides(Facts{Source: ptr(id)})
 		apps = append(apps, *c)
 	}
 	sort.Slice(apps, func(i, j int) bool {

@@ -29,9 +29,10 @@ import (
 const spaceReserve uint64 = 1 << 30
 
 // rootFiles are the files at the data folder's root that are copied beside media/: the user's choices, and the
-// journals of fix-sources' relabels (relabels/*.tsv), the only way to undo one.
+// journals of fix-sources' relabels and of the server's sound-folder moves (relabels/*.tsv), the only way to undo
+// one.
 func (c *Copier) rootFiles() []string {
-	files := []string{"people.json", "settings.json", "cameras.json"}
+	files := []string{"people.json", "settings.json", "cameras.json", "sound-folders.json"}
 	journals, _ := filepath.Glob(c.source(filepath.Join("relabels", "*.tsv")))
 	for _, journal := range journals {
 		files = append(files, filepath.Join("relabels", filepath.Base(journal)))

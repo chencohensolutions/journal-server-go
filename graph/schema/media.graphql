@@ -16,7 +16,7 @@ scalar Int64
 enum MediaKind {
   PHOTO
   VIDEO
-  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source folder:WhatsApp)."
+  "A sound recording: of an event (source recording), a phone call (call, source call) or a WhatsApp voice message (source folder:whatsapp)."
   AUDIO
 }
 
@@ -47,9 +47,10 @@ type Media {
   location: GeoPoint
   """
   What the file is and where it came from, as the server's one rule decides it (docs/media.md, "Sources"): camera,
-  screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), other, or a folder
-  kind, "folder:" and the folder's name (folder:WhatsApp, folder:Telegram, folder:Petcube). Compared ignoring case.
-  Before Oct 27, 2026 WhatsApp was whatsapp, which apps read as folder:WhatsApp.
+  screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), call and recording
+  (sound recordings: see soundFolders), other, or a folder kind, "folder:" and the folder's name in lower case
+  (folder:whatsapp, folder:telegram, folder:petcube; shown by folderNames). Compared ignoring case. Before Oct 27, 2026
+  WhatsApp was whatsapp and folder kinds kept their folder's case, which apps read as folder:whatsapp and in lower case.
   """
   source: String
   "The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."

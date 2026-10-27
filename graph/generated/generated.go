@@ -132,6 +132,11 @@ type ComplexityRoot struct {
 		Score func(childComplexity int) int
 	}
 
+	FolderName struct {
+		ID   func(childComplexity int) int
+		Name func(childComplexity int) int
+	}
+
 	GeoPoint struct {
 		Lat func(childComplexity int) int
 		Lon func(childComplexity int) int
@@ -250,6 +255,7 @@ type ComplexityRoot struct {
 		SetCamera            func(childComplexity int, make string, model string, mine bool) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
+		SetSoundFolder       func(childComplexity int, id string, as model.SoundFolderMark) int
 		StartIndexing        func(childComplexity int) int
 		StartUpload          func(childComplexity int, input model.StartUploadInput) int
 	}
@@ -286,6 +292,7 @@ type ComplexityRoot struct {
 		Changes           func(childComplexity int, since *string, limit *int) int
 		Duplicates        func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
 		EnrollmentPreview func(childComplexity int, code string) int
+		FolderNames       func(childComplexity int) int
 		HiddenCollections func(childComplexity int) int
 		Indexing          func(childComplexity int) int
 		LocalIndexes      func(childComplexity int) int
@@ -297,6 +304,7 @@ type ComplexityRoot struct {
 		ServerInfo        func(childComplexity int) int
 		SimilarFaces      func(childComplexity int, face string, limit *int, offset *int, includePrivate *bool) int
 		SimilarMedia      func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
+		SoundFolders      func(childComplexity int) int
 		StorageUsage      func(childComplexity int) int
 	}
 
@@ -321,6 +329,7 @@ type ComplexityRoot struct {
 		Previews     func(childComplexity int) int
 		Search       func(childComplexity int) int
 		Similar      func(childComplexity int) int
+		SoundFolders func(childComplexity int) int
 		TextInPhotos func(childComplexity int) int
 		Version      func(childComplexity int) int
 	}
@@ -328,6 +337,15 @@ type ComplexityRoot struct {
 	SimilarHit struct {
 		Media func(childComplexity int) int
 		Score func(childComplexity int) int
+	}
+
+	SoundFolder struct {
+		As       func(childComplexity int) int
+		Files    func(childComplexity int) int
+		ID       func(childComplexity int) int
+		Imported func(childComplexity int) int
+		Name     func(childComplexity int) int
+		Pending  func(childComplexity int) int
 	}
 
 	StorageUsage struct {
@@ -379,6 +397,7 @@ type MutationResolver interface {
 	NameFace(ctx context.Context, face string, name string) (model.PersonResult, error)
 	ForgetPerson(ctx context.Context, id string) (bool, error)
 	PrepareSearch(ctx context.Context) (model.SearchModelState, error)
+	SetSoundFolder(ctx context.Context, id string, as model.SoundFolderMark) ([]*model.SoundFolder, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -397,6 +416,8 @@ type QueryResolver interface {
 	SearchModel(ctx context.Context, wait *bool) (model.SearchModelState, error)
 	SimilarMedia(ctx context.Context, sha256 string, limit *int, offset *int, includePrivate *bool) ([]*model.SimilarHit, error)
 	Duplicates(ctx context.Context, limit *int, offset *int, includePrivate *bool) ([]*model.DuplicateGroup, error)
+	FolderNames(ctx context.Context) ([]*model.FolderName, error)
+	SoundFolders(ctx context.Context) ([]*model.SoundFolder, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -732,6 +753,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.FaceHit.Score(childComplexity), true
+
+	case "FolderName.id":
+		if e.ComplexityRoot.FolderName.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FolderName.ID(childComplexity), true
+	case "FolderName.name":
+		if e.ComplexityRoot.FolderName.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FolderName.Name(childComplexity), true
 
 	case "GeoPoint.lat":
 		if e.ComplexityRoot.GeoPoint.Lat == nil {
@@ -1320,6 +1354,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetPrivate(childComplexity, args["sha256s"].([]string), args["private"].(bool)), true
+	case "Mutation.setSoundFolder":
+		if e.ComplexityRoot.Mutation.SetSoundFolder == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setSoundFolder_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetSoundFolder(childComplexity, args["id"].(string), args["as"].(model.SoundFolderMark)), true
 	case "Mutation.startIndexing":
 		if e.ComplexityRoot.Mutation.StartIndexing == nil {
 			break
@@ -1471,6 +1516,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.EnrollmentPreview(childComplexity, args["code"].(string)), true
+	case "Query.folderNames":
+		if e.ComplexityRoot.Query.FolderNames == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.FolderNames(childComplexity), true
 	case "Query.hiddenCollections":
 		if e.ComplexityRoot.Query.HiddenCollections == nil {
 			break
@@ -1573,6 +1624,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.SimilarMedia(childComplexity, args["sha256"].(string), args["limit"].(*int), args["offset"].(*int), args["includePrivate"].(*bool)), true
+	case "Query.soundFolders":
+		if e.ComplexityRoot.Query.SoundFolders == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.SoundFolders(childComplexity), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -1683,6 +1740,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Similar(childComplexity), true
+	case "ServerInfo.soundFolders":
+		if e.ComplexityRoot.ServerInfo.SoundFolders == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.SoundFolders(childComplexity), true
 	case "ServerInfo.textInPhotos":
 		if e.ComplexityRoot.ServerInfo.TextInPhotos == nil {
 			break
@@ -1708,6 +1771,43 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.SimilarHit.Score(childComplexity), true
+
+	case "SoundFolder.as":
+		if e.ComplexityRoot.SoundFolder.As == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundFolder.As(childComplexity), true
+	case "SoundFolder.files":
+		if e.ComplexityRoot.SoundFolder.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundFolder.Files(childComplexity), true
+	case "SoundFolder.id":
+		if e.ComplexityRoot.SoundFolder.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundFolder.ID(childComplexity), true
+	case "SoundFolder.imported":
+		if e.ComplexityRoot.SoundFolder.Imported == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundFolder.Imported(childComplexity), true
+	case "SoundFolder.name":
+		if e.ComplexityRoot.SoundFolder.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundFolder.Name(childComplexity), true
+	case "SoundFolder.pending":
+		if e.ComplexityRoot.SoundFolder.Pending == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundFolder.Pending(childComplexity), true
 
 	case "StorageUsage.audio":
 		if e.ComplexityRoot.StorageUsage.Audio == nil {
@@ -2009,11 +2109,11 @@ extend type Mutation {
 
 "Groups of files the user can hide on every device."
 type HiddenCollections {
-  "Every file WhatsApp saved (source folder:WhatsApp): the WhatsApp entry of apps, for apps from before apps."
+  "Every file WhatsApp saved (source folder:whatsapp): the WhatsApp entry of apps, for apps from before apps."
   whatsapp: Collection! @deprecated(reason: "Use apps: WhatsApp is one of them.")
   """
-  The files of each app and folder they came from (every folder kind: source folder:WhatsApp, folder:Telegram,
-  folder:Petcube, …), named by the folder (WhatsApp, Telegram), most files first. Hiding one hides all its files;
+  The files of each app and folder they came from (every folder kind: source folder:whatsapp, folder:telegram,
+  folder:petcube, …), named as folderNames names them (WhatsApp, Telegram, Petcube), most files first. Hiding one hides all its files;
   screenshots are not among them (their source is screenshots: see screenshotApps). A hidden one with no files left is
   listed too, so it can be shown again.
   """
@@ -2027,11 +2127,11 @@ type HiddenCollections {
   screenshotApps: [Collection!]!
   "The files the nudity scan scored high."
   nudity: NudityHiding!
-  "Sound recordings that are neither calls nor voice messages. Hidden until the user shows them."
+  "Sound recordings that are neither calls nor voice messages (source recording, or any other). Hidden until the user shows them."
   recordings: Collection!
-  "Recorded phone calls (Media.call). Hidden until the user shows them."
+  "Recorded phone calls (source call, or Media.call). Hidden until the user shows them."
   calls: Collection!
-  "WhatsApp voice messages and audio (sound recordings with source folder:WhatsApp). Hidden until the user shows them."
+  "WhatsApp voice messages and audio (sound recordings with source folder:whatsapp). Hidden until the user shows them."
   voiceMessages: Collection!
 }
 
@@ -2062,7 +2162,7 @@ type Collection {
 input HiddenCollectionsInput {
   """
   The apps and folders whose files are hidden, by name (WhatsApp, Telegram, as apps names them; a kind such as
-  folder:Telegram is taken too), compared ignoring case. Left out, they stay as they are.
+  folder:telegram is taken too), compared ignoring case. Left out, they stay as they are.
   """
   apps: [String!]
   "Hides WhatsApp, or shows it, whatever apps say; left out, apps decide. For apps from before apps."
@@ -2243,7 +2343,7 @@ scalar Int64
 enum MediaKind {
   PHOTO
   VIDEO
-  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source folder:WhatsApp)."
+  "A sound recording: of an event (source recording), a phone call (call, source call) or a WhatsApp voice message (source folder:whatsapp)."
   AUDIO
 }
 
@@ -2274,9 +2374,10 @@ type Media {
   location: GeoPoint
   """
   What the file is and where it came from, as the server's one rule decides it (docs/media.md, "Sources"): camera,
-  screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), other, or a folder
-  kind, "folder:" and the folder's name (folder:WhatsApp, folder:Telegram, folder:Petcube). Compared ignoring case.
-  Before Oct 27, 2026 WhatsApp was whatsapp, which apps read as folder:WhatsApp.
+  screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), call and recording
+  (sound recordings: see soundFolders), other, or a folder kind, "folder:" and the folder's name in lower case
+  (folder:whatsapp, folder:telegram, folder:petcube; shown by folderNames). Compared ignoring case. Before Oct 27, 2026
+  WhatsApp was whatsapp and folder kinds kept their folder's case, which apps read as folder:whatsapp and in lower case.
   """
   source: String
   "The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
@@ -2812,6 +2913,79 @@ extend type Query {
   duplicates(limit: Int = 100, offset: Int = 0, includePrivate: Boolean = false): [DuplicateGroup!]!
 }
 `, BuiltIn: false},
+	{Name: "../schema/sources.graphql", Input: `# --- Folder names and sound folders ----------------------------------------------
+# A folder kind's id is "folder:" and its folder's name in lower case (folder:whatsapp, folder:calls, folder:dine-out),
+# so folders that differ only by case are one kind. folderNames gives the name to show for each: an app the server
+# knows as it spells it (WhatsApp, Telegram), else as most of its files spell their folder (Calls).
+# Sound recordings have two kinds of their own, call and recording, and the user merges the folders sound recordings
+# came from (Call, Voice Recorder…) into them: the marks are kept in sound-folders.json at the data folder's root. A
+# folder nobody marked keeps its own kind (folder:calls), so nothing moves until the user marks one. See
+# docs/media.md, "Sound folders".
+
+extend type ServerInfo {
+  "Folder kinds' ids are in lower case, named by folderNames; sound recordings can be call or recording, and soundFolders and setSoundFolder are there."
+  soundFolders: Boolean!
+}
+
+"A folder kind and the name it is shown by."
+type FolderName {
+  "The folder kind's id, in lower case: folder:whatsapp, folder:calls."
+  id: String!
+  "As it is shown: an app the server knows as it spells it (WhatsApp), else as most of its files spell their folder (Calls)."
+  name: String!
+}
+
+"Where a sound folder's recordings go."
+enum SoundFolderMark {
+  "Merged into calls: its recordings' source is call."
+  CALL
+  "Merged into recordings: its recordings' source is recording."
+  RECORDING
+  "Not merged: its recordings keep their own kind (the folder's, folder:calls)."
+  NONE
+}
+
+"One folder sound recordings came from, and the user's mark on it."
+type SoundFolder {
+  "The folder's kind, in lower case: folder:calls, folder:voice recorder."
+  id: String!
+  "As most of its files spell the folder: Calls, Voice Recorder."
+  name: String!
+  """
+  How many sound recordings came from it, hidden or not, by what their sidecars say of where they were (the folder
+  the phone sent, the phone's folder, the folder the import found them in): recordings already merged into calls or
+  recordings count here still.
+  """
+  files: Int!
+  "Of files, how many the import placed (uploadedBy import); the rest came from devices."
+  imported: Int!
+  as: SoundFolderMark!
+  """
+  How many of its files are still being moved after its mark changed: to call or recording, or back. 0 once they all
+  have; each moved file comes again in the change feed.
+  """
+  pending: Int!
+}
+
+extend type Query {
+  "Every folder kind the user's files take or came from, hidden or marked, by id, with the name to show for it."
+  folderNames: [FolderName!]!
+  "Every folder the user's sound recordings came from, most files first; a marked folder with no files left is listed too."
+  soundFolders: [SoundFolder!]!
+}
+
+extend type Mutation {
+  """
+  Merges a sound folder into calls or recordings, or takes the mark back (NONE), and answers at once with every sound
+  folder. id is the folder's kind (folder:calls) or its name (Calls), compared ignoring case. The folder's recordings
+  then move in the background: to call or recording, or, with NONE, back to what they had before (their folder's own
+  kind); soundFolders.pending counts what is left, and each file comes again in the change feed once moved. Only
+  sidecars change; each move is journaled in relabels/ at the data folder's root, so fix-sources --undo takes it back.
+  A WhatsApp voice message stays one. A mark changed while files still move is applied after them.
+  """
+  setSoundFolder(id: String!, as: SoundFolderMark!): [SoundFolder!]!
+}
+`, BuiltIn: false},
 	{Name: "../schema/text.graphql", Input: `# --- Text in photos -----------------------------------------------------------
 # Read by OCR on the server (Hebrew and English: PaddleOCR finetuned for Hebrew); searchMedia finds photos by it.
 # See docs/indexes.md.
@@ -2986,6 +3160,16 @@ func (ec *executionContext) childFields_FaceHit(ctx context.Context, field graph
 		return ec.fieldContext_FaceHit_score(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type FaceHit", field.Name)
+}
+
+func (ec *executionContext) childFields_FolderName(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_FolderName_id(ctx, field)
+	case "name":
+		return ec.fieldContext_FolderName_name(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type FolderName", field.Name)
 }
 
 func (ec *executionContext) childFields_GeoPoint(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -3278,6 +3462,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_indexing(ctx, field)
 	case "localIndexes":
 		return ec.fieldContext_ServerInfo_localIndexes(ctx, field)
+	case "soundFolders":
+		return ec.fieldContext_ServerInfo_soundFolders(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -3290,6 +3476,24 @@ func (ec *executionContext) childFields_SimilarHit(ctx context.Context, field gr
 		return ec.fieldContext_SimilarHit_score(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type SimilarHit", field.Name)
+}
+
+func (ec *executionContext) childFields_SoundFolder(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_SoundFolder_id(ctx, field)
+	case "name":
+		return ec.fieldContext_SoundFolder_name(ctx, field)
+	case "files":
+		return ec.fieldContext_SoundFolder_files(ctx, field)
+	case "imported":
+		return ec.fieldContext_SoundFolder_imported(ctx, field)
+	case "as":
+		return ec.fieldContext_SoundFolder_as(ctx, field)
+	case "pending":
+		return ec.fieldContext_SoundFolder_pending(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SoundFolder", field.Name)
 }
 
 func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -3671,6 +3875,28 @@ func (ec *executionContext) field_Mutation_setPrivate_args(ctx context.Context, 
 		return nil, err
 	}
 	args["private"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setSoundFolder_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "as",
+		func(ctx context.Context, v any) (model.SoundFolderMark, error) {
+			return ec.unmarshalNSoundFolderMark2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderMark(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["as"] = arg1
 	return args, nil
 }
 
@@ -5259,6 +5485,52 @@ func (ec *executionContext) _FaceHit_score(ctx context.Context, field graphql.Co
 }
 func (ec *executionContext) fieldContext_FaceHit_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("FaceHit", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _FolderName_id(ctx context.Context, field graphql.CollectedField, obj *model.FolderName) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FolderName_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FolderName_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FolderName", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _FolderName_name(ctx context.Context, field graphql.CollectedField, obj *model.FolderName) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_FolderName_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_FolderName_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("FolderName", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _GeoPoint_lat(ctx context.Context, field graphql.CollectedField, obj *model.GeoPoint) (ret graphql.Marshaler) {
@@ -7762,6 +8034,50 @@ func (ec *executionContext) fieldContext_Mutation_prepareSearch(_ context.Contex
 	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type SearchModelState does not have child fields"))
 }
 
+func (ec *executionContext) _Mutation_setSoundFolder(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setSoundFolder(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetSoundFolder(ctx, fc.Args["id"].(string), fc.Args["as"].(model.SoundFolderMark))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.SoundFolder) graphql.Marshaler {
+			return ec.marshalNSoundFolder2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setSoundFolder(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SoundFolder(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setSoundFolder_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _NotFound_id(ctx context.Context, field graphql.CollectedField, obj *model.NotFound) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -8770,6 +9086,70 @@ func (ec *executionContext) fieldContext_Query_duplicates(ctx context.Context, f
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_folderNames(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_folderNames(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().FolderNames(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.FolderName) graphql.Marshaler {
+			return ec.marshalNFolderName2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐFolderNameᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_folderNames(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_FolderName(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_soundFolders(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_soundFolders(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().SoundFolders(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.SoundFolder) graphql.Marshaler {
+			return ec.marshalNSoundFolder2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_soundFolders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SoundFolder(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -9292,6 +9672,29 @@ func (ec *executionContext) fieldContext_ServerInfo_localIndexes(_ context.Conte
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_soundFolders(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_soundFolders(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SoundFolders, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_soundFolders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _SimilarHit_media(ctx context.Context, field graphql.CollectedField, obj *model.SimilarHit) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -9345,6 +9748,144 @@ func (ec *executionContext) _SimilarHit_score(ctx context.Context, field graphql
 }
 func (ec *executionContext) fieldContext_SimilarHit_score(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("SimilarHit", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _SoundFolder_id(ctx context.Context, field graphql.CollectedField, obj *model.SoundFolder) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundFolder_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundFolder_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SoundFolder_name(ctx context.Context, field graphql.CollectedField, obj *model.SoundFolder) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundFolder_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundFolder_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SoundFolder_files(ctx context.Context, field graphql.CollectedField, obj *model.SoundFolder) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundFolder_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundFolder_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _SoundFolder_imported(ctx context.Context, field graphql.CollectedField, obj *model.SoundFolder) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundFolder_imported(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Imported, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundFolder_imported(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _SoundFolder_as(ctx context.Context, field graphql.CollectedField, obj *model.SoundFolder) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundFolder_as(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.As, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.SoundFolderMark) graphql.Marshaler {
+			return ec.marshalNSoundFolderMark2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderMark(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundFolder_as(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type SoundFolderMark does not have child fields"))
+}
+
+func (ec *executionContext) _SoundFolder_pending(ctx context.Context, field graphql.CollectedField, obj *model.SoundFolder) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundFolder_pending(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Pending, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundFolder_pending(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _StorageUsage_photos(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
@@ -12127,6 +12668,50 @@ func (ec *executionContext) _FaceHit(ctx context.Context, sel ast.SelectionSet, 
 	return out
 }
 
+var folderNameImplementors = []string{"FolderName"}
+
+func (ec *executionContext) _FolderName(ctx context.Context, sel ast.SelectionSet, obj *model.FolderName) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, folderNameImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FolderName")
+		case "id":
+			out.Values[i] = ec._FolderName_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._FolderName_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var geoPointImplementors = []string{"GeoPoint"}
 
 func (ec *executionContext) _GeoPoint(ctx context.Context, sel ast.SelectionSet, obj *model.GeoPoint) graphql.Marshaler {
@@ -12988,6 +13573,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setSoundFolder":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setSoundFolder(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -13587,6 +14179,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "folderNames":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_folderNames(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "soundFolders":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_soundFolders(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -13758,6 +14394,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "soundFolders":
+			out.Values[i] = ec._ServerInfo_soundFolders(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -13799,6 +14440,70 @@ func (ec *executionContext) _SimilarHit(ctx context.Context, sel ast.SelectionSe
 			}
 		case "score":
 			out.Values[i] = ec._SimilarHit_score(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var soundFolderImplementors = []string{"SoundFolder"}
+
+func (ec *executionContext) _SoundFolder(ctx context.Context, sel ast.SelectionSet, obj *model.SoundFolder) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, soundFolderImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SoundFolder")
+		case "id":
+			out.Values[i] = ec._SoundFolder_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._SoundFolder_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._SoundFolder_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "imported":
+			out.Values[i] = ec._SoundFolder_imported(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "as":
+			out.Values[i] = ec._SoundFolder_as(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pending":
+			out.Values[i] = ec._SoundFolder_pending(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -14643,6 +15348,32 @@ func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.S
 	return graphql.WrapContextMarshaler(ctx, res)
 }
 
+func (ec *executionContext) marshalNFolderName2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐFolderNameᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.FolderName) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNFolderName2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐFolderName(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNFolderName2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐFolderName(ctx context.Context, sel ast.SelectionSet, v *model.FolderName) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FolderName(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNHiddenCollections2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐHiddenCollections(ctx context.Context, sel ast.SelectionSet, v model.HiddenCollections) graphql.Marshaler {
 	return ec._HiddenCollections(ctx, sel, &v)
 }
@@ -15112,6 +15843,42 @@ func (ec *executionContext) marshalNSimilarHit2ᚖgithubᚗcomᚋjournalᚋserve
 		return graphql.Null
 	}
 	return ec._SimilarHit(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSoundFolder2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.SoundFolder) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNSoundFolder2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolder(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSoundFolder2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolder(ctx context.Context, sel ast.SelectionSet, v *model.SoundFolder) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SoundFolder(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNSoundFolderMark2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderMark(ctx context.Context, v any) (model.SoundFolderMark, error) {
+	var res model.SoundFolderMark
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNSoundFolderMark2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundFolderMark(ctx context.Context, sel ast.SelectionSet, v model.SoundFolderMark) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) unmarshalNStartUploadInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐStartUploadInput(ctx context.Context, v any) (model.StartUploadInput, error) {

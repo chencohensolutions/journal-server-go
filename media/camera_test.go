@@ -223,9 +223,21 @@ func TestOldSidecarsAreReadAsNow(t *testing.T) {
 	}
 	shot := write("Screenshot_20240301_030715_Bumble.jpg", `"source":"screenshots","app":"Bumble"`)
 	wa := write("IMG-20240301-WA0001.jpg", `"source":"whatsapp"`)
+	// Folder kinds as phones sent them before ids were in lower case: read in lower case, as sent in sentFrom.
+	wa2 := write("x.jpg", `"source":"folder:WhatsApp"`)
+	calls := write("y.jpg", `"source":"folder:Calls","sentFrom":"folder:Calls"`)
 	store, err := OpenStore(root, time.Now)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if facts := store.mustGet(t, wa2).Sidecar.Facts; *facts.Source != SourceWhatsApp || *facts.SentFrom != "folder:WhatsApp" {
+		t.Fatalf("folder:WhatsApp: %+v", facts)
+	}
+	if facts := store.mustGet(t, calls).Sidecar.Facts; *facts.Source != "folder:calls" || *facts.SentFrom != "folder:Calls" {
+		t.Fatalf("folder:Calls: %+v", facts)
+	}
+	if names := store.FolderNames(); len(names) != 2 || names[0] != (FolderKindName{"folder:calls", "Calls"}) || names[1] != (FolderKindName{SourceWhatsApp, "WhatsApp"}) {
+		t.Fatalf("folder names: %+v", names)
 	}
 	if facts := store.mustGet(t, shot).Sidecar.Facts; facts.ScreenshotApp == nil || *facts.ScreenshotApp != "Bumble" {
 		t.Fatalf("screenshot: %+v", facts)
@@ -245,7 +257,7 @@ func TestOldSidecarsAreReadAsNow(t *testing.T) {
 		t.Fatalf("rewritten screenshot: %s", data)
 	}
 	data, _ = os.ReadFile(filepath.Join(dir, "IMG-20240301-WA0001.jpg.json"))
-	if !strings.Contains(string(data), `"source": "folder:WhatsApp"`) || !strings.Contains(string(data), `"sentFrom": "whatsapp"`) {
+	if !strings.Contains(string(data), `"source": "folder:whatsapp"`) || !strings.Contains(string(data), `"sentFrom": "whatsapp"`) {
 		t.Fatalf("rewritten WhatsApp file: %s", data)
 	}
 }

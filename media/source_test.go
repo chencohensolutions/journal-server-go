@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -47,12 +48,12 @@ func TestSourceOf(t *testing.T) {
 		{"WhatsApp's Private folder", imported(`D:\Archive\phone\WhatsApp\Media\WhatsApp Images\Private\IMG-20260101-WA0002.jpg`, "phone/WhatsApp/Media/WhatsApp Images/Private"), SourceWhatsApp, ""},
 		{"WhatsApp's name in Pictures", imported(`D:\Archive\phone\Pictures\IMG-20230115-WA0012.jpg`, "phone/Pictures"), SourceWhatsApp, ""},
 		{"WhatsApp's name in DCIM", imported("/b/DCIM/Camera/vid-20230115-wa0003.mp4", "b/DCIM/Camera"), SourceWhatsApp, ""},
-		{"a Telegram photo", imported(`D:\Archive\phone\Pictures\photo_2023-01-15_12-34-56.jpg`, "phone/Pictures"), "folder:Telegram", ""},
-		{"Telegram's folder", imported(`D:\Archive\phone\Pictures\telegram\x.jpg`, "phone/Pictures/telegram"), "folder:Telegram", ""},
+		{"a Telegram photo", imported(`D:\Archive\phone\Pictures\photo_2023-01-15_12-34-56.jpg`, "phone/Pictures"), "folder:telegram", ""},
+		{"Telegram's folder", imported(`D:\Archive\phone\Pictures\telegram\x.jpg`, "phone/Pictures/telegram"), "folder:telegram", ""},
 		{"a screenshot in a WhatsApp folder", imported(`D:\Archive\phone\WhatsApp\Media\WhatsApp Images\Screenshot_20240301_030715_Bumble.jpg`, "phone/WhatsApp/Media/WhatsApp Images"), SourceScreenshots, "Bumble"},
 		{"a screenshot folder", imported(`D:\Archive\phone\DCIM\Screenshots\x.png`, "phone/DCIM/Screenshots"), SourceScreenshots, ""},
 		{"a PNG loose in Pictures", imported(`D:\Archive\phone\Pictures\1740850503547.png`, "phone/Pictures"), SourceOther, ""},
-		{"a named folder", imported(`D:\Archive\phone\Pictures\Petcube\x.jpg`, "phone/Pictures/Petcube"), "folder:Petcube", ""},
+		{"a named folder", imported(`D:\Archive\phone\Pictures\Petcube\x.jpg`, "phone/Pictures/Petcube"), "folder:petcube", ""},
 		{"a dated folder", imported(`D:\Archive\old\2014\x.jpg`, "old/2014"), SourceOther, ""},
 		{"right in the searched folder", imported(`D:\Archive\Petcube\x.jpg`, "Petcube"), SourceOther, ""},
 		{"a camera marked not mine", withCamera(imported(`D:\Archive\phone\Pictures\x.jpg`, "phone/Pictures"), canon), SourceReceived, ""},
@@ -61,21 +62,21 @@ func TestSourceOf(t *testing.T) {
 
 		{"Fujifilm's name", imported(`D:\Archive\x\DSCF1234.JPG`, "x"), SourceCamera, ""},
 		{"a Camera folder further up", imported(`D:\Archive\phone\DCIM\Camera\Sub\x.jpg`, "phone/DCIM/Camera/Sub"), SourceCamera, ""},
-		{"an album in DCIM", imported(`D:\Archive\phone DCIM\Flowers\x.jpg`, "phone DCIM/Flowers"), "folder:Flowers", ""},
+		{"an album in DCIM", imported(`D:\Archive\phone DCIM\Flowers\x.jpg`, "phone DCIM/Flowers"), "folder:flowers", ""},
 		{"right in DCIM", imported(`D:\Archive\phone DCIM\x.jpg`, "phone DCIM"), SourceCamera, ""},
 		{"a screen recording", imported(`D:\Archive\phone\Movies\Screen_Recording_20240301-030715_Bumble.mp4`, "phone/Movies"), SourceScreenshots, ""},
 		{"upload: the phone's camera", uploaded("20250928_211937.jpg", "DCIM/Camera/", SourceCamera), SourceCamera, ""},
 		{"upload: WhatsApp's name in Pictures, sent as other", uploaded("IMG-20260101-WA0002.jpg", "Pictures/", SourceOther), SourceWhatsApp, ""},
 		{"upload: a new app's folder:WhatsApp", uploaded("x.jpg", "Pictures/", SourceWhatsApp), SourceWhatsApp, ""},
-		{"upload: DCIM/Flowers", uploaded("x.jpg", "DCIM/Flowers/", "folder:Flowers"), "folder:Flowers", ""},
+		{"upload: DCIM/Flowers", uploaded("x.jpg", "DCIM/Flowers/", "folder:Flowers"), "folder:flowers", ""},
 		{"upload: an old app's whatsapp", uploaded("x.jpg", "", OldSourceWhatsApp), SourceWhatsApp, ""},
-		{"upload: an app's folder in Pictures survives", uploaded("x.jpg", "Pictures/Petcube/", "folder:Petcube"), "folder:Petcube", ""},
-		{"upload: an app's folder in DCIM", uploaded("x.jpg", "DCIM/Petcube/", "folder:Petcube"), "folder:Petcube", ""},
-		{"upload: a file loose in Pictures keeps what the phone said", uploaded("1740850503547.png", "Pictures/", "folder:Pinterest"), "folder:Pinterest", ""},
-		{"upload: without a folder, what the phone said", uploaded("x.jpg", "", "folder:Petcube"), "folder:Petcube", ""},
+		{"upload: an app's folder in Pictures survives", uploaded("x.jpg", "Pictures/Petcube/", "folder:Petcube"), "folder:petcube", ""},
+		{"upload: an app's folder in DCIM", uploaded("x.jpg", "DCIM/Petcube/", "folder:Petcube"), "folder:petcube", ""},
+		{"upload: a file loose in Pictures keeps what the phone said", uploaded("1740850503547.png", "Pictures/", "folder:Pinterest"), "folder:pinterest", ""},
+		{"upload: without a folder, what the phone said", uploaded("x.jpg", "", "folder:Petcube"), "folder:petcube", ""},
 		{"upload: nothing said", uploaded("x.jpg", "", ""), SourceOther, ""},
 		{"upload: an iPhone's WhatsApp album", uploaded("IMG_0001.JPG", "WhatsApp", SourceWhatsApp), SourceWhatsApp, ""},
-		{"upload: a Telegram name in Download", uploaded("photo_2023-01-15_12-34-56.jpg", "Download/", SourceOther), "folder:Telegram", ""},
+		{"upload: a Telegram name in Download", uploaded("photo_2023-01-15_12-34-56.jpg", "Download/", SourceOther), "folder:telegram", ""},
 		{"upload: a screenshot sent as Telegram", uploaded("Screenshot_20240301_030715_Bumble.jpg", "Pictures/Telegram/", "folder:Telegram"), SourceScreenshots, "Bumble"},
 
 		// Sound recordings take no recorder's folder: their sections are calls, recordings and voice messages.
@@ -86,7 +87,7 @@ func TestSourceOf(t *testing.T) {
 		{"a WhatsApp voice message by its name", sound(imported(`D:\Archive\phone\not photos or videos\Call\PTT-20230115-WA0003.opus`, "phone/not photos or videos/Call")), SourceWhatsApp, ""},
 		{"a WhatsApp voice message by its folder", sound(imported(`D:\Archive\phone\WhatsApp\Media\WhatsApp Voice Notes\202301\x.opus`, "phone/WhatsApp/Media/WhatsApp Voice Notes/202301")), SourceWhatsApp, ""},
 		{"upload: a voice message the phone sent as WhatsApp", sound(uploaded("x.opus", "", SourceWhatsApp)), SourceWhatsApp, ""},
-		{"upload: a call recorder's folder", sound(uploaded("x.m4a", "Recordings/Call/", "folder:Call")), SourceOther, ""},
+		{"upload: a call recorder's folder", sound(uploaded("x.m4a", "Recordings/Call/", "folder:Call")), "folder:call", ""},
 
 		// Folders a camera makes, at any level, are camera.
 		{"100ANDRO", imported(`D:\GoogleDriveTemp\toimport2\DCIM\100ANDRO\x.mp4`, "toimport2/DCIM/100ANDRO"), SourceCamera, ""},
@@ -100,11 +101,11 @@ func TestSourceOf(t *testing.T) {
 		{"upload: DCIM/100ANDRO", uploaded("x.mp4", "DCIM/100ANDRO/", "folder:100ANDRO"), SourceCamera, ""},
 
 		// A folder kind the phone sent is overridden only by a screenshot, WhatsApp or a messaging app.
-		{"upload: Petcube's folder with a camera's name and tags", withCamera(uploaded("20250928_211937.jpg", "Pictures/Petcube/", "folder:Petcube"), samsung), "folder:Petcube", ""},
-		{"upload: Petcube sent, a camera's name, no folder", uploaded("DSC_0001.JPG", "", "folder:Petcube"), "folder:Petcube", ""},
-		{"upload: Petcube sent, a camera not mine", withCamera(uploaded("x.jpg", "", "folder:Petcube"), canon), "folder:Petcube", ""},
+		{"upload: Petcube's folder with a camera's name and tags", withCamera(uploaded("20250928_211937.jpg", "Pictures/Petcube/", "folder:Petcube"), samsung), "folder:petcube", ""},
+		{"upload: Petcube sent, a camera's name, no folder", uploaded("DSC_0001.JPG", "", "folder:Petcube"), "folder:petcube", ""},
+		{"upload: Petcube sent, a camera not mine", withCamera(uploaded("x.jpg", "", "folder:Petcube"), canon), "folder:petcube", ""},
 		{"upload: Petcube sent, WhatsApp's name", uploaded("IMG-20230115-WA0012.jpg", "Pictures/Petcube/", "folder:Petcube"), SourceWhatsApp, ""},
-		{"upload: Petcube's folder, a Telegram name", uploaded("photo_2023-01-15_12-34-56.jpg", "Pictures/Petcube/", "folder:Petcube"), "folder:Telegram", ""},
+		{"upload: Petcube's folder, a Telegram name", uploaded("photo_2023-01-15_12-34-56.jpg", "Pictures/Petcube/", "folder:Petcube"), "folder:telegram", ""},
 
 		// Hebrew screenshot folders.
 		{"צילומי מסך", imported(`D:\GoogleDriveTemp\phone\צילומי מסך\x.png`, "phone/צילומי מסך"), SourceScreenshots, ""},
@@ -162,56 +163,171 @@ func TestSourceOfFolderMinimum(t *testing.T) {
 	addFolderFiles(calls, "Calls", MinImportedFolderFiles/2)
 	addFolderFiles(calls, "calls", MinImportedFolderFiles/2)
 	callsFrom := `D:\GoogleDriveTemp\import\calls\x.jpg`
-	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &callsFrom, Folders: []string{"import/calls"}}, CameraMarks{}, calls); source != "folder:Calls" {
-		t.Errorf("Calls and calls: %s, want folder:Calls", source)
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &callsFrom, Folders: []string{"import/calls"}}, CameraMarks{}, calls); source != "folder:calls" {
+		t.Errorf("Calls and calls: %s, want folder:calls", source)
 	}
 
 	// Never held to it: a phone's folder, and an app the rule knows.
 	petcube, sent := "Pictures/Petcube/", "folder:Petcube"
-	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "Galaxy S25", DeviceFolder: &petcube, SentFrom: &sent}, CameraMarks{}, nil); source != "folder:Petcube" {
-		t.Errorf("a phone's folder: %s, want folder:Petcube", source)
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "Galaxy S25", DeviceFolder: &petcube, SentFrom: &sent}, CameraMarks{}, nil); source != "folder:petcube" {
+		t.Errorf("a phone's folder: %s, want folder:petcube", source)
 	}
 	telegram := `D:\GoogleDriveTemp\import\Telegram\x.jpg`
-	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &telegram, Folders: []string{"import/Telegram"}}, CameraMarks{}, nil); source != "folder:Telegram" {
-		t.Errorf("Telegram: %s, want folder:Telegram", source)
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &telegram, Folders: []string{"import/Telegram"}}, CameraMarks{}, nil); source != "folder:telegram" {
+		t.Errorf("Telegram: %s, want folder:telegram", source)
 	}
 }
 
-// Folder kinds that differ only by case are one kind, spelled as most files spell it (on a tie, the one that sorts
-// first), the phone's too.
+// Folder kinds that differ only by case are one kind, written in lower case, the phone's too; each is named as most
+// of its files spell their folder (on a tie, the one that sorts first), an app the rule knows as it spells it.
 func TestSourceOfFolderCase(t *testing.T) {
 	kinds := NewFolderKinds(CameraMarks{})
-	addFolderFiles(kinds, "slicer", MinImportedFolderFiles)
-	addFolderFiles(kinds, "Slicer", MinImportedFolderFiles+1)
+	addFolderFiles(kinds, "slicer", MinImportedFolderFiles/2)
+	addFolderFiles(kinds, "Slicer", MinImportedFolderFiles/2)
 	for _, folder := range []string{"slicer", "Slicer", "SLICER"} {
 		from := `D:\GoogleDriveTemp\import\` + folder + `\x.jpg`
-		if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &from, Folders: []string{"import/" + folder}}, CameraMarks{}, kinds); source != "folder:Slicer" {
-			t.Errorf("%s: %s, want folder:Slicer", folder, source)
+		if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &from, Folders: []string{"import/" + folder}}, CameraMarks{}, kinds); source != "folder:slicer" {
+			t.Errorf("%s: %s, want folder:slicer", folder, source)
 		}
 	}
-	device := "Pictures/slicer/"
-	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "Galaxy S25", DeviceFolder: &device}, CameraMarks{}, kinds); source != "folder:Slicer" {
-		t.Errorf("a phone's slicer: %s, want folder:Slicer", source)
+	device := "Pictures/Dine-Out/"
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "Galaxy S25", DeviceFolder: &device}, CameraMarks{}, kinds); source != "folder:dine-out" {
+		t.Errorf("a phone's Dine-Out: %s, want folder:dine-out", source)
 	}
-	tie := NewFolderKinds(CameraMarks{})
-	addFolderFiles(tie, "calls", MinImportedFolderFiles)
-	addFolderFiles(tie, "Calls", MinImportedFolderFiles)
-	if got := tie.Spelling("folder:calls"); got != "folder:Calls" {
-		t.Errorf("a tie: %s, want folder:Calls", got)
+
+	names := folderNames{}
+	for _, spelling := range []string{"calls", "Calls", "Calls", "CALLS"} {
+		names.add("folder:calls", spelling)
 	}
-	if got := kinds.Spelling("folder:Unknown"); got != "folder:Unknown" {
-		t.Errorf("a kind no file takes: %s", got)
+	names.add("folder:slicer", "slicer")
+	names.add("folder:slicer", "Slicer")
+	names.add("folder:whatsapp", "whatsapp")
+	for id, want := range map[string]string{"folder:calls": "Calls", "folder:Calls": "Calls", "folder:slicer": "Slicer",
+		"folder:whatsapp": "WhatsApp", "folder:telegram": "Telegram", "folder:unknown": "unknown"} {
+		if got := names.name(id); got != want {
+			t.Errorf("%s is named %q, want %q", id, got, want)
+		}
+	}
+	sent, folder, from := "folder:Voice Recorder", "Recordings/Voice Recorder/", `D:\phone\Petcube\x.jpg`
+	for _, c := range []struct {
+		facts    Facts
+		id, want string
+	}{
+		{Facts{SentFrom: &sent}, "folder:voice recorder", "Voice Recorder"},
+		{Facts{DeviceFolder: &folder}, "folder:voice recorder", "Voice Recorder"},
+		{Facts{ImportedFrom: &from}, "folder:petcube", "Petcube"},
+		{Facts{Folders: []string{"phone/Petcube"}}, "folder:petcube", "Petcube"},
+		{Facts{Source: ptr("folder:petcube")}, "folder:petcube", "petcube"},
+		{Facts{DeviceFolder: &folder}, "folder:petcube", ""},
+	} {
+		if got := folderSpelling(c.facts, c.id); got != c.want {
+			t.Errorf("%+v spells %s %q, want %q", c.facts, c.id, got, c.want)
+		}
 	}
 }
 
 func TestNormalizeSource(t *testing.T) {
 	for in, want := range map[string]string{
-		"whatsapp": SourceWhatsApp, "WhatsApp": SourceWhatsApp, "folder:whatsapp": SourceWhatsApp, "folder:TELEGRAM": "folder:Telegram",
-		"Camera": SourceCamera, "folder:Petcube": "folder:Petcube", "received": SourceReceived, "folder:Camera": SourceCamera,
+		"whatsapp": SourceWhatsApp, "WhatsApp": SourceWhatsApp, "folder:whatsapp": SourceWhatsApp, "folder:WhatsApp": SourceWhatsApp,
+		"folder:TELEGRAM": "folder:telegram", "Camera": SourceCamera, "folder:Petcube": "folder:petcube", "received": SourceReceived,
+		"folder:Camera": SourceCamera, "Call": SourceCall, "RECORDING": SourceRecording, "folder:Call": "folder:call",
+		"folder:Dine-Out": "folder:dine-out", "folder: Voice Recorder ": "folder:voice recorder",
 	} {
 		if got := NormalizeSource(in); got != want {
 			t.Errorf("%s: %s, want %s", in, got, want)
 		}
+	}
+}
+
+// Sound recordings by the rule: WhatsApp's are voice messages, a folder the user merged gives call or recording, a
+// call is call, and any other keeps the source it has (never rewritten to other); one merged by a mark taken back
+// goes back to what it had.
+func TestSourceOfSoundRecordings(t *testing.T) {
+	kinds := NewFolderKinds(CameraMarks{})
+	kinds.sound = NewSoundFolderMarks([]SoundFolderMark{{ID: "folder:Calls", As: SourceCall}, {ID: "Voice Recorder", As: SourceRecording}})
+	str := func(s string) *string { return &s }
+	stored := func(name, source, sentFrom, deviceFolder string) Facts {
+		f := Facts{FileName: name, Kind: KindAudio, UploadedBy: "Galaxy S25", Source: str(source)}
+		if sentFrom != "" {
+			f.SentFrom = str(sentFrom)
+		}
+		if deviceFolder != "" {
+			f.DeviceFolder = str(deviceFolder)
+		}
+		return f
+	}
+	imported := func(path, source string) Facts {
+		parts := pathParts(path)
+		f := Facts{FileName: parts[len(parts)-1], Kind: KindAudio, UploadedBy: "import", ImportedFrom: str(path),
+			Folders: []string{strings.Join(parts[len(parts)-3:len(parts)-1], "/")}}
+		if source != "" {
+			f.Source = str(source)
+		}
+		return f
+	}
+	withCall := func(f Facts) Facts { f.Call = &Call{}; return f }
+	withSentFrom := func(f Facts, s string) Facts { f.SentFrom = &s; return f }
+	for _, c := range []struct {
+		what   string
+		facts  Facts
+		source string
+		folder string // SoundFolderOf
+	}{
+		{"a phone's call folder keeps its kind, in lower case", stored("x.m4a", "folder:Call", "folder:Call", "Recordings/Call/"), "folder:call", "folder:call"},
+		{"a camera's sound stays camera", stored("x.m4a", "camera", "camera", "DCIM/Camera/"), SourceCamera, ""},
+		{"an imported sound labelled other stays other", imported(`D:\Archive\phone\Call\x.m4a`, SourceOther), SourceOther, "folder:call"},
+		{"a new import below the minimum is other", imported(`D:\Archive\phone\Call\x.m4a`, ""), SourceOther, "folder:call"},
+		{"WhatsApp by its name", stored("PTT-20230115-WA0003.opus", "folder:Call", "folder:Call", "Recordings/Call/"), SourceWhatsApp, ""},
+		{"WhatsApp as the phone sent it", stored("x.opus", "folder:WhatsApp", "folder:WhatsApp", ""), SourceWhatsApp, ""},
+		{"a folder merged into calls", stored("x.m4a", "folder:calls", "folder:Calls", "Recordings/Calls/"), SourceCall, "folder:calls"},
+		{"an import from a folder merged into calls", imported(`D:\Archive\phone\Calls\x.m4a`, SourceOther), SourceCall, "folder:calls"},
+		{"a folder merged into recordings, even a call", withCall(stored("x.m4a", "folder:voice recorder", "", "Recordings/Voice Recorder/")), SourceRecording, "folder:voice recorder"},
+		{"a call", withCall(stored("x.m4a", "folder:call", "folder:Call", "Recordings/Call/")), SourceCall, "folder:call"},
+		{"merged once, the mark taken back: the phone's folder", stored("x.m4a", SourceCall, "folder:Call", "Recordings/Call/"), "folder:call", "folder:call"},
+		{"merged once, the mark taken back: an import's other", withSentFrom(imported(`D:\Archive\phone\Call\x.m4a`, SourceRecording), SourceOther), SourceOther, "folder:call"},
+		{"merged once, the mark taken back, nothing before: its folder", imported(`D:\Archive\phone\Call\x.m4a`, SourceRecording), "folder:call", "folder:call"},
+		{"a phone's own recording stays", stored("x.m4a", SourceRecording, SourceRecording, "Recordings/Call/"), SourceRecording, "folder:call"},
+	} {
+		source, _ := SourceOf(c.facts, CameraMarks{}, kinds)
+		if source != c.source {
+			t.Errorf("%s: %s, want %s", c.what, source, c.source)
+		}
+		if folder := SoundFolderOf(c.facts); folder != c.folder {
+			t.Errorf("%s: from %q, want %q", c.what, folder, c.folder)
+		}
+	}
+	// A new import of enough sound files from one folder makes it a kind.
+	many := NewFolderKinds(CameraMarks{})
+	for i := range MinImportedFolderFiles {
+		many.Add(fmt.Sprint(i), imported(fmt.Sprintf(`D:\Archive\phone\Call\%d.m4a`, i), ""))
+	}
+	if source, _ := SourceOf(imported(`D:\Archive\phone\Call\x.m4a`, ""), CameraMarks{}, many); source != "folder:call" {
+		t.Errorf("%d new files from Call: %s", MinImportedFolderFiles, source)
+	}
+}
+
+// A folder under DCIM too small to be a kind is camera, not other.
+func TestSourceOfSmallFolderUnderDCIM(t *testing.T) {
+	kinds := NewFolderKinds(CameraMarks{})
+	pitch := func(i int) Facts {
+		from := fmt.Sprintf(`D:\Archive\phone\DCIM\Pitch\p%d.jpg`, i)
+		return Facts{FileName: fmt.Sprintf("p%d.jpg", i), UploadedBy: "import", ImportedFrom: &from, Folders: []string{"phone/DCIM/Pitch"}}
+	}
+	for i := range 6 {
+		kinds.Add(fmt.Sprint(i), pitch(i))
+	}
+	if source, _ := SourceOf(pitch(0), CameraMarks{}, kinds); source != SourceCamera {
+		t.Errorf("DCIM/Pitch with 6 files: %s, want camera", source)
+	}
+	deeper := `D:\Archive\phone DCIM\2019\Pitch\x.jpg`
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &deeper, Folders: []string{"phone DCIM/2019/Pitch"}}, CameraMarks{}, kinds); source != SourceCamera {
+		t.Errorf("a DCIM folder further up: %s, want camera", source)
+	}
+	for i := 6; i < MinImportedFolderFiles; i++ {
+		kinds.Add(fmt.Sprint(i), pitch(i))
+	}
+	if source, _ := SourceOf(pitch(0), CameraMarks{}, kinds); source != "folder:pitch" {
+		t.Errorf("DCIM/Pitch with %d files: %s, want folder:pitch", MinImportedFolderFiles, source)
 	}
 }
 

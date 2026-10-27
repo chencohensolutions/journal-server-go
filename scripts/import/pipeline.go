@@ -457,8 +457,11 @@ func (im *importer) encodingDir() string { return filepath.Join(im.notImportedRu
 
 // countAudio counts a sound recording imported (or that would be), by its collection.
 func (im *importer) countAudio(e *examined) {
-	facts := media.Facts{FileName: filepath.Base(e.path), Kind: e.facts.kind, Call: e.facts.call, UploadedBy: "import", ImportedFrom: &e.path}
-	source, _ := media.SourceOf(facts, media.CameraMarks{}, nil) // a sound recording has no camera, nor a folder kind
+	facts := im.sourceFacts(e)
+	im.mu.Lock()
+	kinds := im.folderKinds
+	im.mu.Unlock()
+	source, _ := media.SourceOf(facts, media.CameraMarks{}, kinds) // a sound recording has no camera; its folder may be marked
 	facts.Source = &source
 	c := media.AudioCollectionOf(facts)
 	if c == "" {

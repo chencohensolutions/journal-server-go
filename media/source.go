@@ -8,16 +8,22 @@ import (
 )
 
 // A file's source is its kind: what it is and where it came from, as the apps name it (MediaSource in
-// journal-client-kmp). It is one of the fixed ids below, or a folder kind, "folder:" and the folder's name
-// ("folder:Telegram", "folder:Petcube"). Ids are compared ignoring case. SourceOf is the only place one is decided.
+// journal-client-kmp). It is one of the fixed ids below, or a folder kind, "folder:" and the folder's name in lower
+// case ("folder:telegram", "folder:petcube", "folder:dine-out"). Ids are written in lower case since Oct 27, 2026 and
+// compared ignoring case; a folder kind is shown by its name as most of its files spell it (FolderNames). SourceOf is
+// the only place one is decided.
 const (
 	SourceCamera      = "camera"
 	SourceScreenshots = "screenshots"
 	SourceOther       = "other"
 	// Photos from a camera the user marked "not mine" (SetCamera): sent to them, shown as "Sent to you".
 	SourceReceived = "received"
+	// Sound recordings: recorded phone calls, and recordings of anything else. A sound file is one of them when the
+	// user merged its folder into it (SetSoundFolder), or, for a call, when it is a call (Facts.Call).
+	SourceCall      = "call"
+	SourceRecording = "recording"
 	// WhatsApp is a folder kind like any other app's since Oct 27, 2026.
-	SourceWhatsApp = "folder:WhatsApp"
+	SourceWhatsApp = "folder:whatsapp"
 	// The id WhatsApp had before: read as SourceWhatsApp wherever it is found (sidecars, settings.json, uploads).
 	OldSourceWhatsApp = "whatsapp"
 )
@@ -25,25 +31,20 @@ const (
 // folderPrefix starts every folder kind.
 const folderPrefix = "folder:"
 
-// knownApps are the apps the rule knows, spelled as their kinds are: a folder kind of one of them is always spelled
-// so, whatever case a phone's folder had.
+// knownApps are the apps the rule knows, spelled as they are shown: a folder kind of one of them is always named so,
+// whatever case its files' folders had.
 var knownApps = []string{"WhatsApp", "Telegram", "Signal", "Facebook", "Messenger", "Snapchat"}
 
 // FolderSource is the kind of a folder by its name: a name like a fixed id ("Camera", "Screenshots", "Other") is
-// that kind, WhatsApp and the other apps the rule knows are spelled as it spells them, and any other name is
-// "folder:" and the name. "" for a blank name.
+// that kind, and any other name is "folder:" and the name in lower case ("Dine-Out" is folder:dine-out). "" for a
+// blank name.
 func FolderSource(name string) string {
-	name = strings.TrimSpace(name)
-	switch strings.ToLower(name) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	switch name {
 	case "":
 		return ""
 	case SourceCamera, SourceScreenshots, SourceOther:
-		return strings.ToLower(name)
-	}
-	for _, app := range knownApps {
-		if strings.EqualFold(app, name) {
-			return folderPrefix + app
-		}
+		return name
 	}
 	return folderPrefix + name
 }
@@ -56,15 +57,15 @@ func FolderName(source string) string {
 	return ""
 }
 
-// NormalizeSource is the id as the server writes it: the old "whatsapp" is "folder:WhatsApp", fixed ids are lower
-// case, and the apps the rule knows are spelled as it spells them ("folder:telegram" → "folder:Telegram"). Any other
-// id is kept as it is.
+// NormalizeSource is the id as the server writes it, in lower case: the old "whatsapp" and "folder:WhatsApp" are
+// "folder:whatsapp", fixed ids are lower case, and so is a folder kind's name ("folder:Calls" → "folder:calls"). Any
+// other id is kept as it is.
 func NormalizeSource(source string) string {
 	trimmed := strings.TrimSpace(source)
 	switch lower := strings.ToLower(trimmed); lower {
 	case OldSourceWhatsApp:
 		return SourceWhatsApp
-	case SourceCamera, SourceScreenshots, SourceOther, SourceReceived:
+	case SourceCamera, SourceScreenshots, SourceOther, SourceReceived, SourceCall, SourceRecording:
 		return lower
 	}
 	if name := FolderName(trimmed); name != "" {
@@ -186,55 +187,63 @@ var datedFolder = regexp.MustCompile(`(?i)^(photos from )?[\d\s._-]+$`)
 // SourceOf is the kind of a file: the one rule that decides it, on upload (Store.place), on import and when sources
 // are fixed. It reads the file's name and kind, where it was found (the import's importedFrom, or the uploading
 // device's deviceFolder), its camera tags and what the device sent (sentFrom, or source on a file placed before
-// sentFrom was kept), the user's cameras, and kinds: the folder kinds the user's other files take (Store.FolderKinds;
-// nil is a library without any). The first that matches:
+// sentFrom was kept), the source it has now (for a sound recording), the user's cameras, and kinds: the folder kinds
+// the user's other files take and the sound folders the user marked (Store.FolderKinds; nil is a library without
+// any). The first that matches:
 //
 //  1. a screenshot's name: screenshots, with the app on screen when the name has one (app; nil otherwise); a screen
 //     recording's name: screenshots;
-//  2. a WhatsApp name, or WhatsApp anywhere in the path: folder:WhatsApp;
-//     a sound recording that isn't WhatsApp's: other (on upload folder:WhatsApp still when the device sent it). A
-//     recorder's folder (Call, Voice Recorder) says nothing a sound recording's sections don't (AudioCollectionOf);
-//  3. a screenshot folder anywhere in the path (Screenshots, Screen recordings, צילומי מסך, הקלטות מסך): screenshots;
-//  4. a messaging app's name or folder (Telegram, Signal, Facebook, Messenger, Snapchat): its folder kind;
+//  2. a WhatsApp name, or WhatsApp anywhere in the path: folder:whatsapp;
+//  3. a sound recording (soundSourceOf): folder:whatsapp when the device sent that; call or recording when the user
+//     merged its folder (SoundFolderOf) into calls or recordings (SetSoundFolder); call for a call (Facts.Call);
+//     otherwise the source it has (folder:calls, camera, other…), never rewritten; one merged by a mark the user
+//     took back goes back to what it had before (sentFrom), else its folder. A new one (no source yet) takes its
+//     folder as a photo would at 7 and 8, else other;
+//  4. a screenshot folder anywhere in the path (Screenshots, Screen recordings, צילומי מסך, הקלטות מסך): screenshots;
+//  5. a messaging app's name or folder (Telegram, Signal, Facebook, Messenger, Snapchat): its folder kind;
 //     on upload, a folder kind the device gave: its folder read as the Android app reads it (the folder inside
 //     Pictures, Download, DCIM…, else the top one), else what it sent; never a camera's folder (IsCameraFolder). The
-//     phone knows the app that saved the file, so its folder kind is overridden by 1–4 only, not by camera tags or a
+//     phone knows the app that saved the file, so its folder kind is overridden by 1–5 only, not by camera tags or a
 //     camera's name;
-//  5. camera tags of a model the user marked "not mine": received;
-//  6. a camera's folder anywhere in the path (Camera, 100ANDRO and other DCF folders, SLOW_VIDEO, EDITED_VIDEO,
+//  6. camera tags of a model the user marked "not mine": received;
+//  7. a camera's folder anywhere in the path (Camera, 100ANDRO and other DCF folders, SLOW_VIDEO, EDITED_VIDEO,
 //     Videocaptures, a burst's DSC_20190928033805229) or a DCIM folder right above the file (DCIM/Flowers is Flowers,
-//     at 7), a camera's name (DSC_, 20250928_211937, IMG_20230115, PXL_, VID_, MOV_, CAM), or camera tags of any
+//     at 8), a camera's name (DSC_, 20250928_211937, IMG_20230115, PXL_, VID_, MOV_, CAM), or camera tags of any
 //     other model: camera;
-//  7. on import, the folder right above the file, unless it is a shared folder, a dated one, the folder the import
+//  8. on import, the folder right above the file, unless it is a shared folder, a dated one, the folder the import
 //     searched, or anywhere under Google Takeout (its year folders and albums are collections, kept in folders, not
 //     where a file came from); and only when at least MinImportedFolderFiles of the user's files take it (kinds),
-//     so a folder of a few files stays other;
-//  8. otherwise: on upload what the device sent, other when it sent none; on import, other.
+//     so a folder of a few files stays other, or is camera when it is anywhere under a DCIM folder (DCIM/Pitch);
+//  9. otherwise: on upload what the device sent, other when it sent none; on import, other.
 //
-// A folder kind is spelled as most of the user's files have it (kinds), so Slicer and slicer are one kind; the apps
-// the rule knows are always spelled as it spells them. On upload the server so overrides the device only on evidence
-// of its own.
+// Folder kinds are written in lower case, so Slicer and slicer are one kind. On upload the server so overrides the
+// device only on evidence of its own.
 func SourceOf(facts Facts, cameras CameraMarks, kinds *FolderKinds) (source string, app *string) {
-	source, app, step := sourceOf(facts, cameras)
+	source, app, step := sourceOf(facts, cameras, kinds.soundMarks())
 	name := FolderName(source)
 	if name == "" || knownApp(name) {
 		return source, app
 	}
-	if step == stepImportedFolder && kinds.Found(name) < MinImportedFolderFiles {
+	if (step == stepImportedFolder || step == stepImportedFolderInDCIM) && kinds.Found(name) < MinImportedFolderFiles {
+		if step == stepImportedFolderInDCIM {
+			return SourceCamera, app
+		}
 		return SourceOther, app
 	}
-	return kinds.Spelling(source), app
+	return source, app
 }
 
 // Which step of the rule gave a file its source, where SourceOf treats it on its own.
 const (
 	stepOther = iota
 	stepImportedFolder
+	// The import's folder, somewhere under a DCIM folder: camera when it is too small to be a kind.
+	stepImportedFolderInDCIM
 )
 
 // sourceOf is the rule without the user's other files: what SourceOf gives before a folder an import found is held
-// to the minimum and a folder kind is spelled as the user's files have it, and whether the import's folder gave it.
-func sourceOf(facts Facts, cameras CameraMarks) (source string, app *string, step int) {
+// to the minimum, and whether the import's folder gave it.
+func sourceOf(facts Facts, cameras CameraMarks, sound SoundFolderMarks) (source string, app *string, step int) {
 	name := facts.FileName
 	if a, ok := ScreenshotApp(name); ok {
 		if a != "" {
@@ -263,18 +272,36 @@ func sourceOf(facts Facts, cameras CameraMarks) (source string, app *string, ste
 	sent := ""
 	if uploaded {
 		if facts.SentFrom != nil {
-			sent = NormalizeSource(*facts.SentFrom)
+			sent = kindOf(*facts.SentFrom)
 		} else if facts.Source != nil {
-			sent = NormalizeSource(*facts.Source)
+			sent = kindOf(*facts.Source)
 		}
-		if n := FolderName(sent); n != "" && IsCameraFolder(n) {
-			sent = SourceCamera
-		}
-		sent = strings.TrimSpace(sent)
 	}
+	// On import the path ends with the file's name; a device's folder is the folder itself.
+	folders := parts
+	if !uploaded && len(folders) > 0 {
+		folders = folders[:len(folders)-1]
+	}
+	inCameraFolder := slices.ContainsFunc(folders, IsCameraFolder)
 	if facts.Kind == KindAudio {
 		if SameSource(sent, SourceWhatsApp) {
 			return SourceWhatsApp, nil, stepOther
+		}
+		if source := soundSourceOf(facts, uploaded, sound); source != "" {
+			return source, nil, stepOther
+		}
+		// A new sound recording: its folder, as a photo's (8 and 9).
+		if !uploaded {
+			if kind := importedFolderSource(folders, lowerPath, facts.Folders); kind != "" {
+				return kind, nil, importedStep(folders)
+			}
+			return SourceOther, nil, stepOther
+		}
+		if kind := deviceFolderSource(folders); FolderName(kind) != "" && !inCameraFolder {
+			return kind, nil, stepOther
+		}
+		if sent != "" {
+			return sent, nil, stepOther
 		}
 		return SourceOther, nil, stepOther
 	}
@@ -286,15 +313,9 @@ func sourceOf(facts Facts, cameras CameraMarks) (source string, app *string, ste
 	}
 	for _, m := range messagingNames {
 		if m.name.MatchString(name) || strings.Contains(lowerPath, strings.ToLower(m.app)) {
-			return folderPrefix + m.app, nil, stepOther
+			return FolderSource(m.app), nil, stepOther
 		}
 	}
-	// On import the path ends with the file's name; a device's folder is the folder itself.
-	folders := parts
-	if !uploaded && len(folders) > 0 {
-		folders = folders[:len(folders)-1]
-	}
-	inCameraFolder := slices.ContainsFunc(folders, IsCameraFolder)
 	if uploaded {
 		if kind := deviceFolderSource(folders); FolderName(kind) != "" && !inCameraFolder {
 			return kind, nil, stepOther
@@ -314,7 +335,7 @@ func sourceOf(facts Facts, cameras CameraMarks) (source string, app *string, ste
 	}
 	if !uploaded {
 		if kind := importedFolderSource(folders, lowerPath, facts.Folders); kind != "" {
-			return kind, nil, stepImportedFolder
+			return kind, nil, importedStep(folders)
 		}
 		return SourceOther, nil, stepOther
 	}
@@ -327,67 +348,168 @@ func sourceOf(facts Facts, cameras CameraMarks) (source string, app *string, ste
 	return SourceOther, nil, stepOther
 }
 
+// importedStep is the step an import's folder gives a file found in folders: under a DCIM folder or not.
+func importedStep(folders []string) int {
+	for _, f := range folders {
+		if strings.Contains(strings.ToLower(f), "dcim") {
+			return stepImportedFolderInDCIM
+		}
+	}
+	return stepImportedFolder
+}
+
+// kindOf is an id as the server writes it (NormalizeSource), or camera for a camera's folder given as a folder kind
+// (an older app's folder:100ANDRO; told by its own spelling, as a DCF folder is in capitals).
+func kindOf(id string) string {
+	if n := FolderName(id); n != "" && IsCameraFolder(n) {
+		return SourceCamera
+	}
+	return strings.TrimSpace(NormalizeSource(id))
+}
+
+// isSoundKind reports whether an id is one of the sound recordings' fixed kinds, call or recording.
+func isSoundKind(id string) bool { return id == SourceCall || id == SourceRecording }
+
+// soundSourceOf is a sound recording's source by the rule's step 3, once WhatsApp is ruled out: the user's mark on
+// its folder, a call, or the source it has. "" for a new file, which has none yet.
+func soundSourceOf(facts Facts, uploaded bool, sound SoundFolderMarks) string {
+	folder := SoundFolderOf(facts)
+	if as := sound.As(folder); as != "" {
+		return as
+	}
+	if facts.Call != nil {
+		return SourceCall
+	}
+	stored := ""
+	if facts.Source != nil {
+		stored = kindOf(*facts.Source)
+	}
+	if !isSoundKind(stored) {
+		return stored
+	}
+	// Merged into calls or recordings by a mark there is no more: back to what it had before, as the device sent it
+	// (a phone's own call or recording stays) or as it was when first relabelled, else its folder.
+	if facts.SentFrom != nil {
+		if prior := kindOf(*facts.SentFrom); prior != "" && (uploaded || !isSoundKind(prior)) {
+			return prior
+		}
+	}
+	if folder != "" {
+		return folder
+	}
+	return SourceOther
+}
+
+// SoundFolderOf is the folder kind a sound recording came from, by what its sidecar says of where it was: the folder
+// kind the device sent (sentFrom), the device's folder (deviceFolder, read as the Android app reads it), the folder
+// the import found it in (importedFrom, right above the file, unless a shared, dated or Takeout folder), the first
+// of folders, else the folder kind it has. A file merged into calls or recordings (SetSoundFolder) so still has its
+// folder. Never WhatsApp's or a camera's; "" for a file that isn't a sound recording, a WhatsApp voice message (by
+// its name or source: no mark moves it), or one without a folder.
+func SoundFolderOf(facts Facts) string {
+	if facts.Kind != KindAudio || IsWhatsAppName(facts.FileName) || facts.Source != nil && SameSource(*facts.Source, SourceWhatsApp) {
+		return ""
+	}
+	// A folder kind other than WhatsApp's, from a folder that isn't a camera's (told by its spelling as found).
+	ok := func(id string, raw ...string) bool {
+		return FolderName(id) != "" && !SameSource(id, SourceWhatsApp) && !slices.ContainsFunc(raw, IsCameraFolder)
+	}
+	if facts.SentFrom != nil {
+		if id := kindOf(*facts.SentFrom); ok(id) {
+			return id
+		}
+	}
+	if facts.DeviceFolder != nil {
+		parts := pathParts(*facts.DeviceFolder)
+		if id := deviceFolderSource(parts); ok(id, parts...) {
+			return id
+		}
+	}
+	if facts.ImportedFrom != nil {
+		parts := pathParts(*facts.ImportedFrom)
+		if len(parts) > 0 {
+			folders := parts[:len(parts)-1]
+			if id := importedFolderSource(folders, strings.ToLower(strings.Join(parts, "/")), facts.Folders); ok(id, folders...) {
+				return id
+			}
+		}
+	} else if len(facts.Folders) > 0 {
+		if parts := pathParts(facts.Folders[0]); len(parts) > 0 {
+			above := parts[len(parts)-1]
+			if !sharedFolders[strings.ToLower(above)] && !datedFolder.MatchString(above) {
+				if id := FolderSource(above); ok(id, parts...) {
+					return id
+				}
+			}
+		}
+	}
+	if facts.Source != nil {
+		if id := kindOf(*facts.Source); ok(id) {
+			return id
+		}
+	}
+	return ""
+}
+
 // knownApp reports whether a folder kind's name is one of the apps the rule knows.
 func knownApp(name string) bool {
-	return slices.ContainsFunc(knownApps, func(app string) bool { return strings.EqualFold(app, name) })
+	_, ok := knownAppName(name)
+	return ok
+}
+
+// knownAppName is an app the rule knows spelled as it is shown ("whatsapp" → "WhatsApp").
+func knownAppName(name string) (string, bool) {
+	for _, app := range knownApps {
+		if strings.EqualFold(app, strings.TrimSpace(name)) {
+			return app, true
+		}
+	}
+	return "", false
 }
 
 // MinImportedFolderFiles is how many of the user's files must take the kind of a folder only an import found before
-// it is one: a folder of fewer (someone's name, "New folder", an archive's leftovers) stays other, its name still in
-// facts.folders.
+// it is one: a folder of fewer (someone's name, "New folder", an archive's leftovers) stays other (camera under
+// DCIM), its name still in facts.folders.
 const MinImportedFolderFiles = 20
 
-// FolderKinds is what SourceOf needs to know of the user's other files: how many take each folder an import found
-// (by its name, ignoring case), and how each folder kind is spelled. Made once for a run (Store.FolderKinds, and Add
-// for the files an import is about to place), so every file of the run, a dry run and the real one alike, is decided
-// by the same counts. Not safe for Add from several goroutines; reading is.
+// FolderKinds is what SourceOf needs to know of the user's other files and choices: how many files take each folder
+// an import found (by its name, ignoring case), and the sound folders the user marked. Made once for a run
+// (Store.FolderKinds, and Add for the files an import is about to place), so every file of the run, a dry run and the
+// real one alike, is decided by the same counts. Not safe for Add from several goroutines; reading is.
 type FolderKinds struct {
-	cameras   CameraMarks
-	files     map[string]folderVote     // by sha256, what each file added
-	found     map[string]int            // by the folder's name, lower case
-	spellings map[string]map[string]int // by the folder's name, lower case: each spelling's files
+	cameras CameraMarks
+	sound   SoundFolderMarks
+	files   map[string]string // by sha256, the lower-case name of the folder an import found that each file added
+	found   map[string]int    // by the folder's name, lower case
 }
 
-// folderVote is what one file adds to FolderKinds: the folder kind's name it takes, and whether an import's folder
-// gave it.
-type folderVote struct {
-	name  string
-	found bool
-}
-
-// NewFolderKinds is an empty FolderKinds, deciding files with the user's cameras.
+// NewFolderKinds is an empty FolderKinds, deciding files with the user's cameras and no sound folders marked.
 func NewFolderKinds(cameras CameraMarks) *FolderKinds {
-	return &FolderKinds{cameras: cameras, files: map[string]folderVote{}, found: map[string]int{}, spellings: map[string]map[string]int{}}
+	return &FolderKinds{cameras: cameras, files: map[string]string{}, found: map[string]int{}}
 }
 
-// Add counts the folder kind the file with sha256 takes, by the rule before the counts; a file added again counts
-// once, by what it has now.
+// soundMarks are the sound folders the user marked; none for nil.
+func (k *FolderKinds) soundMarks() SoundFolderMarks {
+	if k == nil {
+		return SoundFolderMarks{}
+	}
+	return k.sound
+}
+
+// Add counts the folder kind the file with sha256 takes, by the rule before the counts, when an import's folder
+// gives it; a file added again counts once, by what it has now.
 func (k *FolderKinds) Add(sha256 string, facts Facts) {
 	if old, ok := k.files[sha256]; ok {
-		k.count(old, -1)
+		k.found[old]--
 		delete(k.files, sha256)
 	}
-	source, _, step := sourceOf(facts, k.cameras)
-	name := FolderName(source)
-	if name == "" || knownApp(name) {
+	source, _, step := sourceOf(facts, k.cameras, k.sound)
+	name := strings.ToLower(FolderName(source))
+	if name == "" || knownApp(name) || step != stepImportedFolder && step != stepImportedFolderInDCIM {
 		return
 	}
-	vote := folderVote{name: name, found: step == stepImportedFolder}
-	k.files[sha256] = vote
-	k.count(vote, 1)
-}
-
-func (k *FolderKinds) count(v folderVote, n int) {
-	lower := strings.ToLower(v.name)
-	if v.found {
-		k.found[lower] += n
-	}
-	if k.spellings[lower] == nil {
-		k.spellings[lower] = map[string]int{}
-	}
-	if k.spellings[lower][v.name] += n; k.spellings[lower][v.name] <= 0 {
-		delete(k.spellings[lower], v.name)
-	}
+	k.files[sha256] = name
+	k.found[name]++
 }
 
 // Found is how many files take the kind of a folder an import found with this name, ignoring case.
@@ -398,23 +520,76 @@ func (k *FolderKinds) Found(name string) int {
 	return k.found[strings.ToLower(strings.TrimSpace(name))]
 }
 
-// Spelling is a folder kind as most of the files that take it spell it (on a tie, the one that sorts first, so
-// Slicer before slicer); the kind as it is when no file takes it.
-func (k *FolderKinds) Spelling(kind string) string {
-	name := FolderName(kind)
-	if k == nil || name == "" {
-		return kind
+// folderSpelling is how a file's own record spells the folder of the folder kind id: what the device sent
+// (sentFrom), its deviceFolder, the import's importedFrom and folders, else its source; "" when none names it.
+func folderSpelling(facts Facts, id string) string {
+	name := FolderName(id)
+	if name == "" {
+		return ""
+	}
+	match := func(candidate string) bool { return strings.ToLower(strings.TrimSpace(candidate)) == name }
+	if facts.SentFrom != nil {
+		if n := FolderName(*facts.SentFrom); match(n) {
+			return n
+		}
+	}
+	var paths []string
+	for _, p := range []*string{facts.DeviceFolder, facts.ImportedFrom} {
+		if p != nil {
+			paths = append(paths, *p)
+		}
+	}
+	paths = append(paths, facts.Folders...)
+	for _, p := range paths {
+		for _, part := range pathParts(p) {
+			if match(part) {
+				return part
+			}
+		}
+	}
+	if facts.Source != nil {
+		if n := FolderName(*facts.Source); match(n) {
+			return n
+		}
+	}
+	return ""
+}
+
+// folderNames counts how the user's files spell each folder kind, to show it by the spelling most of them have.
+type folderNames map[string]map[string]int // by id: each spelling's files
+
+// add counts one file's spelling of the folder kind id ("" adds the id without a spelling).
+func (n folderNames) add(id, spelling string) {
+	id = NormalizeSource(id)
+	if FolderName(id) == "" {
+		return
+	}
+	if n[id] == nil {
+		n[id] = map[string]int{}
+	}
+	if spelling != "" {
+		n[id][spelling]++
+	}
+}
+
+// name is the folder kind's name as it is shown: an app the rule knows as it spells it, else as most files spell it
+// (on a tie, the one that sorts first, so Calls before calls), else as the id has it.
+func (n folderNames) name(id string) string {
+	id = NormalizeSource(id)
+	folder := FolderName(id)
+	if app, ok := knownAppName(folder); ok {
+		return app
 	}
 	best, most := "", 0
-	for spelling, n := range k.spellings[strings.ToLower(name)] {
-		if n > most || n == most && spelling < best {
-			best, most = spelling, n
+	for spelling, count := range n[id] {
+		if count > most || count == most && spelling < best {
+			best, most = spelling, count
 		}
 	}
 	if best == "" {
-		return kind
+		return folder
 	}
-	return folderPrefix + best
+	return best
 }
 
 // pathParts is a path's folders (and file name), with either kind of slash, without empty parts or a drive.
@@ -471,8 +646,8 @@ func importedFolderSource(folders []string, lowerPath string, found []string) st
 	return FolderSource(above)
 }
 
-// FolderKinds counts the folder kinds the user's files take, for SourceOf: what a run deciding many files (fixing
-// sources, an import) makes once and decides every file by.
+// FolderKinds counts the folder kinds the user's files take, with the sound folders the user marked, for SourceOf:
+// what a run deciding many files (fixing sources, an import) makes once and decides every file by.
 func (s *Store) FolderKinds() *FolderKinds {
 	s.CatchUp()
 	s.mu.RLock()
@@ -482,26 +657,62 @@ func (s *Store) FolderKinds() *FolderKinds {
 
 // folderKindsLocked is FolderKinds. Callers hold s.mu.
 func (s *Store) folderKindsLocked() *FolderKinds {
-	k := NewFolderKinds(s.cameraMarks)
+	k := s.marksOnlyLocked()
 	for sha, item := range s.items {
 		k.Add(sha, item.Sidecar.Facts)
 	}
 	return k
 }
 
-// sourceSpellingsLocked is how the user's files spell their folder kinds now, without the rule's counts: all an
-// upload needs (a device's folder kind is never held to the minimum), and quick enough to make for each one. Callers
-// hold s.mu.
-func (s *Store) sourceSpellingsLocked() *FolderKinds {
+// marksOnlyLocked is a FolderKinds with the user's marks and no counts: all an upload needs (a device's folder kind
+// is never held to the minimum), and quick enough to make for each one. Callers hold s.mu.
+func (s *Store) marksOnlyLocked() *FolderKinds {
 	k := NewFolderKinds(s.cameraMarks)
-	for sha, item := range s.items {
-		if source := item.Sidecar.Facts.Source; source != nil {
-			if name := FolderName(*source); name != "" && !knownApp(name) {
-				vote := folderVote{name: name}
-				k.files[sha] = vote
-				k.count(vote, 1)
-			}
+	k.sound = s.soundMarks
+	return k
+}
+
+// FolderKindName is a folder kind's id and its name as it is shown.
+type FolderKindName struct {
+	ID, Name string
+}
+
+// FolderNames lists every folder kind the user's files take or came from (a sound recording's folder, SoundFolderOf),
+// hidden or marked, by id, each with its name: an app the rule knows as it spells it (WhatsApp), else as most of the
+// files spell their folder (Calls for folder:calls).
+func (s *Store) FolderNames() []FolderKindName {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := s.folderNamesLocked()
+	for _, id := range s.hidden.Sources {
+		names.add(id, "")
+	}
+	for id := range s.soundMarks.marks {
+		names.add(id, "")
+	}
+	list := make([]FolderKindName, 0, len(names))
+	for id := range names {
+		list = append(list, FolderKindName{ID: id, Name: names.name(id)})
+	}
+	slices.SortFunc(list, func(a, b FolderKindName) int { return strings.Compare(a.ID, b.ID) })
+	return list
+}
+
+// folderNamesLocked counts how the files spell the folder kind each takes, and a sound recording's folder.
+// Callers hold s.mu.
+func (s *Store) folderNamesLocked() folderNames {
+	names := folderNames{}
+	for _, item := range s.items {
+		facts := item.Sidecar.Facts
+		source := ""
+		if facts.Source != nil && FolderName(*facts.Source) != "" {
+			source = NormalizeSource(*facts.Source)
+			names.add(source, folderSpelling(facts, source))
+		}
+		if folder := SoundFolderOf(facts); folder != "" && folder != source {
+			names.add(folder, folderSpelling(facts, folder))
 		}
 	}
-	return k
+	return names
 }

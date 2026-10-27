@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -161,7 +162,7 @@ func TestHidingApps(t *testing.T) {
 	tg := place([]byte("tg"), "y.jpg", "folder:telegram")
 	pet := place([]byte("pet"), "z.jpg", "folder:Petcube")
 	pet2 := place([]byte("pet2"), "w.jpg", "folder:PETCUBE")
-	if *wa.Sidecar.Facts.Source != SourceWhatsApp || *tg.Sidecar.Facts.Source != "folder:Telegram" {
+	if *wa.Sidecar.Facts.Source != SourceWhatsApp || *tg.Sidecar.Facts.Source != "folder:telegram" || *pet.Sidecar.Facts.Source != "folder:petcube" {
 		t.Fatalf("sources: %s %s", *wa.Sidecar.Facts.Source, *tg.Sidecar.Facts.Source)
 	}
 	view := f.store.ViewFor(false)
@@ -179,6 +180,33 @@ func TestHidingApps(t *testing.T) {
 	if len(apps) != 3 || apps[0].Files != 2 || !apps[0].Hidden || apps[1].Name != "Telegram" || !apps[1].Hidden ||
 		apps[2] != (Collection{"WhatsApp", 1, 0, false}) {
 		t.Fatalf("apps: %+v", apps)
+	}
+}
+
+// settings.json's hidden.sources from before ids were in lower case are read in lower case (whatsapp and
+// folder:WhatsApp as folder:whatsapp), the same view as before, and written so at the next change.
+func TestHiddenSourcesAreReadInLowerCase(t *testing.T) {
+	f := newFixture(t)
+	before := Hidden{Sources: []string{"folder:whatsapp", "folder:telegram"}}.Key()
+	if err := os.WriteFile(f.store.settingsPath(), []byte(`{"format":1,"hidden":{"sources":["whatsapp","folder:WhatsApp","folder:Telegram","folder:Dine-Out"],"nudityFrom":0,"audio":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.reopen()
+	h := f.store.Hidden()
+	if strings.Join(h.Sources, " ") != "folder:dine-out folder:telegram folder:whatsapp" {
+		t.Fatalf("read: %v", h.Sources)
+	}
+	if !h.Hides(Facts{Source: ptr("folder:Telegram")}) || !h.Hides(Facts{Source: ptr(SourceWhatsApp)}) {
+		t.Fatal("not hidden ignoring case")
+	}
+	if (Hidden{Sources: []string{"whatsapp", "folder:Telegram"}}).Key() != before {
+		t.Fatal("the view's key changed with the ids' case")
+	}
+	if err := f.store.SetHidden(h); err != nil {
+		t.Fatal(err)
+	}
+	if sources, _ := f.store.HiddenSourcesOnDisk(); strings.Join(sources, " ") != "folder:dine-out folder:telegram folder:whatsapp" {
+		t.Fatalf("written: %v", sources)
 	}
 }
 

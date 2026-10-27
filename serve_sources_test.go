@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// An app from before apps hides WhatsApp with whatsapp alone, and its old whatsapp source is read as folder:WhatsApp;
+// An app from before apps hides WhatsApp with whatsapp alone, and its old whatsapp source is read as folder:whatsapp;
 // a new app hides any app by name, ignoring case.
 func TestPrivateSettingsHideAnyApp(t *testing.T) {
 	env := newTestEnv(t)
@@ -22,7 +22,7 @@ func TestPrivateSettingsHideAnyApp(t *testing.T) {
 		resp := env.graphql(t, phone, `query($s: Sha256!) { media(sha256: $s) { source } }`, map[string]any{"s": sha})
 		return string(resp.Data["media"])
 	}
-	if got := sourceOf(wa) + sourceOf(tg) + sourceOf(pet); got != `{"source":"folder:WhatsApp"}{"source":"folder:Telegram"}{"source":"folder:Petcube"}` {
+	if got := sourceOf(wa) + sourceOf(tg) + sourceOf(pet); got != `{"source":"folder:whatsapp"}{"source":"folder:telegram"}{"source":"folder:petcube"}` {
 		t.Fatalf("sources: %s", got)
 	}
 
@@ -138,5 +138,61 @@ func TestSetCameraMovesPhotosInTheBackground(t *testing.T) {
 	info := env.graphql(t, phone, `{ serverInfo { cameras } }`, nil)
 	if len(info.Errors) > 0 {
 		t.Fatalf("serverInfo: %+v", info.Errors)
+	}
+}
+
+// Sound folders: every folder sound recordings came from, named as their files spell it; merging one into calls
+// answers at once and moves its recordings in the background, counting what is left.
+func TestSetSoundFolderMovesRecordingsInTheBackground(t *testing.T) {
+	env := newTestEnv(t)
+	phone := env.enrolledClient(t)
+	audio := func(data, name, source, folder string) string {
+		return env.uploadPhotoWith(t, phone, []byte(data), name, map[string]any{"kind": "AUDIO", "mimeType": "audio/mp4",
+			"takenAt": "2026-10-20T10:00:00+03:00", "source": source, "folder": folder})
+	}
+	audio("call one", "a.m4a", "folder:Call", "Recordings/Call/")
+	audio("call two", "b.m4a", "folder:call", "Recordings/Call/")
+	audio("a recording", "c.m4a", "folder:Voice Recorder", "Recordings/Voice Recorder/")
+
+	const fields = `{ id name files imported as pending }`
+	type folder struct {
+		ID, Name, As             string
+		Files, Imported, Pending int
+	}
+	var folders []folder
+	resp := env.graphql(t, phone, `{ soundFolders `+fields+` }`, nil)
+	if err := json.Unmarshal(resp.Data["soundFolders"], &folders); err != nil || len(folders) != 2 ||
+		folders[0] != (folder{ID: "folder:call", Name: "Call", As: "NONE", Files: 2}) || folders[1].Name != "Voice Recorder" {
+		t.Fatalf("soundFolders = %s %+v", resp.Data["soundFolders"], resp.Errors)
+	}
+	resp = env.graphql(t, phone, `mutation { setSoundFolder(id: "Call", as: CALL) `+fields+` }`, nil)
+	if err := json.Unmarshal(resp.Data["setSoundFolder"], &folders); err != nil || folders[0].As != "CALL" {
+		t.Fatalf("setSoundFolder = %s %+v", resp.Data["setSoundFolder"], resp.Errors)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		json.Unmarshal(env.graphql(t, phone, `{ soundFolders `+fields+` }`, nil).Data["soundFolders"], &folders)
+		if folders[0].Pending == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("still moving: %+v", folders)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	collections := env.graphql(t, phone, `{ hiddenCollections { calls { files } recordings { files } } }`, nil)
+	if got := string(collections.Data["hiddenCollections"]); got != `{"calls":{"files":2},"recordings":{"files":1}}` {
+		t.Fatalf("hiddenCollections = %s %+v", got, collections.Errors)
+	}
+
+	names := env.graphql(t, phone, `{ folderNames { id name } serverInfo { soundFolders } }`, nil)
+	if got := string(names.Data["folderNames"]); got != `[{"id":"folder:call","name":"Call"},{"id":"folder:voice recorder","name":"Voice Recorder"}]` {
+		t.Fatalf("folderNames = %s %+v", got, names.Errors)
+	}
+	if got := string(names.Data["serverInfo"]); got != `{"soundFolders":true}` {
+		t.Fatalf("serverInfo = %s", got)
+	}
+	if bad := env.graphql(t, phone, `mutation { setSoundFolder(id: "camera", as: CALL) { id } }`, nil); len(bad.Errors) == 0 {
+		t.Fatal("camera was marked as a sound folder")
 	}
 }

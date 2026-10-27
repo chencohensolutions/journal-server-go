@@ -2,9 +2,10 @@
 // (media.SourceOf: a screenshot's name, WhatsApp, a messaging app, the camera's tags and the user's camera marks, a
 // Camera folder or name, a named folder; see docs/media.md "Sources"), and screenshots the app their name says. It
 // is for files placed before the rule was what it is now: imports labelled other that came from a camera, and
-// whatsapp, which is folder:WhatsApp since Oct 27, 2026. Only a sidecar's facts.source, facts.screenshotApp and
-// facts.correctedAt change (facts.sentFrom keeps the source it had, when it kept none), one turn and one rewrite per
-// file, so each file comes once again in the change feed; originals, notes, nudity and privacy are never touched.
+// whatsapp, which is folder:whatsapp since Oct 27, 2026 (folder kinds are written in lower case since then too).
+// Only a sidecar's facts.source, facts.screenshotApp and facts.correctedAt change (facts.sentFrom keeps the source it
+// had, when it kept none), one turn and one rewrite per file, so each file comes once again in the change feed;
+// originals, notes, nudity and privacy are never touched.
 // settings.json's hidden.sources get the new ids too.
 //
 // A real run writes a journal, relabels/<UTC time>.tsv at the data folder's root, with every value it changed, as
@@ -45,7 +46,7 @@ func main() {
 	flag.BoolVar(&o.dryRun, "dry-run", false, "only say what would change; writes nothing")
 	flag.StringVar(&o.list, "list", "", "with a dry run, list up to 20 files of one change, <before>:<after> (other:camera)")
 	flag.StringVar(&o.undo, "undo", "", "put back what the journal of a real run changed")
-	flag.BoolVar(&o.oldIds, "to-old-ids", false, "write the ids an older server knows: folder:WhatsApp as whatsapp, received as camera, screenshotApp as app")
+	flag.BoolVar(&o.oldIds, "to-old-ids", false, "write the ids an older server knows: folder:whatsapp as whatsapp, received as camera, call and recording as their folder, screenshotApp as app")
 	configPath := flag.String("config", "config.json", "the server's config file")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/fix-sources --user <name> [--dry-run] [--list <before>:<after>] [--undo <journal> | --to-old-ids]")

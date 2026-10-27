@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 )
 
 // The user's cameras: which camera models were theirs. They are kept in cameras.json at the data folder's root
@@ -150,9 +148,6 @@ func (s *Store) Cameras() []CameraModel {
 			spellings[key] = map[Camera]int{{Make: mark.Make, Model: mark.Model}: 0}
 		}
 	}
-	s.cameraMoves.mu.Lock()
-	pending := s.cameraMoves.pending
-	s.cameraMoves.mu.Unlock()
 	models := make([]CameraModel, 0, len(byKey))
 	for key, m := range byKey {
 		var best Camera
@@ -169,7 +164,7 @@ func (s *Store) Cameras() []CameraModel {
 		sort.Ints(m.Years)
 		mark, marked := s.cameraMarks.mark(best)
 		m.Marked, m.Mine = marked, !marked || mark.Mine
-		m.Pending = pending[key]
+		m.Pending = s.cameraMoves.pendingOf(key)
 		models = append(models, *m)
 	}
 	sort.Slice(models, func(i, j int) bool {
@@ -218,44 +213,20 @@ func (s *Store) SetCamera(maker, model string, mine bool) error {
 	if err != nil {
 		return err
 	}
-	moves := s.cameraMoving(key)
-	s.cameraMoves.mu.Lock()
-	if s.cameraMoves.pending == nil {
-		s.cameraMoves.pending = map[string]int{}
-		s.cameraMoves.queued = map[string]int{}
-	}
-	s.cameraMoves.queued[key]++
-	if len(moves) > 0 || s.cameraMoves.pending[key] > 0 {
-		s.cameraMoves.pending[key] = max(s.cameraMoves.pending[key], len(moves))
-	}
-	s.cameraMoves.mu.Unlock()
-	s.cameraMoves.running.Add(1)
-	go s.moveCamera(key)
+	s.cameraMoves.queue(key, len(s.cameraMoving(key)))
+	go s.cameraMoves.do(key, func() []relabelMove { return s.cameraMoving(key) }, func(m relabelMove) error {
+		_, err := s.Relabel(m.sha, m.source, m.app)
+		return err
+	}, "a camera's mark changed")
 	return nil
-}
-
-// cameraMoves are the moves SetCamera started: one runs at a time (run), and pending says how many files of each
-// model are still to move.
-type cameraMoves struct {
-	run     sync.Mutex
-	mu      sync.Mutex
-	pending map[string]int // by Camera.key
-	queued  map[string]int
-	running sync.WaitGroup
-}
-
-// cameraMove is a file of a model whose source changes with the model's mark.
-type cameraMove struct {
-	sha, source string
-	app         *string
 }
 
 // cameraMoving lists the files of the model key whose source changes with the marks as they are now: to received
 // for a model not mine, back from received to what SourceOf gives otherwise.
-func (s *Store) cameraMoving(key string) []cameraMove {
+func (s *Store) cameraMoving(key string) []relabelMove {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var moves []cameraMove
+	var moves []relabelMove
 	var kinds *FolderKinds // counted only when a file of the model is found
 	for _, item := range s.items {
 		facts := item.Sidecar.Facts
@@ -273,45 +244,14 @@ func (s *Store) cameraMoving(key string) []cameraMove {
 		switch {
 		case SameSource(target, current):
 		case target == SourceReceived, SameSource(current, SourceReceived):
-			moves = append(moves, cameraMove{sha: item.Sha256(), source: target, app: facts.ScreenshotApp})
+			moves = append(moves, relabelMove{sha: item.Sha256(), source: target, app: facts.ScreenshotApp})
 		}
 	}
 	return moves
 }
 
-// moveCamera moves the files of the model key as its mark now says, after any move before it.
-func (s *Store) moveCamera(key string) {
-	defer s.cameraMoves.running.Done()
-	s.cameraMoves.run.Lock()
-	defer s.cameraMoves.run.Unlock()
-	moves := s.cameraMoving(key)
-	setPending := func(n int) {
-		s.cameraMoves.mu.Lock()
-		defer s.cameraMoves.mu.Unlock()
-		if n > 0 || s.cameraMoves.queued[key] > 1 {
-			s.cameraMoves.pending[key] = n
-		} else {
-			delete(s.cameraMoves.pending, key)
-		}
-	}
-	setPending(len(moves))
-	for i, m := range moves {
-		if _, err := s.Relabel(m.sha, m.source, m.app); err != nil {
-			log.Printf("media: moving %s to %s after a camera's mark changed: %v", m.sha, m.source, err)
-		}
-		setPending(len(moves) - i - 1)
-	}
-	s.cameraMoves.mu.Lock()
-	s.cameraMoves.queued[key]--
-	if s.cameraMoves.queued[key] <= 0 {
-		delete(s.cameraMoves.queued, key)
-		delete(s.cameraMoves.pending, key)
-	}
-	s.cameraMoves.mu.Unlock()
-}
-
 // WaitCameraMoves waits until the moves SetCamera started are done.
-func (s *Store) WaitCameraMoves() { s.cameraMoves.running.Wait() }
+func (s *Store) WaitCameraMoves() { s.cameraMoves.wait() }
 
 // Relabel sets a file's source and the app of a screenshot, in one rewrite of its sidecar inside one turn: SentFrom
 // keeps the source it arrived with (keepSentFrom), and CorrectedAt is set, so the file comes again in the change

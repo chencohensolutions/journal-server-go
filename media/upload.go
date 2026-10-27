@@ -416,7 +416,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 		kinds = s.folderKindsLocked()
 		kinds.Add(req.Sha256, sidecar.Facts) // the file itself counts, as it does once placed
 	default:
-		kinds = s.sourceSpellingsLocked()
+		kinds = s.marksOnlyLocked()
 	}
 	source, app := SourceOf(sidecar.Facts, s.cameraMarks, kinds)
 	sidecar.Facts.Source, sidecar.Facts.ScreenshotApp = &source, app
