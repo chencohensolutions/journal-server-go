@@ -42,7 +42,7 @@ type Facts struct {
 	Location   *GeoPoint  `json:"location"`
 	Source     *string    `json:"source"`
 	// The source as the device, or scripts/import, gave it when the file arrived, kept as it was when the server's
-	// rules change Source (a screenshot's name, SetSource), so nothing it said is lost. Absent when it gave none, and
+	// rules change Source (SourceOf, Relabel, SetLabels), so nothing it said is lost. Absent when it gave none, and
 	// on files placed before Oct 27, 2026 until their source is changed.
 	SentFrom *string `json:"sentFrom,omitempty"`
 	// Where the file was on the device that uploaded it, as the device names it: Android's folder in shared storage
@@ -70,7 +70,7 @@ type Facts struct {
 	Call *Call `json:"call,omitempty"`
 	// The file this one was encoded from on import (a WAV kept as FLAC), so importing that file again finds this one.
 	EncodedFrom *EncodedFrom `json:"encodedFrom,omitempty"`
-	// When the server last corrected a fact clients show (SetSource, SetScreenshotFacts, SetCall), so the file comes again in the change feed.
+	// When the server last corrected a fact clients show (Relabel, SetLabels, SetCall), so the file comes again in the change feed.
 	CorrectedAt *time.Time `json:"correctedAt,omitempty"`
 }
 
@@ -274,34 +274,8 @@ func (s *Store) setNudity(sha string, detection Detection) error {
 	return s.rewriteSidecar(item, sidecar)
 }
 
-// SetSource corrects where the file came from (one of the Source constants) in its sidecar. Only the sidecar is
-// rewritten; the original is never touched. Like SetNudity, the file comes again in the change feed: CorrectedAt
-// is set to now, during the turn. A file that already has that source is left as it is.
-func (s *Store) SetSource(sha, source string) (changed bool, err error) {
-	source = NormalizeSource(source)
-	err = s.Turn(func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		item, ok := s.items[sha]
-		if !ok {
-			return fmt.Errorf("%s isn't in the data folder", sha)
-		}
-		if old := item.Sidecar.Facts.Source; old != nil && *old == source {
-			return nil
-		}
-		sidecar := item.Sidecar
-		now := s.now().UTC()
-		keepSentFrom(&sidecar.Facts)
-		sidecar.Facts.Source = &source
-		sidecar.Facts.CorrectedAt = &now
-		changed = true
-		return s.rewriteSidecar(item, sidecar)
-	})
-	return changed, err
-}
-
 // SetCall replaces who a recorded call was with (Facts.Call), and with it makes a sound recording a call. Like
-// SetSource, it sets CorrectedAt, so the file comes again in the change feed. A file that isn't a sound recording is
+// Relabel, it sets CorrectedAt, so the file comes again in the change feed. A file that isn't a sound recording is
 // refused; one already so is left as it is.
 func (s *Store) SetCall(sha string, call Call) (item Item, changed bool, err error) {
 	for _, v := range []**string{&call.Contact, &call.Number} {
@@ -352,41 +326,6 @@ func (s *Store) EncodedFrom(sha string) (Item, bool) {
 		}
 	}
 	return Item{}, false
-}
-
-// SetScreenshotFacts gives a file named like a screenshot the facts a new one gets (source screenshots, and the
-// app its name says), for files placed before the server read them from the name. Like SetSource, it rewrites only
-// the sidecar and sets CorrectedAt, so the file comes again in the change feed; a file already so is left as it is.
-func (s *Store) SetScreenshotFacts(sha string) (changed bool, err error) {
-	err = s.Turn(func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		item, ok := s.items[sha]
-		if !ok {
-			return fmt.Errorf("%s isn't in the data folder", sha)
-		}
-		sidecar := item.Sidecar
-		app, ok := ScreenshotApp(sidecar.Facts.FileName)
-		if !ok {
-			return nil
-		}
-		source := SourceScreenshots
-		sidecar.Facts.Source = &source
-		if app != "" {
-			sidecar.Facts.ScreenshotApp = &app
-		}
-		if equalString(sidecar.Facts.Source, item.Sidecar.Facts.Source) && equalString(sidecar.Facts.ScreenshotApp, item.Sidecar.Facts.ScreenshotApp) {
-			return nil
-		}
-		if sidecar.Facts.SentFrom == nil {
-			sidecar.Facts.SentFrom = item.Sidecar.Facts.Source
-		}
-		now := s.now().UTC()
-		sidecar.Facts.CorrectedAt = &now
-		changed = true
-		return s.rewriteSidecar(item, sidecar)
-	})
-	return changed, err
 }
 
 // keepSentFrom keeps the source a file arrived with in SentFrom before it is changed, for files placed before

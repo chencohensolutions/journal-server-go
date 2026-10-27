@@ -174,7 +174,7 @@ func (s *Store) walkIndex() ([]indexed, error) {
 		}
 	}
 
-	if len(unread) > 0 || len(folders) != len(cached) {
+	if (len(unread) > 0 || len(folders) != len(cached)) && !s.readOnly {
 		data, err := json.Marshal(indexCache{Format: indexFormat, Folders: folders})
 		if err == nil {
 			err = writeFileAtomic(s.indexPath(), data)

@@ -60,6 +60,9 @@ func (s *Store) writeHook() func([]Item) {
 // store's own writes (Import, AddFolders, SetNudity, uploads) take their turn themselves; Turn is for a
 // caller's own files that several processes share, such as scripts/import's review list. Not reentrant.
 func (s *Store) Turn(fn func() error) error {
+	if s.readOnly {
+		return fmt.Errorf("%s was opened only to read", s.root)
+	}
 	s.turns.mu.Lock()
 	defer s.turns.mu.Unlock()
 	lock, err := os.OpenFile(s.lockPath(), os.O_CREATE|os.O_RDWR, 0o644)

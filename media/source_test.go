@@ -147,10 +147,10 @@ func TestSentFromKeepsWhatTheDeviceSaid(t *testing.T) {
 		t.Errorf("photo: source %s, sentFrom %s", str(facts.Source), str(facts.SentFrom))
 	}
 	// Corrected later: sentFrom stays what was sent.
-	if _, err := f.store.SetSource(photo.Sha256(), SourceWhatsApp); err != nil {
+	if _, err := f.store.Relabel(photo.Sha256(), SourceWhatsApp, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.SetSource(photo.Sha256(), SourceCamera); err != nil {
+	if _, err := f.store.Relabel(photo.Sha256(), SourceCamera, nil); err != nil {
 		t.Fatal(err)
 	}
 	if facts := f.store.mustGet(t, photo.Sha256()).Sidecar.Facts; str(facts.Source) != SourceCamera || str(facts.SentFrom) != SourceOther {
@@ -168,7 +168,7 @@ func TestSentFromKeepsWhatTheDeviceSaid(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.SetSource(old.Sha256(), SourceWhatsApp); err != nil {
+	if _, err := f.store.Relabel(old.Sha256(), SourceWhatsApp, nil); err != nil {
 		t.Fatal(err)
 	}
 	if facts := f.store.mustGet(t, old.Sha256()).Sidecar.Facts; str(facts.Source) != SourceWhatsApp || str(facts.SentFrom) != SourceOther {

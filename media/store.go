@@ -35,6 +35,8 @@ type Store struct {
 
 	// Taking turns with other processes that have this data folder open (turns.go).
 	turns turns
+	// Opened only to read (OpenStoreReadOnly): nothing is created or written, and every turn is refused.
+	readOnly bool
 
 	// This process has placed a file or rewritten a sidecar since .cache/index.json was last saved, so the next
 	// start would read those folders again (RefreshIndexCacheIfChanged).
@@ -56,9 +58,21 @@ type Store struct {
 }
 
 // OpenStore creates the folders it needs and indexes the sidecars already in root.
-func OpenStore(root string, now func() time.Time) (*Store, error) {
-	s := &Store{root: root, now: now, items: map[string]*Item{}, encoded: map[string]string{}}
+func OpenStore(root string, now func() time.Time) (*Store, error) { return openStore(root, now, false) }
+
+// OpenStoreReadOnly indexes the sidecars in root without writing anything there: no folders are made,
+// .cache/index.json is read but not saved, and every turn (so every write) is refused. For dry runs beside a running
+// server (scripts/fix-sources, scripts/read-cameras): the data folder's files and their times stay as they were.
+func OpenStoreReadOnly(root string, now func() time.Time) (*Store, error) {
+	return openStore(root, now, true)
+}
+
+func openStore(root string, now func() time.Time, readOnly bool) (*Store, error) {
+	s := &Store{root: root, now: now, items: map[string]*Item{}, encoded: map[string]string{}, readOnly: readOnly}
 	for _, dir := range []string{filepath.Join(root, "media"), s.uploadsDir()} {
+		if readOnly {
+			break
+		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
 		}

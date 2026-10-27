@@ -376,14 +376,14 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 	}
 }
 
-func TestSetSourceComesAgainInTheFeed(t *testing.T) {
+func TestRelabelComesAgainInTheFeed(t *testing.T) {
 	f := newFixture(t)
 	f.now = f.now.Add(time.Second)
 	item := f.upload([]byte("photo"), "photo.jpg")
 	_, cursor, _, _ := f.store.Changes("", 10, View{})
 
 	f.now = f.now.Add(time.Hour)
-	if changed, err := f.store.SetSource(item.Sha256(), "folder:Telegram"); err != nil || !changed {
+	if changed, err := f.store.Relabel(item.Sha256(), "folder:Telegram", nil); err != nil || !changed {
 		t.Fatal(changed, err)
 	}
 	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
@@ -393,7 +393,7 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 
 	// The same source again changes nothing, and the feed has nothing new.
 	f.now = f.now.Add(time.Hour)
-	if changed, err := f.store.SetSource(item.Sha256(), "folder:Telegram"); err != nil || changed {
+	if changed, err := f.store.Relabel(item.Sha256(), "folder:Telegram", nil); err != nil || changed {
 		t.Fatal(changed, err)
 	}
 	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 0 {
@@ -427,7 +427,8 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 		t.Fatalf("uploaded: %+v", facts)
 	}
 
-	// A file placed before the server read the name gets them from SetScreenshotFacts, and comes again in the feed.
+	// A file placed before the server read the name gets them when it is relabelled by the rule (SetLabels, as
+	// scripts/fix-sources does), and comes again in the feed once.
 	item := f.upload([]byte("tinder"), "Screenshot_20240228-080750_Tinder(1).jpg")
 	old := item.Sidecar
 	old.Facts.Source, old.Facts.ScreenshotApp = &camera, nil
@@ -437,26 +438,38 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	str := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+	relabel := func(sha string) bool {
+		t.Helper()
+		got, _ := f.store.Get(sha)
+		source, app := SourceOf(got.Sidecar.Facts, CameraMarks{})
+		next := Labels{Source: source, ScreenshotApp: str(app)}
+		changed, err := f.store.SetLabels(sha, func(disk Labels) (Labels, bool, error) { return next, next != disk, nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return changed
+	}
 	_, cursor, _, _ := f.store.Changes("", 10, View{})
 	f.now = f.now.Add(time.Hour)
-	if changed, err := f.store.SetScreenshotFacts(item.Sha256()); err != nil || !changed {
-		t.Fatal(changed, err)
+	if !relabel(item.Sha256()) {
+		t.Fatal("not relabelled")
 	}
 	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
-	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceScreenshots || *items[0].Sidecar.Facts.ScreenshotApp != "Tinder" {
+	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceScreenshots || *items[0].Sidecar.Facts.ScreenshotApp != "Tinder" ||
+		str(items[0].Sidecar.Facts.SentFrom) != SourceCamera {
 		t.Fatalf("after the correction: %v", items)
 	}
 	f.now = f.now.Add(time.Hour)
-	if changed, err := f.store.SetScreenshotFacts(item.Sha256()); err != nil || changed {
-		t.Fatal(changed, err)
+	if relabel(item.Sha256()) {
+		t.Fatal("relabelled again")
 	}
 	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 0 {
 		t.Fatalf("unchanged: %v", items)
-	}
-
-	// Other files are left as they are.
-	photo := f.upload([]byte("photo"), "20251101_110819.heic")
-	if changed, err := f.store.SetScreenshotFacts(photo.Sha256()); err != nil || changed || photo.Sidecar.Facts.ScreenshotApp != nil {
-		t.Fatal(changed, err, photo.Sidecar.Facts)
 	}
 }
