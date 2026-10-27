@@ -52,6 +52,15 @@ func screenshotFacts(facts *Facts) {
 	}
 }
 
+// voiceMessageFacts gives a sound recording WhatsApp named (PTT-20250208-WA0004.opus, AUD-…) the source whatsapp
+// when none was sent, so it is a voice message.
+func voiceMessageFacts(facts *Facts) {
+	if facts.Kind == KindAudio && facts.Source == nil && IsWhatsAppName(facts.FileName) {
+		source := SourceWhatsApp
+		facts.Source = &source
+	}
+}
+
 // SourceOfPath is where a file came from, by its folder and name, as the Android app names it
 // (sourceOfFolder in journal-client-kmp). p may use either kind of slash.
 func SourceOfPath(p string) string {

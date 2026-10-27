@@ -382,6 +382,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			DurationMs:   req.DurationMs,
 			Location:     req.Location,
 			Source:       req.Source,
+			SentFrom:     req.Source,
 			VersionOf:    req.VersionOf,
 			PairedWith:   req.PairedWith,
 			UploadedAt:   s.now().UTC(),
@@ -393,7 +394,9 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 		},
 		Privacy: s.inheritedPrivacy(req),
 	}
+	// The server's rules from the name come after SentFrom keeps what was sent.
 	screenshotFacts(&sidecar.Facts)
+	voiceMessageFacts(&sidecar.Facts)
 	if err := writeSidecar(dest+".json", sidecar); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.
 		rename(dest, from)
@@ -497,10 +500,6 @@ func (s *Store) soundFacts(path string, req UploadRequest) UploadRequest {
 		} else if req.Call.Contact == nil && req.Call.Number == nil {
 			req.Call = a.Call
 		}
-	}
-	if req.Source == nil && IsWhatsAppName(req.FileName) {
-		source := SourceWhatsApp
-		req.Source = &source
 	}
 	return req
 }

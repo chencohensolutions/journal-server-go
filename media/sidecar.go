@@ -41,6 +41,10 @@ type Facts struct {
 	DurationMs *int64     `json:"durationMs"`
 	Location   *GeoPoint  `json:"location"`
 	Source     *string    `json:"source"`
+	// The source as the device, or scripts/import, gave it when the file arrived, kept as it was when the server's
+	// rules change Source (a screenshot's name, SetSource), so nothing it said is lost. Absent when it gave none, and
+	// on files placed before Oct 27, 2026 until their source is changed.
+	SentFrom *string `json:"sentFrom,omitempty"`
 	// The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg → "Bumble").
 	App *string `json:"app,omitempty"`
 	// The photo this file is an edit of.
@@ -260,6 +264,7 @@ func (s *Store) SetSource(sha, source string) (changed bool, err error) {
 		}
 		sidecar := item.Sidecar
 		now := s.now().UTC()
+		keepSentFrom(&sidecar.Facts)
 		sidecar.Facts.Source = &source
 		sidecar.Facts.CorrectedAt = &now
 		changed = true
@@ -338,12 +343,23 @@ func (s *Store) SetScreenshotFacts(sha string) (changed bool, err error) {
 		if equalString(sidecar.Facts.Source, item.Sidecar.Facts.Source) && equalString(sidecar.Facts.App, item.Sidecar.Facts.App) {
 			return nil
 		}
+		if sidecar.Facts.SentFrom == nil {
+			sidecar.Facts.SentFrom = item.Sidecar.Facts.Source
+		}
 		now := s.now().UTC()
 		sidecar.Facts.CorrectedAt = &now
 		changed = true
 		return s.rewriteSidecar(item, sidecar)
 	})
 	return changed, err
+}
+
+// keepSentFrom keeps the source a file arrived with in SentFrom before it is changed, for files placed before
+// SentFrom was written on arrival; one already kept stays as it was.
+func keepSentFrom(facts *Facts) {
+	if facts.SentFrom == nil {
+		facts.SentFrom = facts.Source
+	}
 }
 
 func equalString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }

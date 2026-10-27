@@ -91,7 +91,10 @@ The device sends the facts (it already read them from MediaStore/PhotoKit); the 
 a RAW (it names the JPEG). A file named like a screenshot (`Screenshot_20240301_030715_Bumble.jpg`,
 `Screenshot_2015-07-18-03-54-57.png`) gets `"source": "screenshots"` whatever the device or folder said, and
 `app`, the app on screen, when the name has one (`"app": "Bumble"`, also from `…_Bumble(1).jpg` and
-`…_Bumble~20221117-191459.jpg`; `media.ScreenshotApp`). A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
+`…_Bumble~20221117-191459.jpg`; `media.ScreenshotApp`). `sentFrom` keeps the source exactly as the device (or the
+import) gave it when the file arrived, written then and never changed, so nothing a device said is lost when the
+server's rules change `source` (a screenshot's name, [Fixing sources](#fixing-sources)); it is absent when none was
+sent, and on files placed before Oct 27, 2026, which get their old source there the first time it is corrected. A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
@@ -436,7 +439,8 @@ models, YuNet and SFace, run on the same ONNX Runtime. See [faces.md](faces.md).
 the apps hide them with the rest of WhatsApp. Imports used to tell the source from the folder only, so a WhatsApp
 file copied elsewhere before it was imported lost it; they now look at the name too.
 
-- Only `facts.source` and `facts.correctedAt` change in the sidecar (inside a turn); originals are never touched.
+- Only `facts.source` and `facts.correctedAt` change in the sidecar (inside a turn), and `facts.sentFrom` gets the
+  source before, when it had none; originals are never touched.
   `correctedAt` makes the file come again in the change feed, so phones that already have it learn the new source.
 - It prints how many it corrected, their sources before, and where they were found (the first folders of
   `importedFrom`), to tell why they had the wrong source. Files whose folders mention WhatsApp but whose name
