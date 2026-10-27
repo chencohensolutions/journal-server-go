@@ -1,7 +1,7 @@
 # Copies of the data folders
 
 The server can keep a plain copy of each user's data folder in other folders: another disk, a USB disk or a
-network share. A copy holds the originals, their sidecars, `people.json` and `settings.json`, in the data folder's
+network share. A copy holds the originals, their sidecars, `people.json`, `settings.json`, `cameras.json` and the relabel journals (`relabels/`), in the data folder's
 own layout (`media/<year>/<year-month>/…`). It can be read without the server, and in an emergency a server's
 `data_folder` can point at it (the indexes are then rebuilt, since `.cache/` isn't copied).
 

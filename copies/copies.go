@@ -28,8 +28,16 @@ import (
 // spaceReserve stays free on the copy's disk; a pass stops before eating into it.
 const spaceReserve uint64 = 1 << 30
 
-// rootFiles are the files at the data folder's root that are copied beside media/.
-var rootFiles = []string{"people.json", "settings.json"}
+// rootFiles are the files at the data folder's root that are copied beside media/: the user's choices, and the
+// journals of fix-sources' relabels (relabels/*.tsv), the only way to undo one.
+func (c *Copier) rootFiles() []string {
+	files := []string{"people.json", "settings.json", "cameras.json"}
+	journals, _ := filepath.Glob(c.source(filepath.Join("relabels", "*.tsv")))
+	for _, journal := range journals {
+		files = append(files, filepath.Join("relabels", filepath.Base(journal)))
+	}
+	return files
+}
 
 // ErrDiskFull stops a pass when the copy's disk has no room for the next original.
 var ErrDiskFull = errors.New("the copy's disk is full")
@@ -169,7 +177,7 @@ func (c *Copier) Check(ctx context.Context, paths bool) (Report, error) {
 			}
 		}
 	}
-	for _, name := range rootFiles {
+	for _, name := range c.rootFiles() {
 		if need, err := smallNeeded(c.source(name), c.target(name)); err != nil {
 			return report, err
 		} else if need {
@@ -318,7 +326,7 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, root bool, pass *
 		}
 	}
 	if root {
-		for _, name := range rootFiles {
+		for _, name := range c.rootFiles() {
 			if n, copied, err := copySmall(c.source(name), c.target(name)); err != nil {
 				failed(name, err)
 			} else if copied {
