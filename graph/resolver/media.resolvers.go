@@ -42,6 +42,7 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 		Height:     input.Height,
 		DurationMs: input.DurationMs,
 		Source:     input.Source,
+		Folder:     blankToNil(input.Folder),
 		VersionOf:  input.VersionOf,
 		PairedWith: input.PairedWith,
 		UploadedBy: auth.DeviceNameFromContext(ctx),

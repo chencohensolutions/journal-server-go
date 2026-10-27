@@ -94,7 +94,10 @@ a RAW (it names the JPEG). A file named like a screenshot (`Screenshot_20240301_
 `…_Bumble~20221117-191459.jpg`; `media.ScreenshotApp`). `sentFrom` keeps the source exactly as the device (or the
 import) gave it when the file arrived, written then and never changed, so nothing a device said is lost when the
 server's rules change `source` (a screenshot's name, [Fixing sources](#fixing-sources)); it is absent when none was
-sent, and on files placed before Oct 27, 2026, which get their old source there the first time it is corrected. A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
+sent, and on files placed before Oct 27, 2026, which get their old source there the first time it is corrected.
+`deviceFolder` is where the file was on the device that uploaded it, as `startUpload`'s `folder` gave it (Android's
+folder in shared storage, `"Pictures/Telegram/"`, or an iPhone's album; at most 500 characters): the device's own
+evidence of its source, as `importedFrom` is the import's, so the server can tell the source again later. A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is

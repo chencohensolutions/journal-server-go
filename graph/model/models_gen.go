@@ -481,6 +481,10 @@ type StartUploadInput struct {
 	DurationMs *int64         `json:"durationMs,omitempty"`
 	Location   *GeoPointInput `json:"location,omitempty"`
 	Source     *string        `json:"source,omitempty"`
+	// Where the file was on the device, as the device names it: Android's folder in shared storage
+	// ("Pictures/Telegram/"), an iPhone's album ("WhatsApp"). Kept in the sidecar as it was sent (deviceFolder), so the
+	// server can tell the source again later; at most 500 characters.
+	Folder *string `json:"folder,omitempty"`
 	// Set when this file is an edit of a photo already on the server.
 	VersionOf *string `json:"versionOf,omitempty"`
 	// Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first.

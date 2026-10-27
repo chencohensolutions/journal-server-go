@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -38,6 +39,8 @@ type UploadRequest struct {
 	DurationMs *int64     `json:"durationMs"`
 	Location   *GeoPoint  `json:"location"`
 	Source     *string    `json:"source"`
+	// Where the file was on the device, as the device names it ("Pictures/Telegram/", an iPhone's album).
+	Folder     *string    `json:"folder,omitempty"`
 	VersionOf  *string    `json:"versionOf"`
 	PairedWith *string    `json:"pairedWith"`
 	UploadedBy string     `json:"uploadedBy"`
@@ -66,6 +69,8 @@ func (r UploadRequest) validate() error {
 		return &InvalidRequestError{"unknown kind " + string(r.Kind)}
 	case r.MimeType != "" && !isMimeType(r.MimeType):
 		return &InvalidRequestError{"mimeType must look like image/jpeg"}
+	case r.Folder != nil && (len(*r.Folder) > 500 || strings.ContainsFunc(*r.Folder, unicode.IsControl)):
+		return &InvalidRequestError{"folder must be at most 500 characters, without control characters"}
 	}
 	for name, ref := range map[string]*string{"versionOf": r.VersionOf, "pairedWith": r.PairedWith} {
 		if ref != nil && (!IsSha256(*ref) || *ref == r.Sha256) {
@@ -383,6 +388,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			Location:     req.Location,
 			Source:       req.Source,
 			SentFrom:     req.Source,
+			DeviceFolder: req.Folder,
 			VersionOf:    req.VersionOf,
 			PairedWith:   req.PairedWith,
 			UploadedAt:   s.now().UTC(),

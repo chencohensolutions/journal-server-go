@@ -45,6 +45,10 @@ type Facts struct {
 	// rules change Source (a screenshot's name, SetSource), so nothing it said is lost. Absent when it gave none, and
 	// on files placed before Oct 27, 2026 until their source is changed.
 	SentFrom *string `json:"sentFrom,omitempty"`
+	// Where the file was on the device that uploaded it, as the device names it: Android's folder in shared storage
+	// ("Pictures/Telegram/"), an iPhone's album. The device's own evidence of its source, as importedFrom is the
+	// import's; absent on imports and on files uploaded before Oct 27, 2026.
+	DeviceFolder *string `json:"deviceFolder,omitempty"`
 	// The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg → "Bumble").
 	App *string `json:"app,omitempty"`
 	// The photo this file is an edit of.

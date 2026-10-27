@@ -2141,6 +2141,12 @@ input StartUploadInput {
   durationMs: Int64
   location: GeoPointInput
   source: String
+  """
+  Where the file was on the device, as the device names it: Android's folder in shared storage
+  ("Pictures/Telegram/"), an iPhone's album ("WhatsApp"). Kept in the sidecar as it was sent (deviceFolder), so the
+  server can tell the source again later; at most 500 characters.
+  """
+  folder: String
   "Set when this file is an edit of a photo already on the server."
   versionOf: Sha256
   "Set for a Live Photo's video (the photo) or a RAW (its JPEG); that file must be uploaded first."
@@ -10433,7 +10439,7 @@ func (ec *executionContext) unmarshalInputStartUploadInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"sha256", "size", "fileName", "mimeType", "kind", "takenAt", "width", "height", "durationMs", "location", "source", "versionOf", "pairedWith", "call", "encodedFrom"}
+	fieldsInOrder := [...]string{"sha256", "size", "fileName", "mimeType", "kind", "takenAt", "width", "height", "durationMs", "location", "source", "folder", "versionOf", "pairedWith", "call", "encodedFrom"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -10517,6 +10523,13 @@ func (ec *executionContext) unmarshalInputStartUploadInput(ctx context.Context, 
 				return it, err
 			}
 			it.Source = data
+		case "folder":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("folder"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Folder = data
 		case "versionOf":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("versionOf"))
 			data, err := ec.unmarshalOSha2562ᚖstring(ctx, v)
