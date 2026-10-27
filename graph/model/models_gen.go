@@ -59,6 +59,34 @@ type CallInput struct {
 	Number *string `json:"number,omitempty"`
 }
 
+// The camera that took a file, as its tags say: EXIF Make and Model for a photo. Either may be empty.
+type Camera struct {
+	// samsung, Apple, Canon, …
+	Make string `json:"make"`
+	// SM-S931B, iPhone 15 Pro, Canon EOS 80D, …
+	Model string `json:"model"`
+}
+
+// One camera model in the user's library, and the user's mark on it.
+type CameraModel struct {
+	// Spelled as most of its files spell it.
+	Make  string `json:"make"`
+	Model string `json:"model"`
+	// How many files it took, hidden or not.
+	Files int `json:"files"`
+	// Of files, how many the import placed (uploadedBy import); the rest came from devices.
+	Imported int `json:"imported"`
+	// The years its files were taken in, oldest first.
+	Years []int `json:"years"`
+	// The user's: marked mine, or not marked at all (a model nobody marked counts as the user's).
+	Mine bool `json:"mine"`
+	// The user marked it (setCamera); false while it is mine only because nobody marked it.
+	Marked bool `json:"marked"`
+	// How many of its files are still being moved after its mark changed: to Sent to you (source received), or back.
+	// 0 once they all have; each moved file comes again in the change feed.
+	Pending int `json:"pending"`
+}
+
 type Change struct {
 	Kind ChangeKind `json:"kind"`
 	// media/<sha256> for media.
@@ -189,11 +217,16 @@ type GeoPointInput struct {
 
 // Groups of files the user can hide on every device.
 type HiddenCollections struct {
-	// Every file WhatsApp saved (source whatsapp).
+	// Every file WhatsApp saved (source folder:WhatsApp): the WhatsApp entry of apps, for apps from before apps.
 	Whatsapp *Collection `json:"whatsapp"`
+	// The files of each app and folder they came from (every folder kind: source folder:WhatsApp, folder:Telegram,
+	// folder:Petcube, …), named by the folder (WhatsApp, Telegram), most files first. Hiding one hides all its files;
+	// screenshots are not among them (their source is screenshots: see screenshotApps). A hidden one with no files left is
+	// listed too, so it can be shown again.
+	Apps []*Collection `json:"apps"`
 	// Screenshots whose file name says no app (Screenshot_2015-07-18-03-54-57.png). Its name is empty.
 	ScreenshotsWithoutApp *Collection `json:"screenshotsWithoutApp"`
-	// The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
+	// The screenshots of each app their file names name (Media.screenshotApp), most files first. A hidden app with no files left is
 	// listed too, so it can be shown again.
 	ScreenshotApps []*Collection `json:"screenshotApps"`
 	// The files the nudity scan scored high.
@@ -202,14 +235,18 @@ type HiddenCollections struct {
 	Recordings *Collection `json:"recordings"`
 	// Recorded phone calls (Media.call). Hidden until the user shows them.
 	Calls *Collection `json:"calls"`
-	// WhatsApp voice messages and audio (sound recordings with source whatsapp). Hidden until the user shows them.
+	// WhatsApp voice messages and audio (sound recordings with source folder:WhatsApp). Hidden until the user shows them.
 	VoiceMessages *Collection `json:"voiceMessages"`
 }
 
 // The whole choice of what to hide: what isn't listed is shown.
 type HiddenCollectionsInput struct {
-	Whatsapp              bool `json:"whatsapp"`
-	ScreenshotsWithoutApp bool `json:"screenshotsWithoutApp"`
+	// The apps and folders whose files are hidden, by name (WhatsApp, Telegram, as apps names them; a kind such as
+	// folder:Telegram is taken too), compared ignoring case. Left out, they stay as they are.
+	Apps []string `json:"apps,omitempty"`
+	// Hides WhatsApp, or shows it, whatever apps say; left out, apps decide. For apps from before apps.
+	Whatsapp              *bool `json:"whatsapp,omitempty"`
+	ScreenshotsWithoutApp bool  `json:"screenshotsWithoutApp"`
 	// Apps whose screenshots are hidden, compared ignoring case.
 	ScreenshotApps []string `json:"screenshotApps"`
 	// Hiding nudity; left out, it stays as it is.
@@ -290,10 +327,17 @@ type Media struct {
 	Height     *int       `json:"height,omitempty"`
 	DurationMs *int64     `json:"durationMs,omitempty"`
 	Location   *GeoPoint  `json:"location,omitempty"`
-	// The folder it came from on the device, as the device names it: camera, whatsapp, …
+	// What the file is and where it came from, as the server's one rule decides it (docs/media.md, "Sources"): camera,
+	// screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), other, or a folder
+	// kind, "folder:" and the folder's name (folder:WhatsApp, folder:Telegram, folder:Petcube). Compared ignoring case.
+	// Before Oct 27, 2026 WhatsApp was whatsapp, which apps read as folder:WhatsApp.
 	Source *string `json:"source,omitempty"`
-	// The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble).
+	// The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble).
+	ScreenshotApp *string `json:"screenshotApp,omitempty"`
+	// The same as screenshotApp.
 	App *string `json:"app,omitempty"`
+	// The camera that took it, as its tags say (EXIF for a photo, the container's tags for a video); null without tags.
+	Camera *Camera `json:"camera,omitempty"`
 	// The photo this one is an edit of.
 	VersionOf *string `json:"versionOf,omitempty"`
 	// Edits of this photo, oldest first.
@@ -456,6 +500,8 @@ type ServerInfo struct {
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
 	EncodesWav bool `json:"encodesWav"`
+	// Photos' and videos' cameras are read when they arrive (Media.camera); cameras and setCamera are there.
+	Cameras bool `json:"cameras"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
@@ -782,7 +828,7 @@ type MediaKind string
 const (
 	MediaKindPhoto MediaKind = "PHOTO"
 	MediaKindVideo MediaKind = "VIDEO"
-	// A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source whatsapp).
+	// A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source folder:WhatsApp).
 	MediaKindAudio MediaKind = "AUDIO"
 )
 

@@ -16,7 +16,7 @@ scalar Int64
 enum MediaKind {
   PHOTO
   VIDEO
-  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source whatsapp)."
+  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source folder:WhatsApp)."
   AUDIO
 }
 
@@ -45,10 +45,19 @@ type Media {
   height: Int
   durationMs: Int64
   location: GeoPoint
-  "The folder it came from on the device, as the device names it: camera, whatsapp, …"
+  """
+  What the file is and where it came from, as the server's one rule decides it (docs/media.md, "Sources"): camera,
+  screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), other, or a folder
+  kind, "folder:" and the folder's name (folder:WhatsApp, folder:Telegram, folder:Petcube). Compared ignoring case.
+  Before Oct 27, 2026 WhatsApp was whatsapp, which apps read as folder:WhatsApp.
+  """
   source: String
-  "The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
-  app: String
+  "The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
+  screenshotApp: String
+  "The same as screenshotApp."
+  app: String @deprecated(reason: "Use screenshotApp: it is the app on screen in a screenshot, not the app that saved the file.")
+  "The camera that took it, as its tags say (EXIF for a photo, the container's tags for a video); null without tags."
+  camera: Camera
   "The photo this one is an edit of."
   versionOf: Sha256
   "Edits of this photo, oldest first."

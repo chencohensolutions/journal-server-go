@@ -81,6 +81,15 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	return previews
 }
 
+// readCamerasWith has every store read new files' cameras (media.ReadCamera) with what the previews use: libvips in
+// the server, or vipsheader with "vips_as_program", and ffprobe.
+func readCamerasWith(library *media.Library, previews *media.Previews) {
+	tools := previews.CameraTools()
+	for _, user := range library.Users() {
+		library.Store(user).CameraTools = tools
+	}
+}
+
 var (
 	runtimeOnce sync.Once
 	runtimeLib  *onnx.Runtime

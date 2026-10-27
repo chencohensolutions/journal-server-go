@@ -51,6 +51,22 @@ type ComplexityRoot struct {
 		Number  func(childComplexity int) int
 	}
 
+	Camera struct {
+		Make  func(childComplexity int) int
+		Model func(childComplexity int) int
+	}
+
+	CameraModel struct {
+		Files    func(childComplexity int) int
+		Imported func(childComplexity int) int
+		Make     func(childComplexity int) int
+		Marked   func(childComplexity int) int
+		Mine     func(childComplexity int) int
+		Model    func(childComplexity int) int
+		Pending  func(childComplexity int) int
+		Years    func(childComplexity int) int
+	}
+
 	Change struct {
 		Deleted func(childComplexity int) int
 		Hidden  func(childComplexity int) int
@@ -122,6 +138,7 @@ type ComplexityRoot struct {
 	}
 
 	HiddenCollections struct {
+		Apps                  func(childComplexity int) int
 		Calls                 func(childComplexity int) int
 		Nudity                func(childComplexity int) int
 		Recordings            func(childComplexity int) int
@@ -169,33 +186,35 @@ type ComplexityRoot struct {
 	}
 
 	Media struct {
-		Aesthetic   func(childComplexity int) int
-		App         func(childComplexity int) int
-		Call        func(childComplexity int) int
-		DurationMs  func(childComplexity int) int
-		EncodedFrom func(childComplexity int) int
-		EndedAt     func(childComplexity int) int
-		Faces       func(childComplexity int) int
-		FileName    func(childComplexity int) int
-		Height      func(childComplexity int) int
-		Kind        func(childComplexity int) int
-		Location    func(childComplexity int) int
-		MimeType    func(childComplexity int) int
-		Nudity      func(childComplexity int) int
-		Paired      func(childComplexity int) int
-		PairedWith  func(childComplexity int) int
-		Private     func(childComplexity int) int
-		Sha256      func(childComplexity int) int
-		Size        func(childComplexity int) int
-		Source      func(childComplexity int) int
-		TakenAt     func(childComplexity int) int
-		Text        func(childComplexity int) int
-		URL         func(childComplexity int) int
-		UploadedAt  func(childComplexity int) int
-		UploadedBy  func(childComplexity int) int
-		VersionOf   func(childComplexity int) int
-		Versions    func(childComplexity int) int
-		Width       func(childComplexity int) int
+		Aesthetic     func(childComplexity int) int
+		App           func(childComplexity int) int
+		Call          func(childComplexity int) int
+		Camera        func(childComplexity int) int
+		DurationMs    func(childComplexity int) int
+		EncodedFrom   func(childComplexity int) int
+		EndedAt       func(childComplexity int) int
+		Faces         func(childComplexity int) int
+		FileName      func(childComplexity int) int
+		Height        func(childComplexity int) int
+		Kind          func(childComplexity int) int
+		Location      func(childComplexity int) int
+		MimeType      func(childComplexity int) int
+		Nudity        func(childComplexity int) int
+		Paired        func(childComplexity int) int
+		PairedWith    func(childComplexity int) int
+		Private       func(childComplexity int) int
+		ScreenshotApp func(childComplexity int) int
+		Sha256        func(childComplexity int) int
+		Size          func(childComplexity int) int
+		Source        func(childComplexity int) int
+		TakenAt       func(childComplexity int) int
+		Text          func(childComplexity int) int
+		URL           func(childComplexity int) int
+		UploadedAt    func(childComplexity int) int
+		UploadedBy    func(childComplexity int) int
+		VersionOf     func(childComplexity int) int
+		Versions      func(childComplexity int) int
+		Width         func(childComplexity int) int
 	}
 
 	MediaExists struct {
@@ -228,6 +247,7 @@ type ComplexityRoot struct {
 		PauseIndexing        func(childComplexity int) int
 		PrepareSearch        func(childComplexity int) int
 		SetCall              func(childComplexity int, sha256 string, call model.CallInput) int
+		SetCamera            func(childComplexity int, make string, model string, mine bool) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
 		StartIndexing        func(childComplexity int) int
@@ -262,6 +282,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		Cameras           func(childComplexity int) int
 		Changes           func(childComplexity int, since *string, limit *int) int
 		Duplicates        func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
 		EnrollmentPreview func(childComplexity int, code string) int
@@ -290,6 +311,7 @@ type ComplexityRoot struct {
 		API          func(childComplexity int) int
 		Aesthetic    func(childComplexity int) int
 		Audio        func(childComplexity int) int
+		Cameras      func(childComplexity int) int
 		EncodesWav   func(childComplexity int) int
 		Faces        func(childComplexity int) int
 		Indexing     func(childComplexity int) int
@@ -344,6 +366,7 @@ type MediaResolver interface {
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
 	SetCall(ctx context.Context, sha256 string, call model.CallInput) (*model.Media, error)
+	SetCamera(ctx context.Context, make string, model string, mine bool) ([]*model.CameraModel, error)
 	SetHiddenCollections(ctx context.Context, input model.HiddenCollectionsInput) (*model.HiddenCollections, error)
 	StartIndexing(ctx context.Context) (*model.Indexing, error)
 	PauseIndexing(ctx context.Context) (*model.Indexing, error)
@@ -360,6 +383,7 @@ type MutationResolver interface {
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 	ServerInfo(ctx context.Context) (*model.ServerInfo, error)
+	Cameras(ctx context.Context) ([]*model.CameraModel, error)
 	HiddenCollections(ctx context.Context) (*model.HiddenCollections, error)
 	Indexing(ctx context.Context) (*model.Indexing, error)
 	LocalIndexes(ctx context.Context) ([]*model.LocalIndex, error)
@@ -426,6 +450,68 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Call.Number(childComplexity), true
+
+	case "Camera.make":
+		if e.ComplexityRoot.Camera.Make == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Camera.Make(childComplexity), true
+	case "Camera.model":
+		if e.ComplexityRoot.Camera.Model == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Camera.Model(childComplexity), true
+
+	case "CameraModel.files":
+		if e.ComplexityRoot.CameraModel.Files == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Files(childComplexity), true
+	case "CameraModel.imported":
+		if e.ComplexityRoot.CameraModel.Imported == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Imported(childComplexity), true
+	case "CameraModel.make":
+		if e.ComplexityRoot.CameraModel.Make == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Make(childComplexity), true
+	case "CameraModel.marked":
+		if e.ComplexityRoot.CameraModel.Marked == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Marked(childComplexity), true
+	case "CameraModel.mine":
+		if e.ComplexityRoot.CameraModel.Mine == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Mine(childComplexity), true
+	case "CameraModel.model":
+		if e.ComplexityRoot.CameraModel.Model == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Model(childComplexity), true
+	case "CameraModel.pending":
+		if e.ComplexityRoot.CameraModel.Pending == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Pending(childComplexity), true
+	case "CameraModel.years":
+		if e.ComplexityRoot.CameraModel.Years == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CameraModel.Years(childComplexity), true
 
 	case "Change.deleted":
 		if e.ComplexityRoot.Change.Deleted == nil {
@@ -660,6 +746,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.GeoPoint.Lon(childComplexity), true
 
+	case "HiddenCollections.apps":
+		if e.ComplexityRoot.HiddenCollections.Apps == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HiddenCollections.Apps(childComplexity), true
 	case "HiddenCollections.calls":
 		if e.ComplexityRoot.HiddenCollections.Calls == nil {
 			break
@@ -875,6 +967,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.Call(childComplexity), true
+	case "Media.camera":
+		if e.ComplexityRoot.Media.Camera == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Camera(childComplexity), true
 	case "Media.durationMs":
 		if e.ComplexityRoot.Media.DurationMs == nil {
 			break
@@ -953,6 +1051,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.Private(childComplexity), true
+	case "Media.screenshotApp":
+		if e.ComplexityRoot.Media.ScreenshotApp == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.ScreenshotApp(childComplexity), true
 	case "Media.sha256":
 		if e.ComplexityRoot.Media.Sha256 == nil {
 			break
@@ -1183,6 +1287,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetCall(childComplexity, args["sha256"].(string), args["call"].(model.CallInput)), true
+	case "Mutation.setCamera":
+		if e.ComplexityRoot.Mutation.SetCamera == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setCamera_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetCamera(childComplexity, args["make"].(string), args["model"].(string), args["mine"].(bool)), true
 	case "Mutation.setHiddenCollections":
 		if e.ComplexityRoot.Mutation.SetHiddenCollections == nil {
 			break
@@ -1317,6 +1432,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Person.Name(childComplexity), true
 
+	case "Query.cameras":
+		if e.ComplexityRoot.Query.Cameras == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Cameras(childComplexity), true
 	case "Query.changes":
 		if e.ComplexityRoot.Query.Changes == nil {
 			break
@@ -1502,6 +1623,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Audio(childComplexity), true
+	case "ServerInfo.cameras":
+		if e.ComplexityRoot.ServerInfo.Cameras == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Cameras(childComplexity), true
 	case "ServerInfo.encodesWav":
 		if e.ComplexityRoot.ServerInfo.EncodesWav == nil {
 			break
@@ -1817,6 +1944,62 @@ extend type Mutation {
   setCall(sha256: Sha256!, call: CallInput!): Media
 }
 `, BuiltIn: false},
+	{Name: "../schema/cameras.graphql", Input: `# --- Cameras -------------------------------------------------------------------
+# Which camera took each photo or video (Media.camera, read from its tags when it arrives), and the user's own
+# cameras: the user marks which camera models were theirs, and the photos of a model marked "not mine" are kept apart
+# as sent to them (source received, "Sent to you"). The marks are kept in cameras.json at the data folder's root; a
+# model nobody marked counts as the user's, so nothing moves until they mark one. See docs/media.md, "Cameras".
+
+extend type ServerInfo {
+  "Photos' and videos' cameras are read when they arrive (Media.camera); cameras and setCamera are there."
+  cameras: Boolean!
+}
+
+"The camera that took a file, as its tags say: EXIF Make and Model for a photo. Either may be empty."
+type Camera {
+  "samsung, Apple, Canon, …"
+  make: String!
+  "SM-S931B, iPhone 15 Pro, Canon EOS 80D, …"
+  model: String!
+}
+
+"One camera model in the user's library, and the user's mark on it."
+type CameraModel {
+  "Spelled as most of its files spell it."
+  make: String!
+  model: String!
+  "How many files it took, hidden or not."
+  files: Int!
+  "Of files, how many the import placed (uploadedBy import); the rest came from devices."
+  imported: Int!
+  "The years its files were taken in, oldest first."
+  years: [Int!]!
+  "The user's: marked mine, or not marked at all (a model nobody marked counts as the user's)."
+  mine: Boolean!
+  "The user marked it (setCamera); false while it is mine only because nobody marked it."
+  marked: Boolean!
+  """
+  How many of its files are still being moved after its mark changed: to Sent to you (source received), or back.
+  0 once they all have; each moved file comes again in the change feed.
+  """
+  pending: Int!
+}
+
+extend type Query {
+  "Every camera model the user's files name, most files first; a marked model with no files left is listed too."
+  cameras: [CameraModel!]!
+}
+
+extend type Mutation {
+  """
+  Marks a camera model as the user's or not (make and model compared ignoring case), and answers at once with every
+  model. The model's files then move in the background: a model marked not mine to Sent to you (source received),
+  and back to their own source when it is marked mine again; cameras.pending counts what is left, and each file comes
+  again in the change feed once moved. A mark changed while files still move is applied after them.
+  """
+  setCamera(make: String!, model: String!, mine: Boolean!): [CameraModel!]!
+}
+`, BuiltIn: false},
 	{Name: "../schema/hidden.graphql", Input: `# --- Hidden collections -------------------------------------------------------
 # What the user hides on every device (Settings → Private media → Hidden collections in the apps), the files the
 # nudity scan scored high, and sound recordings (hidden until the user shows them). The server does the hiding: a hidden file comes in the change feed as deleted and hidden
@@ -1826,12 +2009,19 @@ extend type Mutation {
 
 "Groups of files the user can hide on every device."
 type HiddenCollections {
-  "Every file WhatsApp saved (source whatsapp)."
-  whatsapp: Collection!
+  "Every file WhatsApp saved (source folder:WhatsApp): the WhatsApp entry of apps, for apps from before apps."
+  whatsapp: Collection! @deprecated(reason: "Use apps: WhatsApp is one of them.")
+  """
+  The files of each app and folder they came from (every folder kind: source folder:WhatsApp, folder:Telegram,
+  folder:Petcube, …), named by the folder (WhatsApp, Telegram), most files first. Hiding one hides all its files;
+  screenshots are not among them (their source is screenshots: see screenshotApps). A hidden one with no files left is
+  listed too, so it can be shown again.
+  """
+  apps: [Collection!]!
   "Screenshots whose file name says no app (Screenshot_2015-07-18-03-54-57.png). Its name is empty."
   screenshotsWithoutApp: Collection!
   """
-  The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
+  The screenshots of each app their file names name (Media.screenshotApp), most files first. A hidden app with no files left is
   listed too, so it can be shown again.
   """
   screenshotApps: [Collection!]!
@@ -1841,7 +2031,7 @@ type HiddenCollections {
   recordings: Collection!
   "Recorded phone calls (Media.call). Hidden until the user shows them."
   calls: Collection!
-  "WhatsApp voice messages and audio (sound recordings with source whatsapp). Hidden until the user shows them."
+  "WhatsApp voice messages and audio (sound recordings with source folder:WhatsApp). Hidden until the user shows them."
   voiceMessages: Collection!
 }
 
@@ -1870,7 +2060,13 @@ type Collection {
 
 "The whole choice of what to hide: what isn't listed is shown."
 input HiddenCollectionsInput {
-  whatsapp: Boolean!
+  """
+  The apps and folders whose files are hidden, by name (WhatsApp, Telegram, as apps names them; a kind such as
+  folder:Telegram is taken too), compared ignoring case. Left out, they stay as they are.
+  """
+  apps: [String!]
+  "Hides WhatsApp, or shows it, whatever apps say; left out, apps decide. For apps from before apps."
+  whatsapp: Boolean
   screenshotsWithoutApp: Boolean!
   "Apps whose screenshots are hidden, compared ignoring case."
   screenshotApps: [String!]!
@@ -2047,7 +2243,7 @@ scalar Int64
 enum MediaKind {
   PHOTO
   VIDEO
-  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source whatsapp)."
+  "A sound recording: of an event, a phone call (call) or a WhatsApp voice message (source folder:WhatsApp)."
   AUDIO
 }
 
@@ -2076,10 +2272,19 @@ type Media {
   height: Int
   durationMs: Int64
   location: GeoPoint
-  "The folder it came from on the device, as the device names it: camera, whatsapp, …"
+  """
+  What the file is and where it came from, as the server's one rule decides it (docs/media.md, "Sources"): camera,
+  screenshots, received (photos from a camera the user marked not theirs, shown as "Sent to you"), other, or a folder
+  kind, "folder:" and the folder's name (folder:WhatsApp, folder:Telegram, folder:Petcube). Compared ignoring case.
+  Before Oct 27, 2026 WhatsApp was whatsapp, which apps read as folder:WhatsApp.
+  """
   source: String
-  "The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
-  app: String
+  "The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg: Bumble)."
+  screenshotApp: String
+  "The same as screenshotApp."
+  app: String @deprecated(reason: "Use screenshotApp: it is the app on screen in a screenshot, not the app that saved the file.")
+  "The camera that took it, as its tags say (EXIF for a photo, the container's tags for a video); null without tags."
+  camera: Camera
   "The photo this one is an edit of."
   versionOf: Sha256
   "Edits of this photo, oldest first."
@@ -2655,6 +2860,38 @@ func (ec *executionContext) childFields_Call(ctx context.Context, field graphql.
 	return nil, fmt.Errorf("no field named %q was found under type Call", field.Name)
 }
 
+func (ec *executionContext) childFields_Camera(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "make":
+		return ec.fieldContext_Camera_make(ctx, field)
+	case "model":
+		return ec.fieldContext_Camera_model(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Camera", field.Name)
+}
+
+func (ec *executionContext) childFields_CameraModel(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "make":
+		return ec.fieldContext_CameraModel_make(ctx, field)
+	case "model":
+		return ec.fieldContext_CameraModel_model(ctx, field)
+	case "files":
+		return ec.fieldContext_CameraModel_files(ctx, field)
+	case "imported":
+		return ec.fieldContext_CameraModel_imported(ctx, field)
+	case "years":
+		return ec.fieldContext_CameraModel_years(ctx, field)
+	case "mine":
+		return ec.fieldContext_CameraModel_mine(ctx, field)
+	case "marked":
+		return ec.fieldContext_CameraModel_marked(ctx, field)
+	case "pending":
+		return ec.fieldContext_CameraModel_pending(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type CameraModel", field.Name)
+}
+
 func (ec *executionContext) childFields_Change(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "kind":
@@ -2765,6 +3002,8 @@ func (ec *executionContext) childFields_HiddenCollections(ctx context.Context, f
 	switch field.Name {
 	case "whatsapp":
 		return ec.fieldContext_HiddenCollections_whatsapp(ctx, field)
+	case "apps":
+		return ec.fieldContext_HiddenCollections_apps(ctx, field)
 	case "screenshotsWithoutApp":
 		return ec.fieldContext_HiddenCollections_screenshotsWithoutApp(ctx, field)
 	case "screenshotApps":
@@ -2881,8 +3120,12 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_location(ctx, field)
 	case "source":
 		return ec.fieldContext_Media_source(ctx, field)
+	case "screenshotApp":
+		return ec.fieldContext_Media_screenshotApp(ctx, field)
 	case "app":
 		return ec.fieldContext_Media_app(ctx, field)
+	case "camera":
+		return ec.fieldContext_Media_camera(ctx, field)
 	case "versionOf":
 		return ec.fieldContext_Media_versionOf(ctx, field)
 	case "versions":
@@ -3029,6 +3272,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
 		return ec.fieldContext_ServerInfo_encodesWav(ctx, field)
+	case "cameras":
+		return ec.fieldContext_ServerInfo_cameras(ctx, field)
 	case "indexing":
 		return ec.fieldContext_ServerInfo_indexing(ctx, field)
 	case "localIndexes":
@@ -3360,6 +3605,36 @@ func (ec *executionContext) field_Mutation_setCall_args(ctx context.Context, raw
 		return nil, err
 	}
 	args["call"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setCamera_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "make",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["make"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "model",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["model"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "mine",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["mine"] = arg2
 	return args, nil
 }
 
@@ -3895,6 +4170,236 @@ func (ec *executionContext) _Call_number(ctx context.Context, field graphql.Coll
 }
 func (ec *executionContext) fieldContext_Call_number(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Call", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Camera_make(ctx context.Context, field graphql.CollectedField, obj *model.Camera) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Camera_make(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Make, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Camera_make(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Camera", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Camera_model(ctx context.Context, field graphql.CollectedField, obj *model.Camera) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Camera_model(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Model, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Camera_model(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Camera", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_make(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_make(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Make, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_make(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_model(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_model(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Model, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_model(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_files(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_files(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Files, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_files(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_imported(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_imported(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Imported, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_imported(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_years(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_years(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Years, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []int) graphql.Marshaler {
+			return ec.marshalNInt2ᚕintᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_years(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_mine(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_mine(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Mine, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_mine(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_marked(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_marked(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Marked, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_marked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CameraModel_pending(ctx context.Context, field graphql.CollectedField, obj *model.CameraModel) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CameraModel_pending(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Pending, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CameraModel_pending(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CameraModel", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _Change_kind(ctx context.Context, field graphql.CollectedField, obj *model.Change) (ret graphql.Marshaler) {
@@ -4822,6 +5327,38 @@ func (ec *executionContext) _HiddenCollections_whatsapp(ctx context.Context, fie
 	)
 }
 func (ec *executionContext) fieldContext_HiddenCollections_whatsapp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "HiddenCollections",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Collection(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _HiddenCollections_apps(ctx context.Context, field graphql.CollectedField, obj *model.HiddenCollections) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HiddenCollections_apps(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Apps, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Collection) graphql.Marshaler {
+			return ec.marshalNCollection2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCollectionᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HiddenCollections_apps(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "HiddenCollections",
 		Field:      field,
@@ -5913,6 +6450,29 @@ func (ec *executionContext) fieldContext_Media_source(_ context.Context, field g
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _Media_screenshotApp(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_screenshotApp(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ScreenshotApp, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_screenshotApp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _Media_app(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5934,6 +6494,38 @@ func (ec *executionContext) _Media_app(ctx context.Context, field graphql.Collec
 }
 func (ec *executionContext) fieldContext_Media_app(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_camera(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_camera(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Camera, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Camera) graphql.Marshaler {
+			return ec.marshalOCamera2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCamera(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_camera(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Media",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Camera(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Media_versionOf(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
@@ -6637,6 +7229,50 @@ func (ec *executionContext) fieldContext_Mutation_setCall(ctx context.Context, f
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_setCall_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setCamera(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setCamera(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetCamera(ctx, fc.Args["make"].(string), fc.Args["model"].(string), fc.Args["mine"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.CameraModel) graphql.Marshaler {
+			return ec.marshalNCameraModel2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCameraModelᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setCamera(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CameraModel(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setCamera_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -7573,6 +8209,38 @@ func (ec *executionContext) fieldContext_Query_serverInfo(_ context.Context, fie
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_ServerInfo(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_cameras(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_cameras(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Cameras(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.CameraModel) graphql.Marshaler {
+			return ec.marshalNCameraModel2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCameraModelᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_cameras(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CameraModel(ctx, field)
 		},
 	}
 	return fc, nil
@@ -8552,6 +9220,29 @@ func (ec *executionContext) _ServerInfo_encodesWav(ctx context.Context, field gr
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_encodesWav(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_cameras(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_cameras(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Cameras, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_cameras(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -10344,16 +11035,23 @@ func (ec *executionContext) unmarshalInputHiddenCollectionsInput(ctx context.Con
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity", "audio"}
+	fieldsInOrder := [...]string{"apps", "whatsapp", "screenshotsWithoutApp", "screenshotApps", "nudity", "audio"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
 			continue
 		}
 		switch k {
+		case "apps":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("apps"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Apps = data
 		case "whatsapp":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("whatsapp"))
-			data, err := ec.unmarshalNBoolean2bool(ctx, v)
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -10782,6 +11480,124 @@ func (ec *executionContext) _Call(ctx context.Context, sel ast.SelectionSet, obj
 			out.Values[i] = ec._Call_contact(ctx, field, obj)
 		case "number":
 			out.Values[i] = ec._Call_number(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var cameraImplementors = []string{"Camera"}
+
+func (ec *executionContext) _Camera(ctx context.Context, sel ast.SelectionSet, obj *model.Camera) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, cameraImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Camera")
+		case "make":
+			out.Values[i] = ec._Camera_make(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "model":
+			out.Values[i] = ec._Camera_model(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var cameraModelImplementors = []string{"CameraModel"}
+
+func (ec *executionContext) _CameraModel(ctx context.Context, sel ast.SelectionSet, obj *model.CameraModel) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, cameraModelImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CameraModel")
+		case "make":
+			out.Values[i] = ec._CameraModel_make(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "model":
+			out.Values[i] = ec._CameraModel_model(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "files":
+			out.Values[i] = ec._CameraModel_files(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "imported":
+			out.Values[i] = ec._CameraModel_imported(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "years":
+			out.Values[i] = ec._CameraModel_years(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "mine":
+			out.Values[i] = ec._CameraModel_mine(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "marked":
+			out.Values[i] = ec._CameraModel_marked(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pending":
+			out.Values[i] = ec._CameraModel_pending(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -11371,6 +12187,11 @@ func (ec *executionContext) _HiddenCollections(ctx context.Context, sel ast.Sele
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "apps":
+			out.Values[i] = ec._HiddenCollections_apps(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "screenshotsWithoutApp":
 			out.Values[i] = ec._HiddenCollections_screenshotsWithoutApp(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -11720,8 +12541,12 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Media_location(ctx, field, obj)
 		case "source":
 			out.Values[i] = ec._Media_source(ctx, field, obj)
+		case "screenshotApp":
+			out.Values[i] = ec._Media_screenshotApp(ctx, field, obj)
 		case "app":
 			out.Values[i] = ec._Media_app(ctx, field, obj)
+		case "camera":
+			out.Values[i] = ec._Media_camera(ctx, field, obj)
 		case "versionOf":
 			out.Values[i] = ec._Media_versionOf(ctx, field, obj)
 		case "versions":
@@ -12072,6 +12897,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setCall(ctx, field)
 			})
+		case "setCamera":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setCamera(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "setHiddenCollections":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setHiddenCollections(ctx, field)
@@ -12438,6 +13270,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_serverInfo(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "cameras":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_cameras(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -12886,6 +13740,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "encodesWav":
 			out.Values[i] = ec._ServerInfo_encodesWav(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cameras":
+			out.Values[i] = ec._ServerInfo_cameras(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -13543,6 +14402,32 @@ func (ec *executionContext) unmarshalNCallInput2githubᚗcomᚋjournalᚋserver�
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNCameraModel2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCameraModelᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.CameraModel) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNCameraModel2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCameraModel(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNCameraModel2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCameraModel(ctx context.Context, sel ast.SelectionSet, v *model.CameraModel) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CameraModel(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNChange2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐChangeᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Change) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -13887,6 +14772,36 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalNInt2ᚕintᚄ(ctx context.Context, v any) ([]int, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]int, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNInt2int(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNInt2ᚕintᚄ(ctx context.Context, sel ast.SelectionSet, v []int) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNInt2int(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalNInt642int64(ctx context.Context, v any) (int64, error) {
@@ -14520,6 +15435,13 @@ func (ec *executionContext) unmarshalOCallInput2ᚖgithubᚗcomᚋjournalᚋserv
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalOCamera2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCamera(ctx context.Context, sel ast.SelectionSet, v *model.Camera) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Camera(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalOEncodedFrom2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEncodedFrom(ctx context.Context, sel ast.SelectionSet, v *model.EncodedFrom) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -14739,6 +15661,42 @@ func (ec *executionContext) marshalOSha2562ᚖstring(ctx context.Context, sel as
 	_ = ctx
 	res := model.MarshalSha256(*v)
 	return res
+}
+
+func (ec *executionContext) unmarshalOString2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]string, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNString2string(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOString2ᚕstringᚄ(ctx context.Context, sel ast.SelectionSet, v []string) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNString2string(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalOString2ᚖstring(ctx context.Context, v any) (*string, error) {

@@ -46,7 +46,7 @@ const (
 var vipsFunctions = []string{
 	"vips_init", "vips_version", "vips_concurrency_set", "vips_cache_set_max", "vips_error_buffer", "vips_error_clear",
 	"vips_thread_shutdown", "vips_operation_new", "vips_cache_operation_buildp", "vips_object_unref_outputs",
-	"vips_object_set_from_string", "vips_foreign_find_load", "vips_foreign_find_save",
+	"vips_object_set_from_string", "vips_foreign_find_load", "vips_image_get_as_string", "vips_foreign_find_save",
 	"vips_image_get_type", "vips_size_get_type", "vips_interesting_get_type", "vips_blob_get_type",
 	"vips_array_image_get_type",
 	"vips_image_get_width", "vips_image_get_height", "vips_image_get_bands", "vips_image_get_format",

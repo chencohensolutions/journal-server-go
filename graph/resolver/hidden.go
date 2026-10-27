@@ -1,16 +1,23 @@
 package resolver
 
 import (
+	"strings"
+
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
 )
 
 func hiddenCollections(store *media.Store) *model.HiddenCollections {
 	whatsapp, withoutApp, apps := store.Collections()
+	folders := store.AppCollections()
 	result := &model.HiddenCollections{
 		Whatsapp:              toCollection(whatsapp),
+		Apps:                  make([]*model.Collection, len(folders)),
 		ScreenshotsWithoutApp: toCollection(withoutApp),
 		ScreenshotApps:        make([]*model.Collection, len(apps)),
+	}
+	for i, folder := range folders {
+		result.Apps[i] = toCollection(folder)
 	}
 	hidden := store.Hidden()
 	nudity := &model.NudityHiding{Hidden: hidden.NudityFrom > 0, From: hidden.NudityFrom}
@@ -29,4 +36,38 @@ func hiddenCollections(store *media.Store) *model.HiddenCollections {
 
 func toCollection(c media.Collection) *model.Collection {
 	return &model.Collection{Name: c.Name, Files: c.Files, Imported: c.Imported, Hidden: c.Hidden}
+}
+
+// hiddenSources is the sources setHiddenCollections hides: the folder kinds apps names (or, left out, those hidden
+// now), with WhatsApp added or taken out when whatsapp says (an app from before apps sends only whatsapp), and the
+// other sources hidden now kept.
+func hiddenSources(current, apps []string, whatsapp *bool) []string {
+	var sources []string
+	for _, s := range current {
+		if apps == nil || media.FolderName(s) == "" {
+			sources = append(sources, s)
+		}
+	}
+	for _, app := range apps {
+		app = strings.TrimSpace(app)
+		if media.FolderName(app) == "" {
+			app = media.FolderSource(app)
+		}
+		if kind := media.NormalizeSource(app); media.FolderName(kind) != "" {
+			sources = append(sources, kind)
+		}
+	}
+	if whatsapp != nil {
+		kept := sources[:0]
+		for _, s := range sources {
+			if !media.SameSource(s, media.SourceWhatsApp) {
+				kept = append(kept, s)
+			}
+		}
+		sources = kept
+		if *whatsapp {
+			sources = append(sources, media.SourceWhatsApp)
+		}
+	}
+	return sources
 }

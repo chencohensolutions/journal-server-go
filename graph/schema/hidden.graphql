@@ -7,12 +7,19 @@
 
 "Groups of files the user can hide on every device."
 type HiddenCollections {
-  "Every file WhatsApp saved (source whatsapp)."
-  whatsapp: Collection!
+  "Every file WhatsApp saved (source folder:WhatsApp): the WhatsApp entry of apps, for apps from before apps."
+  whatsapp: Collection! @deprecated(reason: "Use apps: WhatsApp is one of them.")
+  """
+  The files of each app and folder they came from (every folder kind: source folder:WhatsApp, folder:Telegram,
+  folder:Petcube, …), named by the folder (WhatsApp, Telegram), most files first. Hiding one hides all its files;
+  screenshots are not among them (their source is screenshots: see screenshotApps). A hidden one with no files left is
+  listed too, so it can be shown again.
+  """
+  apps: [Collection!]!
   "Screenshots whose file name says no app (Screenshot_2015-07-18-03-54-57.png). Its name is empty."
   screenshotsWithoutApp: Collection!
   """
-  The screenshots of each app their file names name (Media.app), most files first. A hidden app with no files left is
+  The screenshots of each app their file names name (Media.screenshotApp), most files first. A hidden app with no files left is
   listed too, so it can be shown again.
   """
   screenshotApps: [Collection!]!
@@ -22,7 +29,7 @@ type HiddenCollections {
   recordings: Collection!
   "Recorded phone calls (Media.call). Hidden until the user shows them."
   calls: Collection!
-  "WhatsApp voice messages and audio (sound recordings with source whatsapp). Hidden until the user shows them."
+  "WhatsApp voice messages and audio (sound recordings with source folder:WhatsApp). Hidden until the user shows them."
   voiceMessages: Collection!
 }
 
@@ -51,7 +58,13 @@ type Collection {
 
 "The whole choice of what to hide: what isn't listed is shown."
 input HiddenCollectionsInput {
-  whatsapp: Boolean!
+  """
+  The apps and folders whose files are hidden, by name (WhatsApp, Telegram, as apps names them; a kind such as
+  folder:Telegram is taken too), compared ignoring case. Left out, they stay as they are.
+  """
+  apps: [String!]
+  "Hides WhatsApp, or shows it, whatever apps say; left out, apps decide. For apps from before apps."
+  whatsapp: Boolean
   screenshotsWithoutApp: Boolean!
   "Apps whose screenshots are hidden, compared ignoring case."
   screenshotApps: [String!]!

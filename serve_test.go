@@ -109,6 +109,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		t.Fatal(err)
 	}
 	previews := newPreviews(config)
+	readCamerasWith(library, previews)
 	var ix indexes
 	var searcher *search.Service
 	var facer *faces.Service

@@ -52,7 +52,8 @@ func (s *Store) Import(source string, req UploadRequest) (item Item, existed boo
 	if sum != req.Sha256 {
 		return Item{}, false, fmt.Errorf("the copy's sha256 is %s, not %s (was the file changed meanwhile?)", sum, req.Sha256)
 	}
-	// Copied and checked outside the turn; only placing it is in it.
+	// Copied, checked and its camera read outside the turn; only placing it is in it.
+	req = s.cameraFacts(tmp.Name(), req)
 	err = s.Turn(func() error {
 		if existing, ok := s.Get(req.Sha256); ok {
 			item, existed = existing, true // another process placed it meanwhile

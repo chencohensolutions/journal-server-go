@@ -25,6 +25,9 @@ type Store struct {
 	// The sha256 of each WAV kept as FLAC (Facts.EncodedFrom), to its FLAC's: a WAV is only ever answered as its FLAC.
 	encoded map[string]string
 	hidden  Hidden // what the user hides on every device (hidden.go)
+	// The user's marks on their cameras (cameras.json, cameras.go), and the moves of files they started.
+	cameraMarks CameraMarks
+	cameraMoves cameraMoves
 
 	// Held while a file's upload is started, written to or finished, so the same file arriving from
 	// two devices (or a retry racing the first try) is written once.
@@ -46,6 +49,10 @@ type Store struct {
 	// The ffmpeg and ffprobe programs, when installed: an uploaded sound recording's facts are read with ffprobe, and
 	// an uploaded WAV is kept as FLAC with ffmpeg. Set once, before the store serves requests.
 	FFmpeg, FFprobe string
+
+	// What a new file's camera is read with (ReadCamera), before its turn: libvips in the server, or vipsheader, and
+	// ffprobe (FFprobe when it has none). The zero value reads only DNGs. Set once, before the store serves requests.
+	CameraTools CameraTools
 }
 
 // OpenStore creates the folders it needs and indexes the sidecars already in root.
@@ -61,6 +68,9 @@ func OpenStore(root string, now func() time.Time) (*Store, error) {
 		return nil, err
 	}
 	s.hidden = hidden
+	if s.cameraMarks, err = s.readCameraMarks(); err != nil {
+		return nil, err
+	}
 	s.startJournal()
 	log.Printf("media: indexing %s", root)
 	started := time.Now()
@@ -75,8 +85,10 @@ func (s *Store) Root() string { return s.root }
 
 func (s *Store) uploadsDir() string { return filepath.Join(s.root, ".cache", "uploads") }
 
-// indexItem puts item in the index, with the WAV it was encoded from. Callers hold s.mu.
+// indexItem puts item in the index, with the WAV it was encoded from. An old source id is read as the one written
+// now (normalizeFacts), so memory holds one id for every file, relabelled or not. Callers hold s.mu.
 func (s *Store) indexItem(item *Item) {
+	normalizeFacts(&item.Sidecar.Facts)
 	s.items[item.Sidecar.Sha256] = item
 	if e := item.Sidecar.Facts.EncodedFrom; e != nil {
 		s.encoded[e.Sha256] = item.Sidecar.Sha256

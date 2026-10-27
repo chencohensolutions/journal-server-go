@@ -37,6 +37,10 @@ func TestFixCorrectsSourceByName(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// As the import labelled it before it read names too (media.SourceOf does now).
+		if _, err := store.SetSource(sha, source); err != nil {
+			t.Fatal(err)
+		}
 		return sha
 	}
 	named := add("IMG-20230115-WA0012.jpg", "Google Photos/2023", media.SourceOther)
@@ -93,13 +97,13 @@ func TestFixScreenshotsSetsTheirApp(t *testing.T) {
 	if apps, err := fixScreenshots(store, true); err != nil || apps["Bumble"] != 1 {
 		t.Fatalf("dry run: %v %v", apps, err)
 	}
-	if got, _ := store.Get(sha); got.Sidecar.Facts.App != nil {
+	if got, _ := store.Get(sha); got.Sidecar.Facts.ScreenshotApp != nil {
 		t.Fatal("a dry run changed the sidecar")
 	}
 	if apps, err := fixScreenshots(store, false); err != nil || apps["Bumble"] != 1 {
 		t.Fatalf("fix: %v %v", apps, err)
 	}
-	if got, _ := store.Get(sha); *got.Sidecar.Facts.Source != media.SourceScreenshots || got.Sidecar.Facts.App == nil || *got.Sidecar.Facts.App != "Bumble" {
+	if got, _ := store.Get(sha); *got.Sidecar.Facts.Source != media.SourceScreenshots || got.Sidecar.Facts.ScreenshotApp == nil || *got.Sidecar.Facts.ScreenshotApp != "Bumble" {
 		t.Fatalf("not corrected: %+v", got.Sidecar.Facts)
 	}
 	if apps, _ := fixScreenshots(store, false); len(apps) != 0 {

@@ -1,4 +1,4 @@
-package main
+package media
 
 import (
 	"encoding/binary"
@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// tiffExif reads the EXIF dates and GPS position of a TIFF-based file (DNG), which vipsheader doesn't show
+// TiffExif reads the camera (make and model), EXIF dates and GPS position of a TIFF-based file (DNG), which vipsheader doesn't show
 // for them, as the fields vipsheader names for JPEG and HEIC ("exif-ifd2-DateTimeOriginal": "2025:12:04
 // 14:28:36", "exif-ifd3-GPSLatitude": "32/1 50/1 49947000/1000000").
-func tiffExif(path string) (map[string]string, error) {
+func TiffExif(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

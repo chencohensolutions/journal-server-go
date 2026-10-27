@@ -27,6 +27,7 @@ type facts struct {
 	durationMs *int64
 	location   *media.GeoPoint
 	call       *media.Call       // a recorded phone call
+	camera     *media.Camera     // the camera that took it, from its EXIF or its video's tags
 	failed     string            // why the file can't be imported (a sound recording ffprobe can't read)
 	note       string            // the name's and the metadata's dates disagree
 	exif       map[string]string // a photo's fields as vipsheader names them, shown by --review
@@ -62,12 +63,13 @@ func (im *importer) photoFacts(ctx context.Context, path string, f *facts) {
 		}
 	}
 	if strings.EqualFold(filepath.Ext(path), ".dng") {
-		if exif, err := tiffExif(path); err == nil {
+		if exif, err := media.TiffExif(path); err == nil {
 			maps.Copy(fields, exif)
 		}
 	}
 
 	f.exif = fields
+	f.camera = media.CameraFromEXIF(fields)
 	exif := exifTime(fields["exif-ifd2-DateTimeOriginal"], fields["exif-ifd2-OffsetTimeOriginal"])
 	if exif == nil {
 		exif = exifTime(fields["exif-ifd2-DateTimeDigitized"], fields["exif-ifd2-OffsetTimeDigitized"])
@@ -167,6 +169,7 @@ func (im *importer) videoFacts(ctx context.Context, path string, f *facts) {
 		f.durationMs = &ms
 		length = time.Duration(ms) * time.Millisecond
 	}
+	f.camera = media.CameraFromTags(probe.Format.Tags)
 	if iso6709 := probe.Format.Tags["location"]; iso6709 != "" {
 		f.location = parseISO6709(iso6709)
 	}

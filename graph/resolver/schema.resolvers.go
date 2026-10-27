@@ -75,6 +75,8 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Audio:        true,
 		// The stores find ffmpeg the way posters do.
 		EncodesWav: r.Previews != nil && r.Previews.PostersAvailable(),
+		// A photo's camera is read with libvips (a video's with ffprobe), when it arrives.
+		Cameras: r.Previews != nil && r.Previews.Available(),
 	}, nil
 }
 

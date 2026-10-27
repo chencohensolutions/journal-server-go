@@ -185,10 +185,10 @@ const (
 
 // examined is a file read and found new to the data folder, waiting for decide.
 type examined struct {
-	path   string
-	size   int64
-	sha256 string
-	folder string
+	path    string
+	size    int64
+	sha256  string
+	folder  string
 	facts   facts
 	hash    *dhash
 	picture *picture // for the same-picture check
@@ -366,7 +366,6 @@ func folderOf(root, path string) string {
 // it was found (a near-duplicate has moved since), which its source is told from. A WAV is encoded as FLAC
 // first (in encodingDir, on the not-imported folder's disk), and the FLAC is copied.
 func (im *importer) importInto(ctx context.Context, path, foundAt, sha string, size int64, facts facts, folders []string) (media.Item, bool, error) {
-	source := media.SourceOfPath(foundAt)
 	from := foundAt
 	if im.cloud != nil {
 		from = im.cloud.origin(foundAt)
@@ -411,12 +410,12 @@ func (im *importer) importInto(ctx context.Context, path, foundAt, sha string, s
 		Height:       facts.height,
 		DurationMs:   facts.durationMs,
 		Location:     facts.location,
-		Source:       &source,
 		UploadedBy:   "import",
 		ImportedFrom: &from,
 		Folders:      folders,
 		Call:         facts.call,
 		EncodedFrom:  encodedFrom,
+		Camera:       facts.camera,
 	})
 }
 
@@ -425,8 +424,10 @@ func (im *importer) encodingDir() string { return filepath.Join(im.notImportedRu
 
 // countAudio counts a sound recording imported (or that would be), by its collection.
 func (im *importer) countAudio(e *examined) {
-	source := media.SourceOfPath(e.path)
-	c := media.AudioCollectionOf(media.Facts{Kind: e.facts.kind, Call: e.facts.call, Source: &source})
+	facts := media.Facts{FileName: filepath.Base(e.path), Kind: e.facts.kind, Call: e.facts.call, UploadedBy: "import", ImportedFrom: &e.path}
+	source, _ := media.SourceOf(facts, media.CameraMarks{}) // a sound recording has no camera
+	facts.Source = &source
+	c := media.AudioCollectionOf(facts)
 	if c == "" {
 		return
 	}

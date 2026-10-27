@@ -1,0 +1,55 @@
+# --- Cameras -------------------------------------------------------------------
+# Which camera took each photo or video (Media.camera, read from its tags when it arrives), and the user's own
+# cameras: the user marks which camera models were theirs, and the photos of a model marked "not mine" are kept apart
+# as sent to them (source received, "Sent to you"). The marks are kept in cameras.json at the data folder's root; a
+# model nobody marked counts as the user's, so nothing moves until they mark one. See docs/media.md, "Cameras".
+
+extend type ServerInfo {
+  "Photos' and videos' cameras are read when they arrive (Media.camera); cameras and setCamera are there."
+  cameras: Boolean!
+}
+
+"The camera that took a file, as its tags say: EXIF Make and Model for a photo. Either may be empty."
+type Camera {
+  "samsung, Apple, Canon, …"
+  make: String!
+  "SM-S931B, iPhone 15 Pro, Canon EOS 80D, …"
+  model: String!
+}
+
+"One camera model in the user's library, and the user's mark on it."
+type CameraModel {
+  "Spelled as most of its files spell it."
+  make: String!
+  model: String!
+  "How many files it took, hidden or not."
+  files: Int!
+  "Of files, how many the import placed (uploadedBy import); the rest came from devices."
+  imported: Int!
+  "The years its files were taken in, oldest first."
+  years: [Int!]!
+  "The user's: marked mine, or not marked at all (a model nobody marked counts as the user's)."
+  mine: Boolean!
+  "The user marked it (setCamera); false while it is mine only because nobody marked it."
+  marked: Boolean!
+  """
+  How many of its files are still being moved after its mark changed: to Sent to you (source received), or back.
+  0 once they all have; each moved file comes again in the change feed.
+  """
+  pending: Int!
+}
+
+extend type Query {
+  "Every camera model the user's files name, most files first; a marked model with no files left is listed too."
+  cameras: [CameraModel!]!
+}
+
+extend type Mutation {
+  """
+  Marks a camera model as the user's or not (make and model compared ignoring case), and answers at once with every
+  model. The model's files then move in the background: a model marked not mine to Sent to you (source received),
+  and back to their own source when it is marked mine again; cameras.pending counts what is left, and each file comes
+  again in the change feed once moved. A mark changed while files still move is applied after them.
+  """
+  setCamera(make: String!, model: String!, mine: Boolean!): [CameraModel!]!
+}

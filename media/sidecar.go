@@ -49,8 +49,12 @@ type Facts struct {
 	// ("Pictures/Telegram/"), an iPhone's album. The device's own evidence of its source, as importedFrom is the
 	// import's; absent on imports and on files uploaded before Oct 27, 2026.
 	DeviceFolder *string `json:"deviceFolder,omitempty"`
-	// The app a screenshot was taken in, as its file name says (Screenshot_20240301_030715_Bumble.jpg → "Bumble").
-	App *string `json:"app,omitempty"`
+	// The app on screen in a screenshot, as its file name says (Screenshot_20240301_030715_Bumble.jpg → "Bumble").
+	// Written as screenshotApp since Oct 27, 2026; sidecars written before have it as app, which is read too.
+	ScreenshotApp *string `json:"screenshotApp,omitempty"`
+	// The camera that took the photo or video, as its tags say (ReadCamera); absent without tags, and on files placed
+	// before Oct 27, 2026 until they are read.
+	Camera *Camera `json:"camera,omitempty"`
 	// The photo this file is an edit of.
 	VersionOf *string `json:"versionOf"`
 	// The file this one belongs with: a Live Photo's video names its photo, a RAW its JPEG.
@@ -68,6 +72,24 @@ type Facts struct {
 	EncodedFrom *EncodedFrom `json:"encodedFrom,omitempty"`
 	// When the server last corrected a fact clients show (SetSource, SetScreenshotFacts, SetCall), so the file comes again in the change feed.
 	CorrectedAt *time.Time `json:"correctedAt,omitempty"`
+}
+
+// UnmarshalJSON reads facts, taking a screenshot's app from app, its key before Oct 27, 2026, when there is no
+// screenshotApp, so older sidecars keep working without being rewritten.
+func (f *Facts) UnmarshalJSON(data []byte) error {
+	type plain Facts
+	var read struct {
+		plain
+		App *string `json:"app"`
+	}
+	if err := json.Unmarshal(data, &read); err != nil {
+		return err
+	}
+	*f = Facts(read.plain)
+	if f.ScreenshotApp == nil {
+		f.ScreenshotApp = read.App
+	}
+	return nil
 }
 
 // Imported reports whether scripts/import placed the file, rather than a device uploading it.
@@ -256,6 +278,7 @@ func (s *Store) setNudity(sha string, detection Detection) error {
 // rewritten; the original is never touched. Like SetNudity, the file comes again in the change feed: CorrectedAt
 // is set to now, during the turn. A file that already has that source is left as it is.
 func (s *Store) SetSource(sha, source string) (changed bool, err error) {
+	source = NormalizeSource(source)
 	err = s.Turn(func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -343,8 +366,16 @@ func (s *Store) SetScreenshotFacts(sha string) (changed bool, err error) {
 			return fmt.Errorf("%s isn't in the data folder", sha)
 		}
 		sidecar := item.Sidecar
-		screenshotFacts(&sidecar.Facts)
-		if equalString(sidecar.Facts.Source, item.Sidecar.Facts.Source) && equalString(sidecar.Facts.App, item.Sidecar.Facts.App) {
+		app, ok := ScreenshotApp(sidecar.Facts.FileName)
+		if !ok {
+			return nil
+		}
+		source := SourceScreenshots
+		sidecar.Facts.Source = &source
+		if app != "" {
+			sidecar.Facts.ScreenshotApp = &app
+		}
+		if equalString(sidecar.Facts.Source, item.Sidecar.Facts.Source) && equalString(sidecar.Facts.ScreenshotApp, item.Sidecar.Facts.ScreenshotApp) {
 			return nil
 		}
 		if sidecar.Facts.SentFrom == nil {

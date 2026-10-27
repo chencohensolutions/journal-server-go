@@ -111,32 +111,36 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		paired = []string{}
 	}
 	m := &model.Media{
-		Sha256:     item.Sha256(),
-		Kind:       model.MediaKindPhoto,
-		FileName:   facts.FileName,
-		MimeType:   facts.MimeType,
-		Size:       facts.Size,
-		TakenAt:    facts.TakenAt,
-		EndedAt:    facts.EndedAt(),
-		Width:      facts.Width,
-		Height:     facts.Height,
-		DurationMs: facts.DurationMs,
-		Source:     facts.Source,
-		App:        facts.App,
-		VersionOf:  facts.VersionOf,
-		Versions:   versions,
-		PairedWith: facts.PairedWith,
-		Paired:     paired,
-		UploadedAt: facts.UploadedAt,
-		UploadedBy: facts.UploadedBy,
-		Private:    item.Sidecar.IsPrivate(),
-		URL:        "/media/" + item.Sha256(),
+		Sha256:        item.Sha256(),
+		Kind:          model.MediaKindPhoto,
+		FileName:      facts.FileName,
+		MimeType:      facts.MimeType,
+		Size:          facts.Size,
+		TakenAt:       facts.TakenAt,
+		EndedAt:       facts.EndedAt(),
+		Width:         facts.Width,
+		Height:        facts.Height,
+		DurationMs:    facts.DurationMs,
+		Source:        facts.Source,
+		ScreenshotApp: facts.ScreenshotApp,
+		App:           facts.ScreenshotApp,
+		VersionOf:     facts.VersionOf,
+		Versions:      versions,
+		PairedWith:    facts.PairedWith,
+		Paired:        paired,
+		UploadedAt:    facts.UploadedAt,
+		UploadedBy:    facts.UploadedBy,
+		Private:       item.Sidecar.IsPrivate(),
+		URL:           "/media/" + item.Sha256(),
 	}
 	switch facts.Kind {
 	case media.KindVideo:
 		m.Kind = model.MediaKindVideo
 	case media.KindAudio:
 		m.Kind = model.MediaKindAudio
+	}
+	if c := facts.Camera; c != nil {
+		m.Camera = &model.Camera{Make: c.Make, Model: c.Model}
 	}
 	if c := facts.Call; c != nil {
 		m.Call = &model.Call{Contact: c.Contact, Number: c.Number}

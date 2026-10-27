@@ -379,21 +379,21 @@ func TestSetNudityKeepsTheSidecarAndComesAgainInTheFeed(t *testing.T) {
 func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 	f := newFixture(t)
 	f.now = f.now.Add(time.Second)
-	item := f.upload([]byte("photo"), "IMG-20230115-WA0012.jpg")
+	item := f.upload([]byte("photo"), "photo.jpg")
 	_, cursor, _, _ := f.store.Changes("", 10, View{})
 
 	f.now = f.now.Add(time.Hour)
-	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || !changed {
+	if changed, err := f.store.SetSource(item.Sha256(), "folder:Telegram"); err != nil || !changed {
 		t.Fatal(changed, err)
 	}
 	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
-	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceWhatsApp {
+	if len(items) != 1 || *items[0].Sidecar.Facts.Source != "folder:Telegram" {
 		t.Fatalf("after the correction: %v", items)
 	}
 
 	// The same source again changes nothing, and the feed has nothing new.
 	f.now = f.now.Add(time.Hour)
-	if changed, err := f.store.SetSource(item.Sha256(), SourceWhatsApp); err != nil || changed {
+	if changed, err := f.store.SetSource(item.Sha256(), "folder:Telegram"); err != nil || changed {
 		t.Fatal(changed, err)
 	}
 	if items, _, _, _ := f.store.Changes(cursor, 10, View{}); len(items) != 0 {
@@ -405,7 +405,7 @@ func TestSetSourceComesAgainInTheFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := again.Get(item.Sha256())
-	if c := got.Sidecar.Facts.CorrectedAt; c == nil || *got.Sidecar.Facts.Source != SourceWhatsApp || got.Sidecar.Facts.FileName != "IMG-20230115-WA0012.jpg" {
+	if c := got.Sidecar.Facts.CorrectedAt; c == nil || *got.Sidecar.Facts.Source != "folder:Telegram" || got.Sidecar.Facts.FileName != "photo.jpg" {
 		t.Fatalf("reopened: %+v", got.Sidecar.Facts)
 	}
 }
@@ -423,14 +423,14 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 	if err != nil || result.Item == nil {
 		t.Fatal(result, err)
 	}
-	if facts := result.Item.Sidecar.Facts; *facts.Source != SourceScreenshots || facts.App == nil || *facts.App != "Bumble" {
+	if facts := result.Item.Sidecar.Facts; *facts.Source != SourceScreenshots || facts.ScreenshotApp == nil || *facts.ScreenshotApp != "Bumble" {
 		t.Fatalf("uploaded: %+v", facts)
 	}
 
 	// A file placed before the server read the name gets them from SetScreenshotFacts, and comes again in the feed.
 	item := f.upload([]byte("tinder"), "Screenshot_20240228-080750_Tinder(1).jpg")
 	old := item.Sidecar
-	old.Facts.Source, old.Facts.App = &camera, nil
+	old.Facts.Source, old.Facts.ScreenshotApp = &camera, nil
 	f.store.mu.Lock()
 	err = f.store.rewriteSidecar(f.store.items[item.Sha256()], old)
 	f.store.mu.Unlock()
@@ -443,7 +443,7 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 		t.Fatal(changed, err)
 	}
 	items, cursor, _, _ := f.store.Changes(cursor, 10, View{})
-	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceScreenshots || *items[0].Sidecar.Facts.App != "Tinder" {
+	if len(items) != 1 || *items[0].Sidecar.Facts.Source != SourceScreenshots || *items[0].Sidecar.Facts.ScreenshotApp != "Tinder" {
 		t.Fatalf("after the correction: %v", items)
 	}
 	f.now = f.now.Add(time.Hour)
@@ -456,7 +456,7 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 
 	// Other files are left as they are.
 	photo := f.upload([]byte("photo"), "20251101_110819.heic")
-	if changed, err := f.store.SetScreenshotFacts(photo.Sha256()); err != nil || changed || photo.Sidecar.Facts.App != nil {
+	if changed, err := f.store.SetScreenshotFacts(photo.Sha256()); err != nil || changed || photo.Sidecar.Facts.ScreenshotApp != nil {
 		t.Fatal(changed, err, photo.Sidecar.Facts)
 	}
 }

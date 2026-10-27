@@ -142,7 +142,7 @@ func fixScreenshots(store *media.Store, dryRun bool) (map[string]int, error) {
 		if !ok {
 			continue
 		}
-		if facts.Source != nil && *facts.Source == media.SourceScreenshots && (app == "" || facts.App != nil && *facts.App == app) {
+		if facts.Source != nil && *facts.Source == media.SourceScreenshots && (app == "" || facts.ScreenshotApp != nil && *facts.ScreenshotApp == app) {
 			continue
 		}
 		if !dryRun {

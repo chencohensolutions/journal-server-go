@@ -40,16 +40,18 @@ type UploadRequest struct {
 	Location   *GeoPoint  `json:"location"`
 	Source     *string    `json:"source"`
 	// Where the file was on the device, as the device names it ("Pictures/Telegram/", an iPhone's album).
-	Folder     *string    `json:"folder,omitempty"`
-	VersionOf  *string    `json:"versionOf"`
-	PairedWith *string    `json:"pairedWith"`
-	UploadedBy string     `json:"uploadedBy"`
+	Folder     *string `json:"folder,omitempty"`
+	VersionOf  *string `json:"versionOf"`
+	PairedWith *string `json:"pairedWith"`
+	UploadedBy string  `json:"uploadedBy"`
 	// Set by Import, and by devices for a sound recording (Call: an empty one is a call with no one named; EncodedFrom:
 	// the WAV a FLAC was made from on the device).
 	ImportedFrom *string      `json:"importedFrom,omitempty"`
 	Folders      []string     `json:"folders,omitempty"`
 	Call         *Call        `json:"call,omitempty"`
 	EncodedFrom  *EncodedFrom `json:"encodedFrom,omitempty"`
+	// The camera that took it, read from the file before the turn (ReadCamera; the import passes what it read).
+	Camera *Camera `json:"camera,omitempty"`
 }
 
 // InvalidRequestError is a request no device should send (a client bug, not a user error).
@@ -303,7 +305,8 @@ func (s *Store) uploadedSize(sha string, item Item) int64 {
 }
 
 // finish checks the received file, moves it to its month folder and writes its sidecar. A sound recording first gets
-// what its file says (soundFacts), and a WAV is kept as FLAC (keepAsFLAC); both run before the turn, as they are slow.
+// what its file says (soundFacts), a WAV is kept as FLAC (keepAsFLAC), and a photo's or video's camera is read
+// (cameraFacts); all run before the turn, as they are slow.
 func (s *Store) finish(req UploadRequest) (*Item, error) {
 	partialPath := s.partialPath(req.Sha256)
 	sum, err := HashFile(partialPath)
@@ -328,6 +331,7 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 	if req.Kind == KindAudio {
 		req = s.soundFacts(from, req)
 	}
+	req = s.cameraFacts(from, req)
 	var item *Item
 	err = s.Turn(func() error {
 		// An import running meanwhile may have placed the same file; or the FLAC of this WAV is there already, and
@@ -397,12 +401,13 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			Folders:      req.Folders,
 			Call:         req.Call,
 			EncodedFrom:  req.EncodedFrom,
+			Camera:       req.Camera,
 		},
 		Privacy: s.inheritedPrivacy(req),
 	}
-	// The server's rules from the name come after SentFrom keeps what was sent.
-	screenshotFacts(&sidecar.Facts)
-	voiceMessageFacts(&sidecar.Facts)
+	// The one rule decides the source, after SentFrom keeps what was sent.
+	source, app := SourceOf(sidecar.Facts, s.cameraMarks)
+	sidecar.Facts.Source, sidecar.Facts.ScreenshotApp = &source, app
 	if err := writeSidecar(dest+".json", sidecar); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.
 		rename(dest, from)
@@ -506,6 +511,14 @@ func (s *Store) soundFacts(path string, req UploadRequest) UploadRequest {
 		} else if req.Call.Contact == nil && req.Call.Number == nil {
 			req.Call = a.Call
 		}
+	}
+	return req
+}
+
+// cameraFacts reads the camera of a photo or video from its file (ReadCamera), when the request has none.
+func (s *Store) cameraFacts(path string, req UploadRequest) UploadRequest {
+	if req.Camera == nil && req.Kind != KindAudio {
+		req.Camera = ReadCamera(context.Background(), s.CameraTools.WithFFprobe(s.FFprobe), path, req.Kind)
 	}
 	return req
 }

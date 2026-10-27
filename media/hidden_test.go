@@ -9,7 +9,7 @@ import (
 )
 
 func TestHiddenHides(t *testing.T) {
-	facts := func(source string, app *string) Facts { return Facts{Source: &source, App: app} }
+	facts := func(source string, app *string) Facts { return Facts{Source: &source, ScreenshotApp: app} }
 	bumble, tinder := "Bumble", "Tinder"
 	h := Hidden{Sources: []string{SourceWhatsApp}, ScreenshotApps: []string{"bumble"}}
 	for _, c := range []struct {
@@ -24,7 +24,7 @@ func TestHiddenHides(t *testing.T) {
 		{Facts{}, false},
 	} {
 		if got := h.Hides(c.facts); got != c.want {
-			t.Errorf("%v %v: %v, want %v", *c.facts.Source, c.facts.App, got, c.want)
+			t.Errorf("%v %v: %v, want %v", *c.facts.Source, c.facts.ScreenshotApp, got, c.want)
 		}
 	}
 	h.ScreenshotsWithoutApp = true
@@ -133,6 +133,52 @@ func TestCollectionsCountWhatWasImported(t *testing.T) {
 	if whatsapp != (Collection{"WhatsApp", 3, 2, false}) || withoutApp != (Collection{"", 1, 1, false}) ||
 		len(apps) != 1 || apps[0] != (Collection{"Bumble", 2, 1, false}) {
 		t.Fatalf("collections: %+v %+v %+v", whatsapp, withoutApp, apps)
+	}
+}
+
+// Any app's folder kind can be hidden on every device, compared ignoring case; a settings.json from before WhatsApp
+// was a folder kind hides it as folder:WhatsApp.
+func TestHidingApps(t *testing.T) {
+	f := newFixture(t)
+	if err := os.WriteFile(f.store.settingsPath(), []byte(`{"format":1,"hidden":{"sources":["whatsapp"],"nudityFrom":0,"audio":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.reopen()
+	if h := f.store.Hidden(); len(h.Sources) != 1 || h.Sources[0] != SourceWhatsApp {
+		t.Fatalf("read: %+v", h)
+	}
+	place := func(data []byte, name, source string) Item {
+		req := photoRequest(data, name)
+		req.Source = &source
+		f.start(req)
+		result, err := f.chunk(data, 0, int64(len(data)))
+		if err != nil || result.Item == nil {
+			t.Fatal(result, err)
+		}
+		return *result.Item
+	}
+	wa := place([]byte("wa"), "x.jpg", OldSourceWhatsApp) // an old app's upload
+	tg := place([]byte("tg"), "y.jpg", "folder:telegram")
+	pet := place([]byte("pet"), "z.jpg", "folder:Petcube")
+	pet2 := place([]byte("pet2"), "w.jpg", "folder:PETCUBE")
+	if *wa.Sidecar.Facts.Source != SourceWhatsApp || *tg.Sidecar.Facts.Source != "folder:Telegram" {
+		t.Fatalf("sources: %s %s", *wa.Sidecar.Facts.Source, *tg.Sidecar.Facts.Source)
+	}
+	view := f.store.ViewFor(false)
+	if !f.store.Hides(view, wa) || f.store.Hides(view, tg) {
+		t.Fatal("WhatsApp hidden from the old settings")
+	}
+	if err := f.store.SetHidden(Hidden{Sources: []string{"folder:TELEGRAM", "folder:petcube"}}); err != nil {
+		t.Fatal(err)
+	}
+	view = f.store.ViewFor(false)
+	if f.store.Hides(view, wa) || !f.store.Hides(view, tg) || !f.store.Hides(view, pet) || !f.store.Hides(view, pet2) {
+		t.Fatal("hidden ignoring case")
+	}
+	apps := f.store.AppCollections()
+	if len(apps) != 3 || apps[0].Files != 2 || !apps[0].Hidden || apps[1].Name != "Telegram" || !apps[1].Hidden ||
+		apps[2] != (Collection{"WhatsApp", 1, 0, false}) {
+		t.Fatalf("apps: %+v", apps)
 	}
 }
 

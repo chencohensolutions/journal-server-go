@@ -55,6 +55,7 @@ func serve(config auth.AppConfig) {
 	}
 	go maintainLibrary(config, library)
 	previews := newPreviews(config)
+	readCamerasWith(library, previews)
 	ix := openIndexes(config, library, previews)
 	var refreshIndexes func()
 	if ix.daily {
