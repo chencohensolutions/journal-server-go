@@ -42,6 +42,9 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   media/undated/…                           ← files the device sent no date for
   settings.json                             ← hidden collections (below)
   people.json                               ← the people the user named in face search (faces.md)
+  cameras.json                              ← the user's marks on their cameras (Cameras, below)
+  sound-folders.json                        ← the sound folders merged into calls or recordings (below)
+  relabels/<UTC time>.tsv                   ← what each relabel changed, to undo it (Fixing sources)
   .cache/index.json                         ← what the last scan read, by folder (only a shortcut)
   .cache/uploads/<sha256>.partial           ← an upload in progress
   .cache/uploads/<sha256>.json              ← what the device declared for it
@@ -115,51 +118,66 @@ there once the user marked the file private (see [Private files](#private-files)
 
 A file's `source` is its kind: what it is and where it came from, with the ids the apps use (`MediaSource` in
 journal-client-kmp). It is one of `camera`, `screenshots`, `received` (photos from a camera the user marked not
-theirs, shown as "Sent to you"; see [Cameras](#cameras)) and `other`, or a folder kind: `folder:` and the folder's
-name (`folder:WhatsApp`, `folder:Telegram`, `folder:Petcube`). Ids are compared ignoring case.
+theirs, shown as "Sent to you"; see [Cameras](#cameras)), `call` and `recording` (sound recordings; see
+[Sound folders](#sound-folders)) and `other`, or a folder kind: `folder:` and the folder's name **in lower case**
+(`folder:whatsapp`, `folder:telegram`, `folder:petcube`, `folder:dine-out`). Ids are compared ignoring case.
 
-**WhatsApp is a folder kind** since Oct 27, 2026, like every other app: `folder:WhatsApp`. The old id `whatsapp` is
-read as `folder:WhatsApp` wherever it is found, once, when it is read: a sidecar's `source` when the store indexes it
-(its `sentFrom` keeping `whatsapp` when it had none, so a later rewrite writes both), a phone's `startUpload`, and
-`settings.json`'s `hidden.sources`. The server's memory so holds one id for every file, relabelled or not, and any
-rewrite writes the new one. The apps the rule knows are always spelled as it spells them (`folder:telegram` is
-`folder:Telegram`).
+**Folder kinds are written in lower case** since Oct 27, 2026, so folders that differ only by case (`Calls`, `calls`)
+are one kind. Each is shown by a name (`query folderNames { id name }`, and `hiddenCollections.apps[].name`): an app the
+rule knows as it spells it (`WhatsApp`, `Telegram`, `Signal`, `Facebook`, `Messenger`, `Snapchat`), else as most of
+its files spell their folder, from what each sidecar says of where it was (`sentFrom`, `deviceFolder`, `importedFrom`,
+`folders`; on a tie the spelling that sorts first, `Calls` before `calls`), else as the id has it. `folderNames` lists
+every folder kind the files take or came from (a sound recording's folder too, below), hidden or marked.
+
+**WhatsApp is a folder kind** since Oct 27, 2026, like every other app: `folder:whatsapp`. The old id `whatsapp`, and
+a folder kind in any case (`folder:WhatsApp`, `folder:Calls`), is read in lower case wherever it is found, once, when
+it is read: a sidecar's `source` when the store indexes it (its `sentFrom` keeping what was there when it had none, so
+a later rewrite writes both), a phone's `startUpload` (`sentFrom` keeps what the phone sent), and `settings.json`'s
+`hidden.sources`. The server's memory so holds one id for every file, relabelled or not, and any rewrite writes the
+new one.
 
 **One rule decides it**, `media.SourceOf`, on upload, on import and when sources are fixed. It reads the file's name,
 where it was found (the import's `importedFrom`, or the uploading device's `deviceFolder`), its kind, its camera tags
-and the user's marks, what the device sent (`sentFrom`, or `source` on a file placed before `sentFrom` was kept), and
-the folder kinds the user's other files take (`Store.FolderKinds`, below). The first that matches:
+and the user's marks, what the device sent (`sentFrom`, or `source` on a file placed before `sentFrom` was kept), a
+sound recording's `source` now, the folder kinds the user's other files take and the sound folders the user marked
+(`Store.FolderKinds`, below). The first that matches:
 
 1. A screenshot's name (`Screenshot_…`, with `screenshotApp` from it when it names an app) or a screen recording's
    (`Screen_Recording_…`, `Screen Recording …`): `screenshots`. The name wins over the folder, so a screenshot
    received in WhatsApp stays a screenshot and its app can still be hidden.
 2. A WhatsApp name (`IMG-20230115-WA0012.jpg`, `VID-`, `AUD-`, `PTT-`, `STK-`, `DOC-`) or WhatsApp anywhere in the
-   path: `folder:WhatsApp`. **A sound recording** that isn't WhatsApp's is `other` (on upload `folder:WhatsApp`
-   still when the phone sent that): a recorder's folder (`Call`, `Calls`, `Voice Recorder`, `super_recorder`) is
-   never its kind, since a sound recording's sections, calls, recordings and voice messages, are told from `call` and
-   WhatsApp (see [Sound recordings](#sound-recordings)).
-3. A screenshot folder anywhere in the path: Screenshots, Screen recordings, and in Hebrew צילומי מסך (screenshots)
+   path: `folder:whatsapp`.
+3. **A sound recording**: `folder:whatsapp` when the phone sent that (a voice message); `call` or `recording` when the
+   user merged the folder it came from into calls or recordings ([Sound folders](#sound-folders)); `call` for a call
+   (`facts.call`); otherwise **the source it has is kept** (`folder:calls`, `camera`, `other`…), never rewritten,
+   only read in lower case. One merged by a mark the user took back goes back to what it had before: what the phone
+   sent (a phone's own `call` or `recording` stays), or what it had when first relabelled (`sentFrom`), else the kind
+   of its folder. A new one (no source yet) takes its folder as a photo does at 8 and 9: on import a folder becomes a
+   kind only from 20 files, so a recorder's folder of a few files stays `other`.
+4. A screenshot folder anywhere in the path: Screenshots, Screen recordings, and in Hebrew צילומי מסך (screenshots)
    and הקלטות מסך (screen recordings), with or without spaces, underscores or dashes: `screenshots`.
-4. A messaging app's name or folder: Telegram (`photo_2023-01-15_12-34-56.jpg`, `video_…`), Signal (`signal-…`),
+5. A messaging app's name or folder: Telegram (`photo_2023-01-15_12-34-56.jpg`, `video_…`), Signal (`signal-…`),
    Facebook (`FB_IMG_…`), Messenger (`received_…`), Snapchat (`Snapchat-…`): its folder kind.
    **On upload, a folder kind the phone gave**: its folder read as the Android app reads it (the folder inside
    `Pictures`, `Download`, `DCIM`… gives its kind; a file loose in one, or under `Android/`, has none; otherwise the
    top folder, an iPhone's album), else the folder kind it sent. The phone knows the app that saved the file, so its
-   folder kind is overridden only by 1–4, never by camera tags or a camera's name (`Pictures/Petcube/20250928_211937.jpg`
-   stays Petcube). A camera's folder (at 6) is never a folder kind: a phone that sent `folder:100ANDRO` gets `camera`.
-5. Camera tags of a model the user marked not theirs: `received`.
-6. A camera's folder anywhere in the path: `Camera`, a DCF folder (a number from 100 to 999 and five capitals,
+   folder kind is overridden only by 1–5, never by camera tags or a camera's name (`Pictures/Petcube/20250928_211937.jpg`
+   stays `folder:petcube`). A camera's folder (at 7) is never a folder kind: a phone that sent `folder:100ANDRO` gets
+   `camera`.
+6. Camera tags of a model the user marked not theirs: `received`.
+7. A camera's folder anywhere in the path: `Camera`, a DCF folder (a number from 100 to 999 and five capitals,
    digits or underscores: `100CANON`, `101MSDCF`, Android's `100ANDRO` and `100MEDIA`), `SLOW_VIDEO`,
    `EDITED_VIDEO`, `Videocaptures`, or a burst's folder named as a camera names its files (`DSC_20190928033805229`);
-   a DCIM folder right above the file (`DCIM/Flowers` is Flowers, at 7); a camera's name (`DSC_`, `DSCN`, `DSCF`,
+   a DCIM folder right above the file (`DCIM/Flowers` is Flowers, at 8); a camera's name (`DSC_`, `DSCN`, `DSCF`,
    `DSC0…`, Samsung's `20250928_211937`, `IMG_20230115…`, `PXL_`, `VID_`, `MOV_`, `CAM`); or camera tags of any
    other model: `camera`.
-7. On import, the folder right above the file, unless it is a shared folder (`Pictures`, `Download`…), a dated one
+8. On import, the folder right above the file, unless it is a shared folder (`Pictures`, `Download`…), a dated one
    (`2025-09`, `Photos from 2014`), the folder the import searched, or anywhere under Google Takeout: its year folders
    and albums are collections, kept in `folders`, not where a file came from. **And only when at least 20 of the
    user's files take it** (`media.MinImportedFolderFiles`), counted by the folder's name ignoring case: a folder of a
-   few files (someone's name, `New folder`, an archive's leftovers) stays `other`, its name still in `folders`.
-8. Otherwise: on upload, what the device sent (it knows the app that saved a file loose in `Pictures/`, which the
+   few files (someone's name, `New folder`, an archive's leftovers) stays `other`, its name still in `folders`, or is
+   `camera` when it is anywhere under a DCIM folder (`DCIM/Pitch` with 6 files).
+9. Otherwise: on upload, what the device sent (it knows the app that saved a file loose in `Pictures/`, which the
    server can't), `other` when it sent none; on import, `other`. Images with no clue stay `other`.
 
 So on upload the server overrides what the phone sent only on evidence of its own, and `sentFrom` keeps what was sent
@@ -167,14 +185,12 @@ either way.
 
 **Folder kinds are counted once per run.** `Store.FolderKinds` runs the rule (without the minimum) over every file
 of the data folder and counts, by name ignoring case, the files each folder an import found would give its kind, and
-how each folder kind is spelled. Fixing sources counts once before the dry run or the real run decides anything, so
-both decide by the same counts; an import counts the data folder's files and the run's new files once, before it
-places any. Folder kinds that differ only by case are one kind, spelled as most of the files that take it spell it
-(on a tie, the one that sorts first: `Calls` before `calls`). The minimum is only for folders an import found: a
-folder kind a phone gave, and the apps the rule knows (spelled as it spells them), never need it. An upload is
-spelled by the sources the user's files have now. What a sound recording takes (2), the phone's folder kind before
-camera tags (4), the minimum and the spelling are the server's alone; the Android app tells camera folders and Hebrew screenshot folders as the server does
-(`SourceNames.kt` in journal-client-kmp).
+carries the user's sound-folder marks. Fixing sources counts once before the dry run or the real run decides
+anything, so both decide by the same counts; an import counts the data folder's files and the run's new files once,
+before it places any. The minimum is only for folders an import found: a folder kind a phone gave, and the apps the
+rule knows, never need it. What a sound recording takes (3), the phone's folder kind before camera tags (5), the
+minimum and the names are the server's alone; the Android app tells camera folders and Hebrew screenshot folders as
+the server does (`SourceNames.kt` in journal-client-kmp).
 
 ### Cameras
 
@@ -211,6 +227,46 @@ rewrite each, keeping `sentFrom` and setting `correctedAt`, so each comes again 
 `received` when marked not mine, back to what the rule gives them when marked mine again. `pending` counts what is
 left; a mark changed while a move runs is applied after it. A phone keeps its own label for its own files, so such a
 photo still on the phone shows under Camera there.
+
+### Sound folders
+
+Sound recordings have two kinds of their own, `call` and `recording`, and the user chooses which folders sound
+recordings came from are merged into which (Settings › Sound folders in the apps): a phone's `Call` and an import's
+`Calls` into calls, `Voice Recorder` and `super_recorder` into recordings. A folder nobody marked keeps its own kind
+(`folder:calls`), so nothing moves until the user marks one. The marks are kept in `sound-folders.json` at the data
+folder's root, beside `cameras.json`, written in a turn by the server only, read by the import at its start and
+copied by the [copies](copies.md):
+
+```json
+// sound-folders.json
+{ "format": 1, "folders": [{ "id": "folder:calls", "as": "call" }, { "id": "folder:voice recorder", "as": "recording" }] }
+```
+
+**Which folder a sound recording came from** (`media.SoundFolderOf`) is read from what its sidecar says of where it
+was, not from its `source`, so a file already merged into calls or recordings still counts under its folder: the
+folder kind the phone sent (`sentFrom`), the phone's folder (`deviceFolder`, read as the Android app reads it), the
+folder the import found it in (`importedFrom`, right above the file, unless a shared, dated or Takeout folder), the
+first of `folders`, else the folder kind it has. Never WhatsApp's (a voice message stays one, whatever its folder) or
+a camera's.
+
+`query soundFolders { id name files imported as pending }` lists every folder sound recordings came from, most files
+first (a marked folder with no files left too), named as most of its files spell it, with how many the import
+placed, the mark (`CALL`, `RECORDING`, `NONE`) and `pending`. `mutation setSoundFolder(id, as)` (`id` the kind,
+`folder:calls`, or the folder's name, `Calls`, ignoring case) writes the mark and answers at once, like
+[setCamera](#cameras); the folder's recordings then move in the background (`Store.SetLabels`, a turn and a rewrite
+each, keeping `sentFrom` and setting `correctedAt`, so each comes again in the change feed once) to what the rule now
+gives them (step 3 of [Sources](#sources)): `call` or `recording`, or, with `NONE`, back to what they had before
+(what the phone sent, else what they had when first relabelled, else their folder's kind). `pending` counts what is
+left; a mark changed while a move runs is applied after it.
+
+**Each move is journaled** as a relabel is ([Fixing sources](#fixing-sources)): `relabels/<UTC time>-sound-folders.tsv`
+at the data folder's root, one line per file written and synced before its sidecar, so
+`fix-sources --undo relabels/<…>-sound-folders.tsv` takes the move back. The undo puts back the sources only; the
+mark stays in `sound-folders.json` until the user changes it, so a later relabel would merge the files again.
+
+**Only sidecars change**: originals stay at `media/<year>/<year-month>/<name>`, placed by date only, and are never
+renamed, moved or rewritten, by these moves, by camera marks or by fixing sources. `serverInfo.soundFolders` says the
+server has them (and lower-case folder kinds and `folderNames`).
 
 ## Uploading a file
 
@@ -455,14 +511,16 @@ kept at the data folder's root, so it moves with the data:
 
 ```json
 // settings.json
-{ "format": 1, "hidden": { "sources": ["folder:WhatsApp", "folder:Telegram"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5,
+{ "format": 1, "hidden": { "sources": ["folder:whatsapp", "folder:telegram"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5,
              "audio": { "recordings": true, "calls": false, "voiceMessages": true } } }
 ```
 
-`sources` holds kinds, compared ignoring case; an old `whatsapp` there is read as `folder:WhatsApp`. In GraphQL,
-`hiddenCollections.apps` lists every folder kind by its name (`WhatsApp`, `Telegram`) with its files and imported
-counts, most files first, and `setHiddenCollections` takes `apps: [String!]` (names, or kinds like
-`folder:Telegram`). `whatsapp` stays for apps from before `apps`: it is answered as the WhatsApp entry, and in the
+`sources` holds kinds, compared ignoring case and written in lower case; an old `whatsapp` or `folder:WhatsApp` there
+is read as `folder:whatsapp` (the view's key is the same, so no feed restarts for the case). In GraphQL,
+`hiddenCollections.apps` lists every folder kind by its name (`WhatsApp`, `Telegram`, `Petcube`; see
+[Sources](#sources)) with its files and imported counts, most files first, and `setHiddenCollections` takes
+`apps: [String!]` (names, or kinds like `folder:telegram`). A server from before Oct 27, 2026 compared sources
+exactly and hid no folder kind but WhatsApp: hiding any other app is new, so going back to one loses only that. `whatsapp` stays for apps from before `apps`: it is answered as the WhatsApp entry, and in the
 input it is optional and, when sent, hides or shows WhatsApp beside `apps` (left out, `apps` keep what is hidden
 now). `Hidden.Key` hashes the normalized ids, so the first read of an old `settings.json` restarts every device's
 feed once.
@@ -491,7 +549,8 @@ Recordings of events, recorded phone calls and WhatsApp voice messages are files
 `AUDIO`), brought in by [the import](#importing-files-already-on-the-servers-disk) or uploaded by a phone backing up
 folders the user picked (see "Uploaded" below). They sit in the month folder of
 when they started, like any file. Each is in one of three [hidden collections](#hidden-collections), all hidden on
-every device until the user shows them (`media.AudioCollectionOf`):
+every device until the user shows them (`media.AudioCollectionOf`), told first by its kind (`call`, `recording`,
+`folder:whatsapp`; see [Sound folders](#sound-folders)), then as below:
 
 - **calls**: a sidecar with `call`, who the call was with, as the recorder named the file. Samsung names a call
   after the contact or, without one, the number, so usually only one is known:
@@ -503,8 +562,8 @@ every device until the user shows them (`media.AudioCollectionOf`):
   `mutation setCall(sha256:, call: {contact, number})` corrects it (both are replaced; empty is none), and makes
   a recording set so a call. It sets `correctedAt`, so the file comes again in the change feed. `call` is the
   device's to show, never a model's.
-- **voiceMessages**: `source` `folder:WhatsApp` (or the old `whatsapp`) (`PTT-20250208-WA0004.opus`, `AUD-…`).
-- **recordings**: any other.
+- **voiceMessages**: `source` `folder:whatsapp` (`PTT-20250208-WA0004.opus`, `AUD-…`).
+- **recordings**: `source` `recording`, and any other.
 
 `takenAt` is when it started and `durationMs` its length; GraphQL's `Media.endedAt` is the two added up, so an app
 can show where a recording starts and ends and the photos taken in between. A WAV is kept as FLAC (the same sound in
@@ -537,7 +596,7 @@ shared with the import in `media/audionames.go`):
   phone's `takenAt`;
 - who a call was with, from Samsung's names.
 
-`AUD-`/`PTT-` names get `source` `folder:WhatsApp` (the rule's step 2). When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
+`AUD-`/`PTT-` names get `source` `folder:whatsapp` (the rule's step 2). When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
 is encoded to FLAC first (`Store.keepAsFLAC`). Without ffmpeg its last piece answers 503 and the upload is kept for a
 later try; `serverInfo.encodesWav` says whether it can.
 
@@ -572,10 +631,11 @@ it, it stops and says to set `vips_as_program`.
 **`go run ./scripts/fix-sources --user hen --dry-run`** runs the rule (`media.SourceOf`, with the user's camera
 marks and the folder kinds counted once for the run) over every file and compares its answer with what each sidecar has on disk:
 
-- It prints how many files go from each source to each (`other → camera: 28,900`, `whatsapp → folder:WhatsApp:
+- It prints how many files go from each source to each (`other → camera: 28,900`, `whatsapp → folder:whatsapp:
   1,250`), with the top folders each came from (`importedFrom`'s first five folders, the device's `deviceFolder`, or
   the first of `folders`), the screenshots whose app it sets, **what stays `other`**, by folder, and the ids it would
-  change in `settings.json`'s `hidden.sources` (`whatsapp → folder:WhatsApp`).
+  change in `settings.json`'s `hidden.sources` (`whatsapp → folder:whatsapp`, `folder:Telegram → folder:telegram`).
+  Folder kinds written in another case (`folder:Call → folder:call`) are relabelled too: only the case changes.
 - `--list <before>:<after>` (`--list other:camera`) prints up to 20 files of one change, to look at.
 - **A dry run writes nothing at all**: the data folder is opened to read only (`media.OpenStoreReadOnly`), so no
   folder is made, `.cache/index.json` is read but not saved, no turn is taken (not even `.cache/write.lock`), and
@@ -599,7 +659,7 @@ per value changed, written and synced before the change it records, so a run sto
 <sha256>	source	other	camera
 <sha256>	screenshotApp		Bumble
 <sha256>	key	app	screenshotApp            the key the screenshot's app is written under
-settings.json	hidden.sources	whatsapp	folder:WhatsApp
+settings.json	hidden.sources	whatsapp	folder:whatsapp
 ```
 
 An empty value is none; a tab, newline or backslash in a value is written `\t`, `\n`, `\\`.
@@ -610,13 +670,18 @@ note or privacy set since stays as it is; it sets a new `correctedAt`, so device
 `settings.json` it maps back only the ids the journal changed: a collection hidden since stays hidden. The undo writes
 a journal of its own. The journal may be given by its path, or by its name under `relabels/`.
 
-**`--to-old-ids`** is for going back to a server from before Oct 27, 2026: every source `folder:WhatsApp` (files
+**`--to-old-ids`** is for going back to a server from before Oct 27, 2026: every source `folder:whatsapp` (files
 uploaded or relabelled since too) is written `whatsapp`, `received` is written `camera` (an older app would file it
-under Other), and the screenshot's app is written under the old key `app`, which an older server reads; in
-`settings.json`, `folder:WhatsApp` becomes `whatsapp` (`received` there is left: as `camera` it would hide every camera
-photo). It is journaled too, so `--undo` takes it back. The additions (`sentFrom`, `deviceFolder`, `camera`,
-`cameras.json`) are ignored by an older server, so nothing else needs undoing; the code is undone by reverting its
-commits.
+under Other), `call` and `recording` are written as the folder kind each came from ([Sound folders](#sound-folders);
+`other` without one), and the screenshot's app is written under the old key `app`, which an older server reads; in
+`settings.json`, `folder:whatsapp` becomes `whatsapp` (`received` there is left: as `camera` it would hide every camera
+photo). Other folder kinds stay in lower case: an older server shows them as they are, and hid none of them. It is
+journaled too, so `--undo` takes it back. The additions (`sentFrom`, `deviceFolder`, `camera`, `cameras.json`,
+`sound-folders.json`) are ignored by an older server, so nothing else needs undoing; the code is undone by reverting
+its commits.
+
+**The server journals its own moves** of sound recordings the same way (`relabels/<UTC time>-sound-folders.tsv`, see
+[Sound folders](#sound-folders)), so `--undo` takes one back too.
 
 ## Importing files already on the server's disk
 
@@ -786,7 +851,7 @@ stream takes as long as it takes. Instead: headers must arrive within 10 s; Grap
 
 `query serverInfo { api version search previews posters nudityScan }` says what works on this server, so an app
 shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed),
-`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the library), `cameras` (cameras are read: `Media.camera`, `cameras`, `setCamera`), the
+`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the library), `cameras` (cameras are read: `Media.camera`, `cameras`, `setCamera`), `soundFolders` (folder kinds are in lower case and named by `folderNames`; `soundFolders` and `setSoundFolder`), the
 server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
 (1 today). An app asks once when it connects, rather than learning from errors.
 
