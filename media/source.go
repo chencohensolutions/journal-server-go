@@ -144,8 +144,10 @@ var messagingNames = []struct {
 
 // cameraName is how cameras and phones' camera apps name what they take: DSC_000385.JPG, DSCN1234.JPG, DSC01234.JPG,
 // Fujifilm's DSCF1234.JPG, Samsung's 20250928_211937.jpg (and 20250928_211937_016.jpg, a burst), IMG_20230115_123456.jpg, PXL_20230115_….jpg,
-// VID_20230115_123456.mp4, MOV_0012.mp4, CAM00123.jpg.
-var cameraName = regexp.MustCompile(`(?i)^(dsc[_nf]?\d|\d{8}_\d{6}|img_\d{8}|pxl_\d{8}|vid_\d{8}|mov_\d|cam\d)`)
+// VID_20230115_123456.mp4, MOV_0012.mp4, CAM00123.jpg. IMG_ and VID_ need the time and, after it, at most a short
+// number (IMG_20230115_123456_123.jpg) or a word (_HDR): apps name their own files img_20260927_115615_2430005126935688329.jpg
+// (WorkersNet), which are not camera photos.
+var cameraName = regexp.MustCompile(`(?i)^(dsc[_nf]?\d|\d{8}_\d{6}|(img|vid)_\d{8}_\d{6}(_\d{1,4})?([^\d_]|_[^\d]|$)|pxl_\d{8}|mov_\d|cam\d)`)
 
 // dcfFolder is the folder a camera makes in DCIM by the DCF standard: a number from 100 to 999 and five capital
 // letters, digits or underscores, the first not a digit (100CANON, 101MSDCF, 100_FUJI, and Android's 100ANDRO and
