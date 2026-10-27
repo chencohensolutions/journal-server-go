@@ -447,7 +447,7 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 	relabel := func(sha string) bool {
 		t.Helper()
 		got, _ := f.store.Get(sha)
-		source, app := SourceOf(got.Sidecar.Facts, CameraMarks{})
+		source, app := SourceOf(got.Sidecar.Facts, CameraMarks{}, f.store.FolderKinds())
 		next := Labels{Source: source, ScreenshotApp: str(app)}
 		changed, err := f.store.SetLabels(sha, func(disk Labels) (Labels, bool, error) { return next, next != disk, nil })
 		if err != nil {

@@ -126,31 +126,55 @@ rewrite writes the new one. The apps the rule knows are always spelled as it spe
 `folder:Telegram`).
 
 **One rule decides it**, `media.SourceOf`, on upload, on import and when sources are fixed. It reads the file's name,
-where it was found (the import's `importedFrom`, or the uploading device's `deviceFolder`), its camera tags and the
-user's marks, and what the device sent. The first that matches:
+where it was found (the import's `importedFrom`, or the uploading device's `deviceFolder`), its kind, its camera tags
+and the user's marks, what the device sent (`sentFrom`, or `source` on a file placed before `sentFrom` was kept), and
+the folder kinds the user's other files take (`Store.FolderKinds`, below). The first that matches:
 
 1. A screenshot's name (`Screenshot_…`, with `screenshotApp` from it when it names an app) or a screen recording's
    (`Screen_Recording_…`, `Screen Recording …`): `screenshots`. The name wins over the folder, so a screenshot
    received in WhatsApp stays a screenshot and its app can still be hidden.
 2. A WhatsApp name (`IMG-20230115-WA0012.jpg`, `VID-`, `AUD-`, `PTT-`, `STK-`, `DOC-`) or WhatsApp anywhere in the
-   path: `folder:WhatsApp`.
-3. A screenshot folder anywhere in the path (Screenshots, Screen recordings): `screenshots`.
+   path: `folder:WhatsApp`. **A sound recording** that isn't WhatsApp's is `other` (on upload `folder:WhatsApp`
+   still when the phone sent that): a recorder's folder (`Call`, `Calls`, `Voice Recorder`, `super_recorder`) is
+   never its kind, since a sound recording's sections, calls, recordings and voice messages, are told from `call` and
+   WhatsApp (see [Sound recordings](#sound-recordings)).
+3. A screenshot folder anywhere in the path: Screenshots, Screen recordings, and in Hebrew צילומי מסך (screenshots)
+   and הקלטות מסך (screen recordings), with or without spaces, underscores or dashes: `screenshots`.
 4. A messaging app's name or folder: Telegram (`photo_2023-01-15_12-34-56.jpg`, `video_…`), Signal (`signal-…`),
    Facebook (`FB_IMG_…`), Messenger (`received_…`), Snapchat (`Snapchat-…`): its folder kind.
+   **On upload, a folder kind the phone gave**: its folder read as the Android app reads it (the folder inside
+   `Pictures`, `Download`, `DCIM`… gives its kind; a file loose in one, or under `Android/`, has none; otherwise the
+   top folder, an iPhone's album), else the folder kind it sent. The phone knows the app that saved the file, so its
+   folder kind is overridden only by 1–4, never by camera tags or a camera's name (`Pictures/Petcube/20250928_211937.jpg`
+   stays Petcube). A camera's folder (at 6) is never a folder kind: a phone that sent `folder:100ANDRO` gets `camera`.
 5. Camera tags of a model the user marked not theirs: `received`.
-6. A `Camera` folder anywhere in the path, a DCIM folder right above the file (`DCIM/Flowers` is Flowers, at 7), a
-   camera's name (`DSC_`, `DSCN`, `DSCF`, `DSC0…`, Samsung's `20250928_211937`, `IMG_20230115…`, `PXL_`, `VID_`,
-   `MOV_`, `CAM`), or camera tags of any other model: `camera`.
-7. A named folder. On upload, the device's folder read as the Android app reads it (the folder inside `Pictures`,
-   `Download`, `DCIM`… gives its kind; a file loose in one, or under `Android/`, has none; otherwise the top folder,
-   an iPhone's album). On import, the folder right above the file, unless it is a shared folder (`Pictures`,
-   `Download`…), a dated one (`2025-09`, `Photos from 2014`), the folder the import searched, or anywhere under Google
-   Takeout: its year folders and albums are collections, kept in `folders`, not where a file came from.
+6. A camera's folder anywhere in the path: `Camera`, a DCF folder (a number from 100 to 999 and five capitals,
+   digits or underscores: `100CANON`, `101MSDCF`, Android's `100ANDRO` and `100MEDIA`), `SLOW_VIDEO`,
+   `EDITED_VIDEO`, `Videocaptures`, or a burst's folder named as a camera names its files (`DSC_20190928033805229`);
+   a DCIM folder right above the file (`DCIM/Flowers` is Flowers, at 7); a camera's name (`DSC_`, `DSCN`, `DSCF`,
+   `DSC0…`, Samsung's `20250928_211937`, `IMG_20230115…`, `PXL_`, `VID_`, `MOV_`, `CAM`); or camera tags of any
+   other model: `camera`.
+7. On import, the folder right above the file, unless it is a shared folder (`Pictures`, `Download`…), a dated one
+   (`2025-09`, `Photos from 2014`), the folder the import searched, or anywhere under Google Takeout: its year folders
+   and albums are collections, kept in `folders`, not where a file came from. **And only when at least 20 of the
+   user's files take it** (`media.MinImportedFolderFiles`), counted by the folder's name ignoring case: a folder of a
+   few files (someone's name, `New folder`, an archive's leftovers) stays `other`, its name still in `folders`.
 8. Otherwise: on upload, what the device sent (it knows the app that saved a file loose in `Pictures/`, which the
    server can't), `other` when it sent none; on import, `other`. Images with no clue stay `other`.
 
-So on upload the server overrides what the phone sent only on evidence of its own (1–7), and `sentFrom` keeps what
-was sent either way.
+So on upload the server overrides what the phone sent only on evidence of its own, and `sentFrom` keeps what was sent
+either way.
+
+**Folder kinds are counted once per run.** `Store.FolderKinds` runs the rule (without the minimum) over every file
+of the data folder and counts, by name ignoring case, the files each folder an import found would give its kind, and
+how each folder kind is spelled. Fixing sources counts once before the dry run or the real run decides anything, so
+both decide by the same counts; an import counts the data folder's files and the run's new files once, before it
+places any. Folder kinds that differ only by case are one kind, spelled as most of the files that take it spell it
+(on a tie, the one that sorts first: `Calls` before `calls`). The minimum is only for folders an import found: a
+folder kind a phone gave, and the apps the rule knows (spelled as it spells them), never need it. An upload is
+spelled by the sources the user's files have now. What a sound recording takes (2), the phone's folder kind before
+camera tags (4), the minimum and the spelling are the server's alone; the Android app tells camera folders and Hebrew screenshot folders as the server does
+(`SourceNames.kt` in journal-client-kmp).
 
 ### Cameras
 
@@ -546,7 +570,7 @@ marks their cameras from), and how many photos and videos have no camera tags. I
 it, it stops and says to set `vips_as_program`.
 
 **`go run ./scripts/fix-sources --user hen --dry-run`** runs the rule (`media.SourceOf`, with the user's camera
-marks) over every file and compares its answer with what each sidecar has on disk:
+marks and the folder kinds counted once for the run) over every file and compares its answer with what each sidecar has on disk:
 
 - It prints how many files go from each source to each (`other → camera: 28,900`, `whatsapp → folder:WhatsApp:
   1,250`), with the top folders each came from (`importedFrom`'s first five folders, the device's `deviceFolder`, or

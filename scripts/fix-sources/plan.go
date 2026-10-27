@@ -51,7 +51,7 @@ func newPlan(store *media.Store, mode string, undo []journalLine) (*plan, error)
 	var items []media.Item
 	switch mode {
 	case modeRelabel:
-		p.decide, p.sources = relabelDecider(store.CameraMarks()), relabelSources
+		p.decide, p.sources = relabelDecider(store.CameraMarks(), store.FolderKinds()), relabelSources
 		store.Range(func(item media.Item) { items = append(items, item) })
 	case modeOldIds:
 		p.decide, p.sources = oldIdsDecider, oldIdsSources
@@ -145,12 +145,13 @@ func differ(disk, next media.Labels) bool {
 	return disk.Source != next.Source || disk.ScreenshotApp != next.ScreenshotApp || keyOf(disk) != keyOf(next)
 }
 
-// relabelDecider gives each file the rule's source (media.SourceOf, with the user's camera marks) and, for a
+// relabelDecider gives each file the rule's source (media.SourceOf, with the user's camera marks and the folder
+// kinds counted once for the run, so the dry run and the real one decide by the same counts) and, for a
 // screenshot whose name says, its app; an app the rule doesn't give is kept. Ids come as the server writes them
 // (folder:WhatsApp for whatsapp), and a rewritten sidecar has its app under screenshotApp.
-func relabelDecider(marks media.CameraMarks) decider {
+func relabelDecider(marks media.CameraMarks, kinds *media.FolderKinds) decider {
 	return func(item media.Item, disk media.Labels) (media.Labels, bool) {
-		source, app := media.SourceOf(item.Sidecar.Facts, marks)
+		source, app := media.SourceOf(item.Sidecar.Facts, marks, kinds)
 		next := media.Labels{Source: source, ScreenshotApp: disk.ScreenshotApp}
 		if app != nil {
 			next.ScreenshotApp = *app

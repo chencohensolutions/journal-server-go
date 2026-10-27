@@ -1,6 +1,9 @@
 package media
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // SourceOf over real names and paths from the owner's library: imports by where they were found, uploads by the
 // phone's folder and what it sent.
@@ -23,6 +26,12 @@ func TestSourceOf(t *testing.T) {
 		return f
 	}
 	withCamera := func(f Facts, c Camera) Facts { f.Camera = &c; return f }
+	sound := func(f Facts) Facts { f.Kind = KindAudio; return f }
+	// The folders an import found that enough files take to be kinds (MinImportedFolderFiles).
+	kinds := NewFolderKinds(marks)
+	addFolderFiles(kinds, "Petcube", MinImportedFolderFiles)
+	addFolderFiles(kinds, "Flowers", MinImportedFolderFiles)
+	addFolderFiles(kinds, "SLOW_VIDEO", MinImportedFolderFiles) // a camera's folder all the same
 	for _, c := range []struct {
 		what   string
 		facts  Facts
@@ -68,8 +77,46 @@ func TestSourceOf(t *testing.T) {
 		{"upload: an iPhone's WhatsApp album", uploaded("IMG_0001.JPG", "WhatsApp", SourceWhatsApp), SourceWhatsApp, ""},
 		{"upload: a Telegram name in Download", uploaded("photo_2023-01-15_12-34-56.jpg", "Download/", SourceOther), "folder:Telegram", ""},
 		{"upload: a screenshot sent as Telegram", uploaded("Screenshot_20240301_030715_Bumble.jpg", "Pictures/Telegram/", "folder:Telegram"), SourceScreenshots, "Bumble"},
+
+		// Sound recordings take no recorder's folder: their sections are calls, recordings and voice messages.
+		{"a call in a Call folder", sound(imported(`D:\Archive\phone\not photos or videos\Call\Call@Dana(0501234567)_20200101123456.m4a`, "phone/not photos or videos/Call")), SourceOther, ""},
+		{"a call in a Calls folder", sound(imported(`D:\Archive\phone\not photos or videos\Calls\20200101_123456.m4a`, "phone/not photos or videos/Calls")), SourceOther, ""},
+		{"a recording in Voice Recorder", sound(imported(`D:\Archive\phone\not photos or videos\Voice Recorder\Voice 001.m4a`, "phone/not photos or videos/Voice Recorder")), SourceOther, ""},
+		{"a recording in super_recorder", sound(imported(`D:\Archive\phone\not photos or videos\super_recorder\rec1.mp3`, "phone/not photos or videos/super_recorder")), SourceOther, ""},
+		{"a WhatsApp voice message by its name", sound(imported(`D:\Archive\phone\not photos or videos\Call\PTT-20230115-WA0003.opus`, "phone/not photos or videos/Call")), SourceWhatsApp, ""},
+		{"a WhatsApp voice message by its folder", sound(imported(`D:\Archive\phone\WhatsApp\Media\WhatsApp Voice Notes\202301\x.opus`, "phone/WhatsApp/Media/WhatsApp Voice Notes/202301")), SourceWhatsApp, ""},
+		{"upload: a voice message the phone sent as WhatsApp", sound(uploaded("x.opus", "", SourceWhatsApp)), SourceWhatsApp, ""},
+		{"upload: a call recorder's folder", sound(uploaded("x.m4a", "Recordings/Call/", "folder:Call")), SourceOther, ""},
+
+		// Folders a camera makes, at any level, are camera.
+		{"100ANDRO", imported(`D:\GoogleDriveTemp\toimport2\DCIM\100ANDRO\x.mp4`, "toimport2/DCIM/100ANDRO"), SourceCamera, ""},
+		{"100MEDIA further up", imported(`D:\GoogleDriveTemp\toimport2\100MEDIA\Sub\x.jpg`, "toimport2/100MEDIA/Sub"), SourceCamera, ""},
+		{"a DCF folder", imported(`D:\GoogleDriveTemp\toimport2\101MSDCF\x.jpg`, "toimport2/101MSDCF"), SourceCamera, ""},
+		{"SLOW_VIDEO, with enough files to be a kind", imported(`D:\GoogleDriveTemp\toimport2\DCIM\SLOW_VIDEO\x.mp4`, "toimport2/DCIM/SLOW_VIDEO"), SourceCamera, ""},
+		{"EDITED_VIDEO", imported(`D:\GoogleDriveTemp\toimport2\EDITED_VIDEO\x.mp4`, "toimport2/EDITED_VIDEO"), SourceCamera, ""},
+		{"Videocaptures", imported(`D:\GoogleDriveTemp\toimport2\Videocaptures\x.jpg`, "toimport2/Videocaptures"), SourceCamera, ""},
+		{"a burst's folder", imported(`D:\GoogleDriveTemp\toimport2\DSC_20190928033805229\x.jpg`, "toimport2/DSC_20190928033805229"), SourceCamera, ""},
+		{"a year and a word isn't a DCF folder", imported(`D:\GoogleDriveTemp\toimport2\2019trip\x.jpg`, "toimport2/2019trip"), SourceOther, ""},
+		{"upload: DCIM/100ANDRO", uploaded("x.mp4", "DCIM/100ANDRO/", "folder:100ANDRO"), SourceCamera, ""},
+
+		// A folder kind the phone sent is overridden only by a screenshot, WhatsApp or a messaging app.
+		{"upload: Petcube's folder with a camera's name and tags", withCamera(uploaded("20250928_211937.jpg", "Pictures/Petcube/", "folder:Petcube"), samsung), "folder:Petcube", ""},
+		{"upload: Petcube sent, a camera's name, no folder", uploaded("DSC_0001.JPG", "", "folder:Petcube"), "folder:Petcube", ""},
+		{"upload: Petcube sent, a camera not mine", withCamera(uploaded("x.jpg", "", "folder:Petcube"), canon), "folder:Petcube", ""},
+		{"upload: Petcube sent, WhatsApp's name", uploaded("IMG-20230115-WA0012.jpg", "Pictures/Petcube/", "folder:Petcube"), SourceWhatsApp, ""},
+		{"upload: Petcube's folder, a Telegram name", uploaded("photo_2023-01-15_12-34-56.jpg", "Pictures/Petcube/", "folder:Petcube"), "folder:Telegram", ""},
+
+		// Hebrew screenshot folders.
+		{"צילומי מסך", imported(`D:\GoogleDriveTemp\phone\צילומי מסך\x.png`, "phone/צילומי מסך"), SourceScreenshots, ""},
+		{"צילומי_מסך", imported(`D:\GoogleDriveTemp\phone\צילומי_מסך\x.png`, "phone/צילומי_מסך"), SourceScreenshots, ""},
+		{"הקלטות מסך", imported(`D:\GoogleDriveTemp\phone\הקלטות מסך\x.mp4`, "phone/הקלטות מסך"), SourceScreenshots, ""},
+		{"upload: Pictures/צילומי מסך", uploaded("x.png", "Pictures/צילומי מסך/", "folder:צילומי מסך"), SourceScreenshots, ""},
+
+		// A folder only an import found, with fewer files than the minimum.
+		{"a one-file folder", imported(`D:\GoogleDriveTemp\טל\x.jpg`, "GoogleDriveTemp/טל"), SourceOther, ""},
+		{"New folder", imported(`D:\GoogleDriveTemp\stuff\New folder\x.jpg`, "stuff/New folder"), SourceOther, ""},
 	} {
-		source, app := SourceOf(c.facts, marks)
+		source, app := SourceOf(c.facts, marks, kinds)
 		gotApp := ""
 		if app != nil {
 			gotApp = *app
@@ -77,6 +124,83 @@ func TestSourceOf(t *testing.T) {
 		if source != c.source || gotApp != c.app {
 			t.Errorf("%s: %s %q, want %s %q", c.what, source, gotApp, c.source, c.app)
 		}
+	}
+}
+
+// addFolderFiles adds n made-up imported files found in a folder named folder to kinds.
+func addFolderFiles(kinds *FolderKinds, folder string, n int) {
+	for i := range n {
+		from := fmt.Sprintf(`D:\GoogleDriveTemp\import\%s\f%d.jpg`, folder, i)
+		kinds.Add(fmt.Sprintf("%s-%d", folder, i), Facts{FileName: fmt.Sprintf("f%d.jpg", i), UploadedBy: "import", ImportedFrom: &from, Folders: []string{"import/" + folder}})
+	}
+}
+
+// A folder only an import found is a kind from MinImportedFolderFiles files, counted ignoring case; a phone's
+// folder and the apps the rule knows from one.
+func TestSourceOfFolderMinimum(t *testing.T) {
+	from := `D:\GoogleDriveTemp\import\נוימן\x.jpg`
+	file := Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &from, Folders: []string{"import/נוימן"}}
+	kinds := NewFolderKinds(CameraMarks{})
+	addFolderFiles(kinds, "נוימן", MinImportedFolderFiles-1)
+	if source, _ := SourceOf(file, CameraMarks{}, kinds); source != SourceOther {
+		t.Errorf("%d files: %s, want other", MinImportedFolderFiles-1, source)
+	}
+	kinds.Add("נוימן-0", file) // the same file again counts once
+	if source, _ := SourceOf(file, CameraMarks{}, kinds); source != SourceOther {
+		t.Errorf("a file added twice: %s, want other", source)
+	}
+	kinds.Add("the file itself", file)
+	if source, _ := SourceOf(file, CameraMarks{}, kinds); source != "folder:נוימן" {
+		t.Errorf("%d files: %s, want folder:נוימן", MinImportedFolderFiles, source)
+	}
+	if source, _ := SourceOf(file, CameraMarks{}, nil); source != SourceOther {
+		t.Errorf("no counts: %s, want other", source)
+	}
+
+	// Folder kinds that differ only by case are counted as one.
+	calls := NewFolderKinds(CameraMarks{})
+	addFolderFiles(calls, "Calls", MinImportedFolderFiles/2)
+	addFolderFiles(calls, "calls", MinImportedFolderFiles/2)
+	callsFrom := `D:\GoogleDriveTemp\import\calls\x.jpg`
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &callsFrom, Folders: []string{"import/calls"}}, CameraMarks{}, calls); source != "folder:Calls" {
+		t.Errorf("Calls and calls: %s, want folder:Calls", source)
+	}
+
+	// Never held to it: a phone's folder, and an app the rule knows.
+	petcube, sent := "Pictures/Petcube/", "folder:Petcube"
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "Galaxy S25", DeviceFolder: &petcube, SentFrom: &sent}, CameraMarks{}, nil); source != "folder:Petcube" {
+		t.Errorf("a phone's folder: %s, want folder:Petcube", source)
+	}
+	telegram := `D:\GoogleDriveTemp\import\Telegram\x.jpg`
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &telegram, Folders: []string{"import/Telegram"}}, CameraMarks{}, nil); source != "folder:Telegram" {
+		t.Errorf("Telegram: %s, want folder:Telegram", source)
+	}
+}
+
+// Folder kinds that differ only by case are one kind, spelled as most files spell it (on a tie, the one that sorts
+// first), the phone's too.
+func TestSourceOfFolderCase(t *testing.T) {
+	kinds := NewFolderKinds(CameraMarks{})
+	addFolderFiles(kinds, "slicer", MinImportedFolderFiles)
+	addFolderFiles(kinds, "Slicer", MinImportedFolderFiles+1)
+	for _, folder := range []string{"slicer", "Slicer", "SLICER"} {
+		from := `D:\GoogleDriveTemp\import\` + folder + `\x.jpg`
+		if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "import", ImportedFrom: &from, Folders: []string{"import/" + folder}}, CameraMarks{}, kinds); source != "folder:Slicer" {
+			t.Errorf("%s: %s, want folder:Slicer", folder, source)
+		}
+	}
+	device := "Pictures/slicer/"
+	if source, _ := SourceOf(Facts{FileName: "x.jpg", UploadedBy: "Galaxy S25", DeviceFolder: &device}, CameraMarks{}, kinds); source != "folder:Slicer" {
+		t.Errorf("a phone's slicer: %s, want folder:Slicer", source)
+	}
+	tie := NewFolderKinds(CameraMarks{})
+	addFolderFiles(tie, "calls", MinImportedFolderFiles)
+	addFolderFiles(tie, "Calls", MinImportedFolderFiles)
+	if got := tie.Spelling("folder:calls"); got != "folder:Calls" {
+		t.Errorf("a tie: %s, want folder:Calls", got)
+	}
+	if got := kinds.Spelling("folder:Unknown"); got != "folder:Unknown" {
+		t.Errorf("a kind no file takes: %s", got)
 	}
 }
 

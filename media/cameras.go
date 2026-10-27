@@ -256,6 +256,7 @@ func (s *Store) cameraMoving(key string) []cameraMove {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var moves []cameraMove
+	var kinds *FolderKinds // counted only when a file of the model is found
 	for _, item := range s.items {
 		facts := item.Sidecar.Facts
 		if facts.Camera == nil || facts.Camera.key() != key {
@@ -265,7 +266,10 @@ func (s *Store) cameraMoving(key string) []cameraMove {
 		if facts.Source != nil {
 			current = *facts.Source
 		}
-		target, _ := SourceOf(facts, s.cameraMarks)
+		if kinds == nil {
+			kinds = s.folderKindsLocked()
+		}
+		target, _ := SourceOf(facts, s.cameraMarks, kinds)
 		switch {
 		case SameSource(target, current):
 		case target == SourceReceived, SameSource(current, SourceReceived):

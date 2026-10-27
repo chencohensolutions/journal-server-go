@@ -54,6 +54,7 @@ func (im *importer) importFiles(ctx context.Context, files []sourceFile, jobs in
 	if ctx.Err() != nil || len(news) == 0 {
 		return
 	}
+	im.countFolderKinds(news)
 	log.Printf("%d new files (%s): importing, largest first", len(news), gb(newBytes))
 	start, last := time.Now(), time.Now()
 	var doneBytes int64
@@ -71,6 +72,34 @@ func (im *importer) importFiles(ctx context.Context, files []sourceFile, jobs in
 			last = time.Now()
 		}
 	}
+}
+
+// countFolderKinds counts, once before the run places anything, the folder kinds the data folder's files and the
+// run's new files take, so each folder this run found becomes a kind only with media.MinImportedFolderFiles files
+// (see media.SourceOf), however many of them were imported before it.
+func (im *importer) countFolderKinds(news []*examined) {
+	kinds := im.store.FolderKinds()
+	for _, e := range news {
+		if _, ok := im.store.Get(e.sha256); !ok {
+			kinds.Add(e.sha256, im.sourceFacts(e))
+		}
+	}
+	im.mu.Lock()
+	im.folderKinds = kinds
+	im.mu.Unlock()
+}
+
+// sourceFacts are the facts of an examined file that its source is told from, as importInto gives them.
+func (im *importer) sourceFacts(e *examined) media.Facts {
+	from := e.path
+	if im.cloud != nil {
+		from = im.cloud.origin(e.path)
+	}
+	f := media.Facts{FileName: filepath.Base(e.path), Kind: e.facts.kind, UploadedBy: "import", ImportedFrom: &from, Call: e.facts.call, Camera: e.facts.camera}
+	if e.folder != "" {
+		f.Folders = []string{e.folder}
+	}
+	return f
 }
 
 // sourceFile is a photo or video found in a searched folder.
@@ -399,7 +428,11 @@ func (im *importer) importInto(ctx context.Context, path, foundAt, sha string, s
 		im.counts.encoded++
 		im.mu.Unlock()
 	}
+	im.mu.Lock()
+	kinds := im.folderKinds
+	im.mu.Unlock()
 	return im.store.Import(path, media.UploadRequest{
+		FolderKinds:  kinds,
 		Sha256:       sha,
 		Size:         size,
 		FileName:     name,
@@ -425,7 +458,7 @@ func (im *importer) encodingDir() string { return filepath.Join(im.notImportedRu
 // countAudio counts a sound recording imported (or that would be), by its collection.
 func (im *importer) countAudio(e *examined) {
 	facts := media.Facts{FileName: filepath.Base(e.path), Kind: e.facts.kind, Call: e.facts.call, UploadedBy: "import", ImportedFrom: &e.path}
-	source, _ := media.SourceOf(facts, media.CameraMarks{}) // a sound recording has no camera
+	source, _ := media.SourceOf(facts, media.CameraMarks{}, nil) // a sound recording has no camera, nor a folder kind
 	facts.Source = &source
 	c := media.AudioCollectionOf(facts)
 	if c == "" {

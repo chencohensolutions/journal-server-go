@@ -52,6 +52,9 @@ type UploadRequest struct {
 	EncodedFrom  *EncodedFrom `json:"encodedFrom,omitempty"`
 	// The camera that took it, read from the file before the turn (ReadCamera; the import passes what it read).
 	Camera *Camera `json:"camera,omitempty"`
+	// Set by an import: the folder kinds counted once for its run (Store.FolderKinds and the run's files), which
+	// SourceOf decides its files by. Without it an import counts the store's files for each file.
+	FolderKinds *FolderKinds `json:"-"`
 }
 
 // InvalidRequestError is a request no device should send (a client bug, not a user error).
@@ -406,7 +409,16 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 		Privacy: s.inheritedPrivacy(req),
 	}
 	// The one rule decides the source, after SentFrom keeps what was sent.
-	source, app := SourceOf(sidecar.Facts, s.cameraMarks)
+	kinds := req.FolderKinds
+	switch {
+	case kinds != nil:
+	case sidecar.Facts.Imported():
+		kinds = s.folderKindsLocked()
+		kinds.Add(req.Sha256, sidecar.Facts) // the file itself counts, as it does once placed
+	default:
+		kinds = s.sourceSpellingsLocked()
+	}
+	source, app := SourceOf(sidecar.Facts, s.cameraMarks, kinds)
 	sidecar.Facts.Source, sidecar.Facts.ScreenshotApp = &source, app
 	if err := writeSidecar(dest+".json", sidecar); err != nil {
 		// Put the bytes back so the device can finish again; never leave an original without a sidecar.

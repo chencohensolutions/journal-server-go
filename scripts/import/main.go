@@ -125,6 +125,10 @@ type importer struct {
 	totalBytes   int64
 	doneFiles    int
 	doneBytes    int64
+
+	// The folder kinds the data folder's files and the run's new files take, counted once before the run places
+	// anything (countFolderKinds); nil before, when each file is decided by the data folder's files alone.
+	folderKinds *media.FolderKinds
 }
 
 // photo is one photo in the data folder (or on its way there, or in a dry run one that would be), with
