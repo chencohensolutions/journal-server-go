@@ -54,7 +54,9 @@ go run . copy [user] | copy report [user] [--list]   # start the copies' full pa
 go run . index [--user name] [--progress]  # read new files for the indexes once and exit ("index": "daily" runs it per user at "index_at")
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--delete-duplicates] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
-go run ./scripts/fix-sources --user <name> [--dry-run]    # once: source=whatsapp for files WhatsApp named, screenshots' app
+go run ./scripts/read-cameras --user <name> [--dry-run]   # facts.camera for files placed before it was read; lists camera models
+go run ./scripts/fix-sources --user <name> [--dry-run] [--list <before>:<after>]   # relabel by media.SourceOf, journaled in relabels/
+go run ./scripts/fix-sources --user <name> --undo <journal> | --to-old-ids        # put a journal back; ids for an older server
 go run ./scripts/local-fixtures --out <folder>            # made-up cases with the server's answers, for the apps' local search tests
 ```
 
@@ -122,13 +124,15 @@ and a user's phone keeps every preview it asks for and is usually the only devic
 cache would hold copies of what the phone already has. Don't propose turning it on.
 
 **Multi-process writes go through turns** (`media/turns.go`). The server, one or more `scripts/import` runs,
-`scripts/scan-nudity` and `scripts/fix-sources` may share a data folder. Each holds an exclusive file lock on
+`scripts/scan-nudity`, `scripts/read-cameras` and `scripts/fix-sources` may share a data folder. Each holds an exclusive file lock on
 `.cache/write.lock` only for the milliseconds it takes to place a file or rewrite a sidecar, and appends to
 `.cache/write-journal.tsv` so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside
 `Store.Turn` (the store's own write methods already do). The exceptions are `.cache/search/`, `.cache/faces/` and
 the indexes' caches (`.cache/ocr/`, `.cache/similar/`, `.cache/aesthetic/`) and failure lists, which only the
 server writes. Package `copies` never writes into the data folder: it reads it and writes only into the copy folders.
+A dry run opens the folder with `media.OpenStoreReadOnly` (no folders made, `.cache/index.json` not saved, every turn
+refused), so it writes nothing at all beside the running server.
 
 **External tools are found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and `vips/bin` first), or
 at `vips` / `ffmpeg` in `config.json`; libvips's library is then loaded from beside `vips` (on Windows its folder is

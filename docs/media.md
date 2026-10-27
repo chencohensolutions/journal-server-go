@@ -165,8 +165,8 @@ imported files too, and shown as `Media.camera`. `media.ReadCamera` is the one r
   QuickTime's `com.apple.quicktime.make` and `.model`;
 - the import passes the fields it already read with vipsheader and ffprobe.
 
-`serverInfo.cameras` says whether the server reads them. Files placed before Oct 27, 2026 have none until they are
-read again.
+`serverInfo.cameras` says whether the server reads them. Files placed before Oct 27, 2026 have none until
+`scripts/read-cameras` reads them (see [Fixing sources](#fixing-sources)).
 
 **The user's cameras.** The user marks which camera models were theirs, and the photos of a model marked "not mine"
 are kept apart as sent to them (`received`, rule step 5). The marks are kept in `cameras.json` at the data folder's
@@ -530,20 +530,69 @@ models, YuNet and SFace, run on the same ONNX Runtime. See [faces.md](faces.md).
 
 ## Fixing sources
 
-`go run ./scripts/fix-sources --user hen [--dry-run]` corrects, once, the `source` of files WhatsApp named
-(`IMG-20230115-WA0012.jpg`, `VID-…-WA…`; also `AUD`, `PTT`, `STK`, `DOC`) that came in as `camera` or `other`, so
-the apps hide them with the rest of WhatsApp. Imports used to tell the source from the folder only, so a WhatsApp
-file copied elsewhere before it was imported lost it; they now look at the name too.
+Files placed before the rule was what it is now (see [Sources](#sources)) keep the source they were given then:
+imports labelled camera photos `other` when they weren't under `DCIM`, and WhatsApp was `whatsapp`. Two scripts
+bring them in step, per user (each user in config.json), in this order, each first with `--dry-run`. Both may run
+beside the server and imports: they take turns at writing (see
+[Several processes on one data folder](#several-processes-on-one-data-folder)).
 
-- Only `facts.source` and `facts.correctedAt` change in the sidecar (inside a turn), and `facts.sentFrom` gets the
-  source before, when it had none; originals are never touched.
-  `correctedAt` makes the file come again in the change feed, so phones that already have it learn the new source.
-- It prints how many it corrected, their sources before, and where they were found (the first folders of
-  `importedFrom`), to tell why they had the wrong source. Files whose folders mention WhatsApp but whose name
-  doesn't are listed and left as they are. Running it again changes nothing.
-- It also gives screenshots placed before the server read the app from their names what a new one gets
-  (`"source": "screenshots"` and `screenshotApp`; see [Sidecar](#sidecar-json)), and prints how many it corrected for each app.
-  Only `facts.source`, `facts.screenshotApp` and `facts.correctedAt` change.
+**`go run ./scripts/read-cameras --user hen [--dry-run]`** reads each original's camera tags (`media.ReadCamera`,
+as an upload does: libvips inside the script, `vipsheader` only with `"vips_as_program": true`, which takes about a
+third of a second a file, ffprobe for videos) and writes only `facts.camera`, one turn per file, leaving the rest of
+the sidecar as it is on disk and `correctedAt` as it was (a file's camera is read when its info is shown, so devices
+aren't sent every file again). Files that have a camera already are skipped, so a run stopped with Ctrl+C continues
+where it was. It prints every camera model with its files, how many were imported and their years (what the user
+marks their cameras from), and how many photos and videos have no camera tags. It needs libvips in the script; without
+it, it stops and says to set `vips_as_program`.
+
+**`go run ./scripts/fix-sources --user hen --dry-run`** runs the rule (`media.SourceOf`, with the user's camera
+marks) over every file and compares its answer with what each sidecar has on disk:
+
+- It prints how many files go from each source to each (`other → camera: 28,900`, `whatsapp → folder:WhatsApp:
+  1,250`), with the top folders each came from (`importedFrom`'s first five folders, the device's `deviceFolder`, or
+  the first of `folders`), the screenshots whose app it sets, **what stays `other`**, by folder, and the ids it would
+  change in `settings.json`'s `hidden.sources` (`whatsapp → folder:WhatsApp`).
+- `--list <before>:<after>` (`--list other:camera`) prints up to 20 files of one change, to look at.
+- **A dry run writes nothing at all**: the data folder is opened to read only (`media.OpenStoreReadOnly`), so no
+  folder is made, `.cache/index.json` is read but not saved, no turn is taken (not even `.cache/write.lock`), and
+  nothing is journaled. It is safe against the live data folder while the server runs.
+
+**A real run** (`go run ./scripts/fix-sources --user hen`) writes, one turn and one rewrite per file
+(`Store.SetLabels`), `facts.source` and `facts.screenshotApp` where they change, and `correctedAt`, so each file comes
+once again in the change feed; `sentFrom` gets the source the file had, when it had none. Notes, nudity, privacy and
+the original are never touched. A rewritten sidecar has the app under `screenshotApp`; one the run doesn't change
+keeps it under `app`. It also writes `settings.json`'s `hidden.sources` with the new ids, and nothing else there
+(the server reads `settings.json` at start, and reads the old ids as the new ones anyway). Each file is decided again
+in its turn from what is on disk then, so a file a device changed meanwhile is decided by what it has now. Running it
+again changes nothing.
+
+**Every real run writes a journal**, `relabels/<UTC time>.tsv` (`relabels/2026-10-27T134009Z.tsv`) at the data
+folder's root: not under `.cache`, which is what can be rebuilt and what the copies leave out, while the journal is the
+only way back. After two comment lines (the second is the command that undoes it) and a header, one tab-separated line
+per value changed, written and synced before the change it records, so a run stopped midway can still be undone:
+
+```
+<sha256>	source	other	camera
+<sha256>	screenshotApp		Bumble
+<sha256>	key	app	screenshotApp            the key the screenshot's app is written under
+settings.json	hidden.sources	whatsapp	folder:WhatsApp
+```
+
+An empty value is none; a tab, newline or backslash in a value is written `\t`, `\n`, `\\`.
+
+**`--undo <journal>`** puts the old values back, one turn per file, only where the field still holds the journal's
+new value (a source compared as ids are, ignoring case and the old `whatsapp`), so a later correction is kept, and a
+note or privacy set since stays as it is; it sets a new `correctedAt`, so devices get the old values again. In
+`settings.json` it maps back only the ids the journal changed: a collection hidden since stays hidden. The undo writes
+a journal of its own. The journal may be given by its path, or by its name under `relabels/`.
+
+**`--to-old-ids`** is for going back to a server from before Oct 27, 2026: every source `folder:WhatsApp` (files
+uploaded or relabelled since too) is written `whatsapp`, `received` is written `camera` (an older app would file it
+under Other), and the screenshot's app is written under the old key `app`, which an older server reads; in
+`settings.json`, `folder:WhatsApp` becomes `whatsapp` (`received` there is left: as `camera` it would hide every camera
+photo). It is journaled too, so `--undo` takes it back. The additions (`sentFrom`, `deviceFolder`, `camera`,
+`cameras.json`) are ignored by an older server, so nothing else needs undoing; the code is undone by reverting its
+commits.
 
 ## Importing files already on the server's disk
 
@@ -687,7 +736,7 @@ each service, rclone opens the browser to sign in, with **read-only** access (re
 
 ## Several processes on one data folder
 
-The server, `scripts/import` (one or more at once), `scripts/scan-nudity` and `scripts/fix-sources` may all have the same data folder
+The server, `scripts/import` (one or more at once), `scripts/scan-nudity`, `scripts/read-cameras` and `scripts/fix-sources` may all have the same data folder
 open. Each keeps the index in memory, so they **take turns** at the few steps that change it (`media/turns.go`):
 placing a file (a finished upload, an import), and rewriting a sidecar (folders, a scan's answer, a corrected source).
 
