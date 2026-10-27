@@ -77,6 +77,9 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
     "durationMs": null,
     "location": { "lat": 32.0853, "lon": 34.7818 },
     "source": "camera",
+    "sentFrom": "camera",
+    "deviceFolder": "DCIM/Camera/",
+    "camera": { "make": "samsung", "model": "SM-S931B" },
     "versionOf": null,
     "pairedWith": null,
     "uploadedAt": "2026-10-19T08:01:13Z",
@@ -88,12 +91,16 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
 The device sends the facts (it already read them from MediaStore/PhotoKit); the server adds
 `uploadedAt` and `uploadedBy` (the enrolled device's name). `versionOf` is set on an edit of a photo
 (same device id, new content). `pairedWith` is set on a Live Photo's video (it names the photo) and on
-a RAW (it names the JPEG). A file named like a screenshot (`Screenshot_20240301_030715_Bumble.jpg`,
+a RAW (it names the JPEG). `source` is the file's kind, decided by the server's one rule (see
+[Sources](#sources)). A file named like a screenshot (`Screenshot_20240301_030715_Bumble.jpg`,
 `Screenshot_2015-07-18-03-54-57.png`) gets `"source": "screenshots"` whatever the device or folder said, and
-`app`, the app on screen, when the name has one (`"app": "Bumble"`, also from `…_Bumble(1).jpg` and
-`…_Bumble~20221117-191459.jpg`; `media.ScreenshotApp`). `sentFrom` keeps the source exactly as the device (or the
+`screenshotApp`, the app on screen, when the name has one (`"screenshotApp": "Bumble"`, also from `…_Bumble(1).jpg`
+and `…_Bumble~20221117-191459.jpg`; `media.ScreenshotApp`). Sidecars written before Oct 27, 2026 have it as `app`,
+which is still read (they aren't rewritten for the name); a sidecar rewritten since writes `screenshotApp` only. (An
+older server reading a rewritten sidecar wouldn't see the app.) `camera` is the camera that took the file, as its
+tags say (see [Cameras](#cameras)); absent without tags. `sentFrom` keeps the source exactly as the device (or the
 import) gave it when the file arrived, written then and never changed, so nothing a device said is lost when the
-server's rules change `source` (a screenshot's name, [Fixing sources](#fixing-sources)); it is absent when none was
+server's rules change `source` (the rule, [Fixing sources](#fixing-sources)); it is absent when none was
 sent, and on files placed before Oct 27, 2026, which get their old source there the first time it is corrected.
 `deviceFolder` is where the file was on the device that uploaded it, as `startUpload`'s `folder` gave it (Android's
 folder in shared storage, `"Pictures/Telegram/"`, or an iPhone's album; at most 500 characters): the device's own
@@ -103,6 +110,83 @@ by the import script have `"uploadedBy": "import"` and `importedFrom`, the path 
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
 there once the user marked the file private (see [Private files](#private-files)). `kind` is `photo`, `video` or
 `audio`; a sound recording may have `call` and `encodedFrom` (see [Sound recordings](#sound-recordings)).
+
+### Sources
+
+A file's `source` is its kind: what it is and where it came from, with the ids the apps use (`MediaSource` in
+journal-client-kmp). It is one of `camera`, `screenshots`, `received` (photos from a camera the user marked not
+theirs, shown as "Sent to you"; see [Cameras](#cameras)) and `other`, or a folder kind: `folder:` and the folder's
+name (`folder:WhatsApp`, `folder:Telegram`, `folder:Petcube`). Ids are compared ignoring case.
+
+**WhatsApp is a folder kind** since Oct 27, 2026, like every other app: `folder:WhatsApp`. The old id `whatsapp` is
+read as `folder:WhatsApp` wherever it is found, once, when it is read: a sidecar's `source` when the store indexes it
+(its `sentFrom` keeping `whatsapp` when it had none, so a later rewrite writes both), a phone's `startUpload`, and
+`settings.json`'s `hidden.sources`. The server's memory so holds one id for every file, relabelled or not, and any
+rewrite writes the new one. The apps the rule knows are always spelled as it spells them (`folder:telegram` is
+`folder:Telegram`).
+
+**One rule decides it**, `media.SourceOf`, on upload, on import and when sources are fixed. It reads the file's name,
+where it was found (the import's `importedFrom`, or the uploading device's `deviceFolder`), its camera tags and the
+user's marks, and what the device sent. The first that matches:
+
+1. A screenshot's name (`Screenshot_…`, with `screenshotApp` from it when it names an app) or a screen recording's
+   (`Screen_Recording_…`, `Screen Recording …`): `screenshots`. The name wins over the folder, so a screenshot
+   received in WhatsApp stays a screenshot and its app can still be hidden.
+2. A WhatsApp name (`IMG-20230115-WA0012.jpg`, `VID-`, `AUD-`, `PTT-`, `STK-`, `DOC-`) or WhatsApp anywhere in the
+   path: `folder:WhatsApp`.
+3. A screenshot folder anywhere in the path (Screenshots, Screen recordings): `screenshots`.
+4. A messaging app's name or folder: Telegram (`photo_2023-01-15_12-34-56.jpg`, `video_…`), Signal (`signal-…`),
+   Facebook (`FB_IMG_…`), Messenger (`received_…`), Snapchat (`Snapchat-…`): its folder kind.
+5. Camera tags of a model the user marked not theirs: `received`.
+6. A `Camera` folder anywhere in the path, a DCIM folder right above the file (`DCIM/Flowers` is Flowers, at 7), a
+   camera's name (`DSC_`, `DSCN`, `DSCF`, `DSC0…`, Samsung's `20250928_211937`, `IMG_20230115…`, `PXL_`, `VID_`,
+   `MOV_`, `CAM`), or camera tags of any other model: `camera`.
+7. A named folder. On upload, the device's folder read as the Android app reads it (the folder inside `Pictures`,
+   `Download`, `DCIM`… gives its kind; a file loose in one, or under `Android/`, has none; otherwise the top folder,
+   an iPhone's album). On import, the folder right above the file, unless it is a shared folder (`Pictures`,
+   `Download`…), a dated one (`2025-09`, `Photos from 2014`), the folder the import searched, or anywhere under Google
+   Takeout: its year folders and albums are collections, kept in `folders`, not where a file came from.
+8. Otherwise: on upload, what the device sent (it knows the app that saved a file loose in `Pictures/`, which the
+   server can't), `other` when it sent none; on import, `other`. Images with no clue stay `other`.
+
+So on upload the server overrides what the phone sent only on evidence of its own (1–7), and `sentFrom` keeps what
+was sent either way.
+
+### Cameras
+
+Each photo's and video's camera is read when it arrives and kept as `facts.camera` (`{ "make", "model" }`), for
+imported files too, and shown as `Media.camera`. `media.ReadCamera` is the one reader. It runs before the file's turn
+(in `finish` for an upload, in `Import` after the copy is checked), never inside it:
+
+- a photo's EXIF `Make` and `Model` are read by libvips inside the server (`vips_image_get_as_string` on an image
+  opened for its header only; a few milliseconds), a DNG's from the file itself (`media.TiffExif`); only with
+  `"vips_as_program": true` by `vipsheader -a` (about 350 ms to start on Windows). Without libvips the field is left out;
+- a video's from its container's tags with ffprobe: Android's `com.android.manufacturer` and `com.android.model`,
+  QuickTime's `com.apple.quicktime.make` and `.model`;
+- the import passes the fields it already read with vipsheader and ffprobe.
+
+`serverInfo.cameras` says whether the server reads them. Files placed before Oct 27, 2026 have none until they are
+read again.
+
+**The user's cameras.** The user marks which camera models were theirs, and the photos of a model marked "not mine"
+are kept apart as sent to them (`received`, rule step 5). The marks are kept in `cameras.json` at the data folder's
+root, beside `people.json` (not in `settings.json`, which `setHiddenCollections` writes whole), written in a turn by
+the server only, and read by the import at its start:
+
+```json
+// cameras.json
+{ "format": 1, "cameras": [{ "make": "Canon", "model": "Canon EOS 80D", "mine": false }] }
+```
+
+It holds only the user's own marks: a model nobody marked counts as theirs, so nothing moves until they mark one.
+`query cameras` lists every model the library's files name, most files first, with its files, how many the import
+placed, the years they were taken in, `mine`, `marked` and `pending`. `mutation setCamera(make, model, mine)` (make
+and model compared ignoring case) writes the mark and answers at once: a model can have tens of thousands of files, a
+turn each, and `/query` answers within two minutes. Its files then move in the background (`Store.Relabel`, one
+rewrite each, keeping `sentFrom` and setting `correctedAt`, so each comes again in the change feed once): to
+`received` when marked not mine, back to what the rule gives them when marked mine again. `pending` counts what is
+left; a mark changed while a move runs is applied after it. A phone keeps its own label for its own files, so such a
+photo still on the phone shows under Camera there.
 
 ## Uploading a file
 
@@ -333,7 +417,8 @@ lost device in any case (see [authentication.md](authentication.md)).
 ## Hidden collections
 
 The user can hide whole groups of files on every device, without deleting them (Settings → Private media → Hidden
-collections in the apps): all of WhatsApp, the screenshots of chosen apps (by `facts.app`, compared ignoring case),
+collections in the apps): all the files of any app or folder they came from (a folder kind: WhatsApp, Telegram,
+Petcube; `hiddenCollections.apps`), the screenshots of chosen apps (by `facts.screenshotApp`, compared ignoring case),
 screenshots whose name says no app, the files the [nudity scan](#nudity-scan) scored at a chosen score or more,
 and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the user shows it.
 `query hiddenCollections` lists them with how many files each has, hidden or not, and how many of those the import
@@ -346,9 +431,17 @@ kept at the data folder's root, so it moves with the data:
 
 ```json
 // settings.json
-{ "format": 1, "hidden": { "sources": ["whatsapp"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5,
+{ "format": 1, "hidden": { "sources": ["folder:WhatsApp", "folder:Telegram"], "screenshotApps": ["Bumble", "OkCupid"], "screenshotsWithoutApp": true, "nudityFrom": 0.5,
              "audio": { "recordings": true, "calls": false, "voiceMessages": true } } }
 ```
+
+`sources` holds kinds, compared ignoring case; an old `whatsapp` there is read as `folder:WhatsApp`. In GraphQL,
+`hiddenCollections.apps` lists every folder kind by its name (`WhatsApp`, `Telegram`) with its files and imported
+counts, most files first, and `setHiddenCollections` takes `apps: [String!]` (names, or kinds like
+`folder:Telegram`). `whatsapp` stays for apps from before `apps`: it is answered as the WhatsApp entry, and in the
+input it is optional and, when sent, hides or shows WhatsApp beside `apps` (left out, `apps` keep what is hidden
+now). `Hidden.Key` hashes the normalized ids, so the first read of an old `settings.json` restarts every device's
+feed once.
 
 `nudityFrom` is the score from which files are hidden, `0` for none. A data folder without settings.json, or one
 written before the server hid nudity (no `nudityFrom`), hides from 0.5, as the apps used to do themselves. Likewise
@@ -386,7 +479,7 @@ every device until the user shows them (`media.AudioCollectionOf`):
   `mutation setCall(sha256:, call: {contact, number})` corrects it (both are replaced; empty is none), and makes
   a recording set so a call. It sets `correctedAt`, so the file comes again in the change feed. `call` is the
   device's to show, never a model's.
-- **voiceMessages**: `source` `whatsapp` (`PTT-20250208-WA0004.opus`, `AUD-…`).
+- **voiceMessages**: `source` `folder:WhatsApp` (or the old `whatsapp`) (`PTT-20250208-WA0004.opus`, `AUD-…`).
 - **recordings**: any other.
 
 `takenAt` is when it started and `durationMs` its length; GraphQL's `Media.endedAt` is the two added up, so an app
@@ -420,7 +513,7 @@ shared with the import in `media/audionames.go`):
   phone's `takenAt`;
 - who a call was with, from Samsung's names.
 
-`AUD-`/`PTT-` names get `source` `whatsapp`. When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
+`AUD-`/`PTT-` names get `source` `folder:WhatsApp` (the rule's step 2). When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
 is encoded to FLAC first (`Store.keepAsFLAC`). Without ffmpeg its last piece answers 503 and the upload is kept for a
 later try; `serverInfo.encodesWav` says whether it can.
 
@@ -449,8 +542,8 @@ file copied elsewhere before it was imported lost it; they now look at the name 
   `importedFrom`), to tell why they had the wrong source. Files whose folders mention WhatsApp but whose name
   doesn't are listed and left as they are. Running it again changes nothing.
 - It also gives screenshots placed before the server read the app from their names what a new one gets
-  (`"source": "screenshots"` and `app`; see [Sidecar](#sidecar-json)), and prints how many it corrected for each app.
-  Only `facts.source`, `facts.app` and `facts.correctedAt` change.
+  (`"source": "screenshots"` and `screenshotApp`; see [Sidecar](#sidecar-json)), and prints how many it corrected for each app.
+  Only `facts.source`, `facts.screenshotApp` and `facts.correctedAt` change.
 
 ## Importing files already on the server's disk
 
@@ -470,10 +563,9 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
   `.ogg`, `.opus` and `.wav`.
 - Each file is hashed; one whose sha256 the data folder already has (an earlier run, a device, or another copy
   found in this run) is a **duplicate** and isn't copied. A new file is copied to `.cache/import/`, hashed again,
-  and placed like an upload (month folder, safe name, sidecar), with `source` from its folder like the Android
-  app (`camera`, `screenshots`, `whatsapp`, `other`), or `whatsapp` when WhatsApp named it
-  (`IMG-20230115-WA0012.jpg`) wherever it was found (`media.SourceOfPath`). Screenshots get their `app` from
-the name, as uploads do.
+  and placed like an upload (month folder, safe name, sidecar), with `source` from the one rule (see [Sources](#sources)) over its name, where it was found (`importedFrom`)
+  and its camera (read with vipsheader and ffprobe as its other facts are, and the user's marks in `cameras.json`
+  as they were when the run started). Screenshots get their `screenshotApp` from the name, as uploads do.
 - **Every source file that is done, copied or duplicate, is moved to a folder of this run inside `--imported`**,
   named by when the run started, keeping its path from the searched folder down
   (`D:\Archive\phone DCIM\Camera\x.jpg` → `D:\Imported\2026-10-20-19-15-42\phone DCIM\Camera\x.jpg`), so runs
@@ -621,8 +713,7 @@ stream takes as long as it takes. Instead: headers must arrive within 10 s; Grap
 
 `query serverInfo { api version search previews posters nudityScan }` says what works on this server, so an app
 shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed),
-`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the
-library), the
+`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the library), `cameras` (cameras are read: `Media.camera`, `cameras`, `setCamera`), the
 server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
 (1 today). An app asks once when it connects, rather than learning from errors.
 

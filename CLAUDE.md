@@ -13,7 +13,7 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/authentication.md](docs/authentication.md): enrollment (one-time codes, certificate issuing, device
   registry), the admin API, revocation, withholding private files from a device.
 - [docs/media.md](docs/media.md): the data folder and sidecar format, resumable `PUT /upload/{sha256}`,
-  `GET /media/{sha256}` with Range, previews and video posters, `/verify`, the change feed, nudity scores, private
+  `GET /media/{sha256}` with Range, previews and video posters, `/verify`, sources (the one rule) and cameras, the change feed, nudity scores, private
   files, hidden collections, sound recordings (recordings, calls, voice messages; hidden until shown), imports,
   turns between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
@@ -109,7 +109,7 @@ upload, `feed.go` the change feed (ordered by when a sidecar last changed; the o
 the device's `View`, so a view change sends only the files whose visibility changed, an unreadable cursor restarts
 the feed, and notes and stories can join later), `library.go` the per-user map, `sidecar.go` the
 sidecar format and the only code that rewrites one (`rewriteSidecar`; a rewrite clients must see sets a time that
-`Sidecar.ChangedAt` counts). `source.go` tells a file's source from its path and name; `audionames.go` reads sound recordings (dates, calls,
+`Sidecar.ChangedAt` counts). `source.go` has `SourceOf`, the only place a file's source (kind) is decided (name, path, camera tags and marks, what the device sent), with old ids such as `whatsapp` mapped once at read; `camera.go` reads camera tags (`ReadCamera`) and `cameras.go` keeps the user's marks (`cameras.json`) and moves files when one changes; `audionames.go` reads sound recordings (dates, calls,
 ffprobe, WAV to FLAC) for the import and uploads alike. HTTP handlers for
 upload/original/preview/verify are in `http.go` and `verify.go`. Previews: `previewspec.go` parses and plans a
 request, `preview.go` makes previews with libvips (NumCPU/2 at once), inside the server through `vipslib*.go`
