@@ -144,9 +144,10 @@ type DataCopy struct {
 	DailyAt string `json:"dailyAt"`
 	// The copy is on the data folder's own disk: a failing disk would take both.
 	SameDisk bool `json:"sameDisk"`
-	// Originals in the data folder at the last compare, and how many of them the copy held; 0 before a compare.
+	// Originals in the data folder now (known before any compare).
 	Originals int `json:"originals"`
-	Copied    int `json:"copied"`
+	// Originals the copy held at the last compare; 0 before one.
+	Copied int `json:"copied"`
 	// Originals the copy lacked, and their bytes.
 	Missing      int   `json:"missing"`
 	MissingBytes int64 `json:"missingBytes"`

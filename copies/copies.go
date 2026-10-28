@@ -215,6 +215,12 @@ func (c *Copier) CompareIfOld(ctx context.Context, maxAge time.Duration) bool {
 	return true
 }
 
+// Originals is how many originals the data folder holds now, from the store's index (no compare needed).
+func (c *Copier) Originals() int {
+	u := c.store.Usage(media.View{})
+	return u.Photos + u.Videos + u.Audio
+}
+
 // SameDisk reports whether the copy is on the data folder's disk, which a failing disk would take with it.
 func (c *Copier) SameDisk() (bool, error) { return sameDisk(c.store.Root(), c.Folder) }
 

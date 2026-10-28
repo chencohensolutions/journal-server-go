@@ -34,7 +34,7 @@ func (r *Resolver) copiesOf(ctx context.Context) ([]*copies.Copier, error) {
 // dataCopy is how a copy is doing, from its status and its last compare; an old compare is made again meanwhile.
 func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 	r.Copies.CompareIfOld(c)
-	result := &model.DataCopy{Folder: c.Folder, Realtime: c.Realtime, DailyAt: c.At}
+	result := &model.DataCopy{Folder: c.Folder, Realtime: c.Realtime, DailyAt: c.At, Originals: c.Originals()}
 	result.SameDisk, _ = c.SameDisk()
 	running, last := c.Status()
 	if running != nil {
@@ -49,7 +49,6 @@ func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 	if compared != nil && !compared.At.IsZero() {
 		at := compared.At
 		result.CheckedAt = &at
-		result.Originals = compared.Total
 		result.Copied = compared.Total - compared.Originals
 		result.Missing, result.MissingBytes = compared.Originals, compared.OriginalBytes
 		result.InCopyOnly = compared.InCopyOnly

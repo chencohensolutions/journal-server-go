@@ -38,8 +38,9 @@ type DataCopy {
   dailyAt: String!
   "The copy is on the data folder's own disk: a failing disk would take both."
   sameDisk: Boolean!
-  "Originals in the data folder at the last compare, and how many of them the copy held; 0 before a compare."
+  "Originals in the data folder now (known before any compare)."
   originals: Int!
+  "Originals the copy held at the last compare; 0 before one."
   copied: Int!
   "Originals the copy lacked, and their bytes."
   missing: Int!
