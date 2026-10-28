@@ -104,6 +104,12 @@ func openStore(root string, now func() time.Time, readOnly bool) (*Store, error)
 		return nil, fmt.Errorf("index %s: %w", root, err)
 	}
 	log.Printf("media: indexed %d files in %s after %s", len(s.items), root, time.Since(started).Round(time.Millisecond))
+	if !readOnly {
+		// A JPEG being kept as JPEG XL by a process that was stopped halfway (keepjxl.go).
+		if err := s.Turn(s.finishReplacements); err != nil {
+			log.Printf("media: finishing stopped JPEG XL replacements in %s: %v", root, err)
+		}
+	}
 	return s, nil
 }
 

@@ -653,9 +653,15 @@ The JPEG XL is the file from then on, under **its own sha256**, beside where the
   program (`vips/bin/libjxl.dll` from `scripts/bundle-vips`, Homebrew's `lib/libjxl.dylib`), or at `"libjxl"` in
   config.json, and loaded through purego like libvips; `serverInfo.keepsJpegAsJxl` says whether it is.
 - **On disk**, `Store.KeepAsJXL` packs and checks before its turn; in the turn it places the JPEG XL and its sidecar,
-  then deletes the JPEG's sidecar and the JPEG. A stop in between leaves the JPEG on disk, which the index leaves out
-  (its sha256 is a JPEG XL's `encodedFrom`); delete it by hand. Other processes on the folder drop the JPEG when they
-  catch up (`indexItem`). The [copies](copies.md) drop the JPEG too, once the copy's JPEG XL is checked to make it
+  then deletes the JPEG's sidecar and the JPEG, all recorded first in `.cache/jxl/replacing/<the JPEG's sha256>.json`
+  and the record deleted once done. A process killed in between (Ctrl+C never is: it stops between files) leaves the
+  record, and the next process to open the folder (the server, a script) settles it in a turn: with the JPEG XL's
+  sidecar written, it finishes (the JPEG XL checked whole by its sha256, then the JPEG's sidecar and the JPEG, checked
+  to be that JPEG, deleted); without it, it undoes (the JPEG XL it placed deleted; the JPEG was never touched). The
+  temp files of a stopped write go too, so no spare copy is left. A JPEG XL that isn't whole is never trusted: the
+  JPEG and the record stay, and the log says so. Until then the index leaves a JPEG left beside its JPEG XL out (its
+  sha256 is a JPEG XL's `encodedFrom`), and other processes on the folder drop the JPEG when they catch up
+  (`indexItem`). The [copies](copies.md) drop the JPEG too, once the copy's JPEG XL is checked to make it
   byte for byte: only the JPEG XL is kept anywhere.
 
 **The files already there** (`scripts/jxl`), made to run overnight beside the server:
@@ -666,8 +672,10 @@ go run ./scripts/jxl --user hen --until 07:00          # keeps them as JPEG XL u
 go run ./scripts/jxl --user hen --report               # what has been saved so far, from the sidecars
 ```
 
-It packs `--jobs` files at once (half the CPUs), one turn each to place them, oldest month first; `--limit n` stops
-after n files, Ctrl+C after the files in hand. It ends, as `--report` does, with what keeping JPEGs as JPEG XL has
+It packs `--jobs` files at once (half the CPUs), one turn each to place them, oldest month first, and says every 10
+seconds how far it is: the percent done, the JPEGs' size so far and their JPEG XLs', how much smaller, the rate and
+the time left. `--limit n` stops after n files, Ctrl+C after the files in hand; killed outright, the next run (or the
+server's next start) finishes or undoes the file it was placing. It ends, as `--report` does, with what keeping JPEGs as JPEG XL has
 saved: the JPEGs kept and their JPEG XLs, in bytes and percent, the JPEGs still JPEG, and the whole data folder's
 originals before and after. JPEGs it couldn't keep are listed in `.cache/jxl/failed.tsv` with why, and skipped by
 later runs (`--retry` tries them again). With `"index": "daily"`, a JPEG XL gets its JPEG's index results at the next

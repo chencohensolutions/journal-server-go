@@ -3,6 +3,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -130,6 +131,91 @@ func TestAJPEGLeftBesideItsJXLIsLeftOut(t *testing.T) {
 	}
 	if found, ok := f.store.Find(old.Sha256()); !ok || found.Sha256() != kept.Sha256() {
 		t.Errorf("the JPEG's sha256 finds %+v %v", found, ok)
+	}
+}
+
+// TestAStoppedReplacementIsFinishedOrUndone stops KeepAsJXL's turn at each of its steps (the files as a killed process
+// leaves them, with its record) and opens the data folder again: before the JPEG XL's sidecar, the replacement is
+// undone and the JPEG stays; after it, the replacement is finished and the JPEG goes. No spare copy is left either way.
+func TestAStoppedReplacementIsFinishedOrUndone(t *testing.T) {
+	x := testJXL(t)
+	f := newFixture(t)
+	jpeg := photoJPEG(t, 200, 100, 85)
+	old := f.uploadJPEG(jpeg, "IMG_1.jpg")
+	jpegPath := filepath.Join(f.root, filepath.FromSlash(old.Path))
+	jpegSidecar, err := os.ReadFile(jpegPath + ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.store.JXL = x
+	kept, err := f.store.KeepAsJXL(old.Sha256())
+	if err != nil {
+		t.Fatal(err)
+	}
+	jxlPath := filepath.Join(f.root, filepath.FromSlash(kept.Path))
+	jxl, _ := os.ReadFile(jxlPath)
+	jxlSidecar, _ := os.ReadFile(jxlPath + ".json")
+	record := filepath.Join(f.root, ".cache", "jxl", "replacing", old.Sha256()+".json")
+	if _, err := os.Stat(record); !os.IsNotExist(err) {
+		t.Fatalf("the record outlived the replacement: %v", err)
+	}
+
+	exists := func(path string) bool { _, err := os.Stat(path); return err == nil }
+	stopped := func(settled bool, files map[string][]byte) {
+		t.Helper()
+		for _, p := range []string{jpegPath, jpegPath + ".json", jxlPath, jxlPath + ".json"} {
+			os.Remove(p)
+		}
+		for p, data := range files {
+			if err := os.WriteFile(p, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		os.MkdirAll(filepath.Dir(record), 0o755)
+		data, _ := json.Marshal(replacing{JPEG: old.Path, JPEGSha: old.Sha256(), JXL: kept.Path, JXLSha: kept.Sha256()})
+		os.WriteFile(record, data, 0o644)
+		os.WriteFile(filepath.Join(filepath.Dir(jxlPath), "."+filepath.Base(jxlPath)+".json.123.tmp"), []byte("{"), 0o644)
+		os.Remove(filepath.Join(f.root, ".cache", "index.json")) // the folder is read again, as after any change
+		f.reopen()
+		if exists(record) == settled {
+			t.Errorf("the record is there: %v; settled: %v", exists(record), settled)
+		}
+		if temps, _ := filepath.Glob(filepath.Join(filepath.Dir(jxlPath), ".*.tmp")); len(temps) > 0 {
+			t.Errorf("half-written files left: %v", temps)
+		}
+	}
+	undone := func(stage string) {
+		t.Helper()
+		if exists(jxlPath) || exists(jxlPath+".json") || !exists(jpegPath) || !exists(jpegPath+".json") {
+			t.Errorf("%s: not undone", stage)
+		}
+		if got, ok := f.store.Get(old.Sha256()); !ok || got.Path != old.Path {
+			t.Errorf("%s: the JPEG isn't in the index: %+v", stage, got)
+		}
+	}
+	finished := func(stage string) {
+		t.Helper()
+		if exists(jpegPath) || exists(jpegPath+".json") || !exists(jxlPath) || !exists(jxlPath+".json") {
+			t.Errorf("%s: not finished", stage)
+		}
+		if found, ok := f.store.Find(old.Sha256()); !ok || found.Sha256() != kept.Sha256() {
+			t.Errorf("%s: the JPEG's sha256 finds %+v", stage, found)
+		}
+	}
+
+	stopped(true, map[string][]byte{jpegPath: jpeg, jpegPath + ".json": jpegSidecar}) // before the JPEG XL was placed
+	undone("before the JPEG XL")
+	stopped(true, map[string][]byte{jpegPath: jpeg, jpegPath + ".json": jpegSidecar, jxlPath: jxl}) // before its sidecar
+	undone("before the JPEG XL's sidecar")
+	stopped(true, map[string][]byte{jpegPath: jpeg, jpegPath + ".json": jpegSidecar, jxlPath: jxl, jxlPath + ".json": jxlSidecar})
+	finished("before the JPEG's sidecar went")
+	stopped(true, map[string][]byte{jpegPath: jpeg, jxlPath: jxl, jxlPath + ".json": jxlSidecar})
+	finished("before the JPEG went")
+
+	// A JPEG XL that isn't whole is never trusted: the JPEG stays, and so does the record, for the next time.
+	stopped(false, map[string][]byte{jpegPath: jpeg, jxlPath: jxl[:len(jxl)/2], jxlPath + ".json": jxlSidecar})
+	if !exists(jpegPath) {
+		t.Error("the JPEG went though its JPEG XL isn't whole")
 	}
 }
 
