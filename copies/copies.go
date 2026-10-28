@@ -68,6 +68,8 @@ type Copier struct {
 	comparing   bool      // a compare is being made
 	stale       bool      // files were copied since the last compare
 	unreachable time.Time // when the folder was first found out of reach; zero while it can be reached
+	stop        context.CancelFunc // ends the full pass going now
+	stopped     bool               // Stop was asked during this pass
 }
 
 // New is a copier of store into config's folder.
@@ -79,8 +81,15 @@ func New(user string, store *media.Store, config auth.CopyConfig, now func() tim
 // Progress is a pass under way.
 type Progress struct {
 	StartedAt time.Time
-	Files     int
-	Bytes     int64
+	Files     int   // files copied so far, sidecars too
+	Bytes     int64 // and their bytes
+	// A full pass first finds what it will copy (Counting): the originals the copy lacks and their bytes. DoneFiles
+	// of them are in place so far, and DoneBytes are written, the original in hand included.
+	Counting   bool
+	TotalFiles int
+	TotalBytes int64
+	DoneFiles  int
+	DoneBytes  int64
 }
 
 // Pass is how a full pass ended.
@@ -92,6 +101,7 @@ type Pass struct {
 	Dropped               int   // JPEGs deleted from the copy once their JPEG XL was in it (jxl.go)
 	DroppedBytes          int64 // and their size
 	Err                   error // what stopped the pass (folder missing, disk full), or nil
+	Stopped               bool  // Stop ended it before it copied everything
 }
 
 // Report is what a copy lacks: what a pass would copy now.
@@ -229,20 +239,68 @@ func (c *Copier) SameDisk() (bool, error) { return sameDisk(c.store.Root(), c.Fo
 func (c *Copier) Run(ctx context.Context) Pass {
 	c.passMu.Lock()
 	defer c.passMu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	pass := Pass{StartedAt: c.now()}
 	c.mu.Lock()
-	c.running = &Progress{StartedAt: pass.StartedAt}
+	c.running = &Progress{StartedAt: pass.StartedAt, Counting: true}
+	c.stop, c.stopped = cancel, false
 	c.mu.Unlock()
 	pass.Err = c.Ready()
 	if pass.Err == nil {
-		pass.Err = c.copy(ctx, c.items(), true, &pass)
+		items := c.items()
+		var needed map[string]bool
+		if needed, pass.Err = c.plan(ctx, items); pass.Err == nil {
+			pass.Err = c.copy(ctx, items, needed, true, &pass)
+		}
 	}
 	pass.FinishedAt = c.now()
 	c.mu.Lock()
-	c.running = nil
+	if c.stopped && errors.Is(pass.Err, context.Canceled) {
+		pass.Stopped, pass.Err = true, nil
+	}
+	c.running, c.stop, c.stopped = nil, nil, false
 	c.last = &pass
 	c.mu.Unlock()
 	return pass
+}
+
+// Stop ends the full pass going now, in the middle of the original in hand (its temp file is removed, so the copy
+// never holds part of one); what it copied stays. It reports whether a pass was going.
+func (c *Copier) Stop() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stop == nil {
+		return false
+	}
+	c.stopped = true
+	c.stop()
+	return true
+}
+
+// plan finds the originals a full pass copies (by path) and sets the pass's totals, so its progress is in what it
+// really copies.
+func (c *Copier) plan(ctx context.Context, items []media.Item) (map[string]bool, error) {
+	needed := map[string]bool{}
+	var files int
+	var bytes int64
+	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		// One that can't be looked at is tried by the pass, which counts it as failed if it fails again.
+		if need, err := c.originalNeeded(item); need || err != nil {
+			needed[item.Path] = true
+			files++
+			bytes += item.Sidecar.Facts.Size
+		}
+	}
+	c.mu.Lock()
+	if c.running != nil {
+		c.running.Counting, c.running.TotalFiles, c.running.TotalBytes = false, files, bytes
+	}
+	c.mu.Unlock()
+	return needed, nil
 }
 
 // Check is a pass that copies nothing: what the copy lacks now. With paths, it lists them (relative to the data
@@ -359,7 +417,7 @@ func (c *Copier) RunRealtime(ctx context.Context) {
 		started := c.now()
 		err := c.Ready()
 		if err == nil {
-			err = c.copy(ctx, items, root, &pass)
+			err = c.copy(ctx, items, nil, root, &pass)
 		}
 		c.passMu.Unlock()
 		if pass.Files > 0 || pass.Dropped > 0 {
@@ -392,7 +450,14 @@ func (c *Copier) source(path string) string {
 func (c *Copier) target(path string) string { return filepath.Join(c.Folder, filepath.FromSlash(path)) }
 
 // copy copies what the copy lacks of items and (with root) the root files, adding to pass.
-func (c *Copier) copy(ctx context.Context, items []media.Item, root bool, pass *Pass) error {
+func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string]bool, root bool, pass *Pass) error {
+	written := func(n int64) {
+		c.mu.Lock()
+		if c.running != nil {
+			c.running.DoneBytes += n
+		}
+		c.mu.Unlock()
+	}
 	counted := func(n int64) {
 		pass.Files++
 		pass.Bytes += n
@@ -411,21 +476,29 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, root bool, pass *
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		need, err := c.originalNeeded(item)
-		if err != nil {
-			failed(item.Path, err)
-			continue
+		need := needed[item.Path]
+		if needed == nil {
+			var err error
+			if need, err = c.originalNeeded(item); err != nil {
+				failed(item.Path, err)
+				continue
+			}
 		}
 		if need {
-			n, err := c.copyOriginal(item)
-			if errors.Is(err, ErrDiskFull) {
-				return err
+			n, err := c.copyOriginal(ctx, item, written)
+			if errors.Is(err, ErrDiskFull) || ctx.Err() != nil {
+				return errors.Join(err, ctx.Err())
 			}
 			if err != nil {
 				failed(item.Path, err)
 				continue // without its original, its sidecar waits too
 			}
 			counted(n)
+			c.mu.Lock()
+			if c.running != nil {
+				c.running.DoneFiles++
+			}
+			c.mu.Unlock()
 		}
 		if n, copied, err := copySmall(c.source(item.Path)+".json", c.target(item.Path)+".json"); err != nil {
 			failed(item.Path+".json", err)
@@ -472,7 +545,7 @@ func (c *Copier) originalNeeded(item media.Item) (bool, error) {
 
 // copyOriginal copies an original through a temp file beside its place in the copy, checks the bytes against its
 // sha256 and only then renames it into place, so the copy never holds part of an original.
-func (c *Copier) copyOriginal(item media.Item) (int64, error) {
+func (c *Copier) copyOriginal(ctx context.Context, item media.Item, written func(int64)) (int64, error) {
 	src, err := os.Open(c.source(item.Path))
 	if err != nil {
 		return 0, err
@@ -496,7 +569,7 @@ func (c *Copier) copyOriginal(item media.Item) (int64, error) {
 	}
 	defer os.Remove(tmp.Name()) // already moved away once in place
 	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, hash), src)
+	n, err := io.Copy(io.MultiWriter(tmp, hash, progress{ctx, written}), src)
 	if err == nil {
 		err = tmp.Sync()
 	}
@@ -514,6 +587,20 @@ func (c *Copier) copyOriginal(item media.Item) (int64, error) {
 	}
 	os.Chtimes(dest, info.ModTime(), info.ModTime())
 	return n, nil
+}
+
+// progress counts an original's bytes as they are written, and ends its copy when the pass is stopped.
+type progress struct {
+	ctx     context.Context
+	written func(int64)
+}
+
+func (p progress) Write(b []byte) (int, error) {
+	if err := p.ctx.Err(); err != nil {
+		return 0, err
+	}
+	p.written(int64(len(b)))
+	return len(b), nil
 }
 
 // smallNeeded reports whether a small file (a sidecar, people.json, settings.json) differs from the copy's: a

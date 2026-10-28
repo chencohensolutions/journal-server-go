@@ -13,17 +13,22 @@ import (
 
 // StartCopy is the resolver for the startCopy field.
 func (r *mutationResolver) StartCopy(ctx context.Context, folder string) (*model.DataCopy, error) {
-	mine, err := r.copiesOf(ctx)
+	c, err := r.copyOf(ctx, folder)
 	if err != nil {
 		return nil, err
 	}
-	for _, c := range mine {
-		if c.Folder == folder {
-			r.Copies.Start(c)
-			return r.dataCopy(c), nil
-		}
+	r.Copies.Start(c)
+	return r.dataCopy(c), nil
+}
+
+// StopCopy is the resolver for the stopCopy field.
+func (r *mutationResolver) StopCopy(ctx context.Context, folder string) (*model.DataCopy, error) {
+	c, err := r.copyOf(ctx, folder)
+	if err != nil {
+		return nil, err
 	}
-	return nil, coded(CodeInvalidArgument, "%q is not one of your copies", folder)
+	c.Stop()
+	return r.dataCopy(c), nil
 }
 
 // Copies is the resolver for the copies field.

@@ -306,3 +306,51 @@ func TestCompareIsKeptForTheApps(t *testing.T) {
 		t.Error("still unreachable once back")
 	}
 }
+
+// A pass first counts what it copies, so its progress is in bytes of that; Stop ends it in the middle of a file,
+// leaving no part of it in the copy, and the next pass copies the rest.
+func TestPassCountsWhatItCopiesAndStops(t *testing.T) {
+	store, c := newCopier(t)
+	big := strings.Repeat("x", 64<<20)
+	for _, name := range []string{"VID_1.mp4", "VID_2.mp4", "VID_3.mp4"} {
+		addPhoto(t, store, name, big+name)
+	}
+	done := make(chan Pass)
+	go func() { done <- c.Run(context.Background()) }()
+	var seen Progress
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if running, _ := c.Status(); running != nil && !running.Counting && running.DoneBytes > 0 {
+			seen = *running
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the pass never started copying")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if seen.TotalFiles != 3 || seen.TotalBytes != 3*int64(len(big))+3*9 {
+		t.Errorf("totals: %+v", seen)
+	}
+	if !c.Stop() {
+		t.Fatal("Stop found no pass")
+	}
+	pass := <-done
+	if !pass.Stopped || pass.Err != nil || pass.Files >= 6 {
+		t.Errorf("stopped pass: %+v", pass)
+	}
+	if c.Stop() {
+		t.Error("Stop after the pass found one")
+	}
+	for path := range tree(t, c.Folder) {
+		if strings.HasSuffix(path, ".copying") {
+			t.Errorf("a partial file stayed: %s", path)
+		}
+	}
+	if pass := c.Run(context.Background()); pass.Stopped || pass.Err != nil {
+		t.Errorf("the next pass: %+v", pass)
+	}
+	if report, _ := c.Check(context.Background(), false); report.Originals != 0 {
+		t.Errorf("after the next pass the copy lacks %+v", report)
+	}
+}

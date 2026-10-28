@@ -126,13 +126,23 @@ type CopyPass struct {
 	Bytes int64 `json:"bytes"`
 	// Files that couldn't be copied; the next pass tries them again.
 	Failed int `json:"failed"`
+	// It was stopped (stopCopy) before it copied everything.
+	Stopped bool `json:"stopped"`
 }
 
 type CopyProgress struct {
 	StartedAt time.Time `json:"startedAt"`
-	// Files copied so far, and their bytes.
+	// Files copied so far, sidecars too, and their bytes.
 	Files int   `json:"files"`
 	Bytes int64 `json:"bytes"`
+	// The pass is still finding what to copy; the totals below are 0 until it knows.
+	Counting bool `json:"counting"`
+	// The originals this pass copies, and their bytes.
+	TotalFiles int   `json:"totalFiles"`
+	TotalBytes int64 `json:"totalBytes"`
+	// How many of them are in place, and the bytes written so far, the original in hand included.
+	DoneFiles int   `json:"doneFiles"`
+	DoneBytes int64 `json:"doneBytes"`
 }
 
 type DataCopy struct {

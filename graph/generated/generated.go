@@ -95,12 +95,18 @@ type ComplexityRoot struct {
 		Files      func(childComplexity int) int
 		FinishedAt func(childComplexity int) int
 		StartedAt  func(childComplexity int) int
+		Stopped    func(childComplexity int) int
 	}
 
 	CopyProgress struct {
-		Bytes     func(childComplexity int) int
-		Files     func(childComplexity int) int
-		StartedAt func(childComplexity int) int
+		Bytes      func(childComplexity int) int
+		Counting   func(childComplexity int) int
+		DoneBytes  func(childComplexity int) int
+		DoneFiles  func(childComplexity int) int
+		Files      func(childComplexity int) int
+		StartedAt  func(childComplexity int) int
+		TotalBytes func(childComplexity int) int
+		TotalFiles func(childComplexity int) int
 	}
 
 	DataCopy struct {
@@ -294,6 +300,7 @@ type ComplexityRoot struct {
 		StartCopy            func(childComplexity int, folder string) int
 		StartIndexing        func(childComplexity int) int
 		StartUpload          func(childComplexity int, input model.StartUploadInput) int
+		StopCopy             func(childComplexity int, folder string) int
 	}
 
 	NotFound struct {
@@ -425,6 +432,7 @@ type MutationResolver interface {
 	SetCall(ctx context.Context, sha256 string, call model.CallInput) (*model.Media, error)
 	SetCamera(ctx context.Context, make string, model string, mine bool) ([]*model.CameraModel, error)
 	StartCopy(ctx context.Context, folder string) (*model.DataCopy, error)
+	StopCopy(ctx context.Context, folder string) (*model.DataCopy, error)
 	SetHiddenCollections(ctx context.Context, input model.HiddenCollectionsInput) (*model.HiddenCollections, error)
 	StartIndexing(ctx context.Context) (*model.Indexing, error)
 	PauseIndexing(ctx context.Context) (*model.Indexing, error)
@@ -686,6 +694,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CopyPass.StartedAt(childComplexity), true
+	case "CopyPass.stopped":
+		if e.ComplexityRoot.CopyPass.Stopped == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyPass.Stopped(childComplexity), true
 
 	case "CopyProgress.bytes":
 		if e.ComplexityRoot.CopyProgress.Bytes == nil {
@@ -693,6 +707,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CopyProgress.Bytes(childComplexity), true
+	case "CopyProgress.counting":
+		if e.ComplexityRoot.CopyProgress.Counting == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.Counting(childComplexity), true
+	case "CopyProgress.doneBytes":
+		if e.ComplexityRoot.CopyProgress.DoneBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.DoneBytes(childComplexity), true
+	case "CopyProgress.doneFiles":
+		if e.ComplexityRoot.CopyProgress.DoneFiles == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.DoneFiles(childComplexity), true
 	case "CopyProgress.files":
 		if e.ComplexityRoot.CopyProgress.Files == nil {
 			break
@@ -705,6 +737,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CopyProgress.StartedAt(childComplexity), true
+	case "CopyProgress.totalBytes":
+		if e.ComplexityRoot.CopyProgress.TotalBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.TotalBytes(childComplexity), true
+	case "CopyProgress.totalFiles":
+		if e.ComplexityRoot.CopyProgress.TotalFiles == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CopyProgress.TotalFiles(childComplexity), true
 
 	case "DataCopy.checkedAt":
 		if e.ComplexityRoot.DataCopy.CheckedAt == nil {
@@ -1593,6 +1637,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.StartUpload(childComplexity, args["input"].(model.StartUploadInput)), true
+	case "Mutation.stopCopy":
+		if e.ComplexityRoot.Mutation.StopCopy == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_stopCopy_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.StopCopy(childComplexity, args["folder"].(string)), true
 
 	case "NotFound.id":
 		if e.ComplexityRoot.NotFound.ID == nil {
@@ -2353,6 +2408,11 @@ extend type Query {
 extend type Mutation {
   "Starts a full pass of one of the caller's copies now, in the background; a pass already going goes on."
   startCopy(folder: String!): DataCopy!
+  """
+  Stops the full pass of one of the caller's copies going now, in the middle of the file in hand (its partial file is
+  removed); what it copied stays. Nothing happens when no pass is going.
+  """
+  stopCopy(folder: String!): DataCopy!
 }
 
 extend type ServerInfo {
@@ -2403,9 +2463,17 @@ type DataCopy {
 
 type CopyProgress {
   startedAt: Time!
-  "Files copied so far, and their bytes."
+  "Files copied so far, sidecars too, and their bytes."
   files: Int!
   bytes: Int64!
+  "The pass is still finding what to copy; the totals below are 0 until it knows."
+  counting: Boolean!
+  "The originals this pass copies, and their bytes."
+  totalFiles: Int!
+  totalBytes: Int64!
+  "How many of them are in place, and the bytes written so far, the original in hand included."
+  doneFiles: Int!
+  doneBytes: Int64!
 }
 
 type CopyPass {
@@ -2416,6 +2484,8 @@ type CopyPass {
   bytes: Int64!
   "Files that couldn't be copied; the next pass tries them again."
   failed: Int!
+  "It was stopped (stopCopy) before it copied everything."
+  stopped: Boolean!
 }
 `, BuiltIn: false},
 	{Name: "../schema/hidden.graphql", Input: `# --- Hidden collections -------------------------------------------------------
@@ -3460,6 +3530,8 @@ func (ec *executionContext) childFields_CopyPass(ctx context.Context, field grap
 		return ec.fieldContext_CopyPass_bytes(ctx, field)
 	case "failed":
 		return ec.fieldContext_CopyPass_failed(ctx, field)
+	case "stopped":
+		return ec.fieldContext_CopyPass_stopped(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type CopyPass", field.Name)
 }
@@ -3472,6 +3544,16 @@ func (ec *executionContext) childFields_CopyProgress(ctx context.Context, field 
 		return ec.fieldContext_CopyProgress_files(ctx, field)
 	case "bytes":
 		return ec.fieldContext_CopyProgress_bytes(ctx, field)
+	case "counting":
+		return ec.fieldContext_CopyProgress_counting(ctx, field)
+	case "totalFiles":
+		return ec.fieldContext_CopyProgress_totalFiles(ctx, field)
+	case "totalBytes":
+		return ec.fieldContext_CopyProgress_totalBytes(ctx, field)
+	case "doneFiles":
+		return ec.fieldContext_CopyProgress_doneFiles(ctx, field)
+	case "doneBytes":
+		return ec.fieldContext_CopyProgress_doneBytes(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type CopyProgress", field.Name)
 }
@@ -4337,6 +4419,20 @@ func (ec *executionContext) field_Mutation_startUpload_args(ctx context.Context,
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_stopCopy_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "folder",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["folder"] = arg0
 	return args, nil
 }
 
@@ -5486,6 +5582,29 @@ func (ec *executionContext) fieldContext_CopyPass_failed(_ context.Context, fiel
 	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
+func (ec *executionContext) _CopyPass_stopped(ctx context.Context, field graphql.CollectedField, obj *model.CopyPass) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyPass_stopped(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Stopped, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyPass_stopped(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyPass", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _CopyProgress_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5552,6 +5671,121 @@ func (ec *executionContext) _CopyProgress_bytes(ctx context.Context, field graph
 	)
 }
 func (ec *executionContext) fieldContext_CopyProgress_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_counting(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_counting(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Counting, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_counting(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_totalFiles(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_totalFiles(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.TotalFiles, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_totalFiles(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_totalBytes(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_totalBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.TotalBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_totalBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_doneFiles(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_doneFiles(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DoneFiles, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_doneFiles(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CopyProgress_doneBytes(ctx context.Context, field graphql.CollectedField, obj *model.CopyProgress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CopyProgress_doneBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DoneBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CopyProgress_doneBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CopyProgress", field, false, false, errors.New("field of type Int64 does not have child fields"))
 }
 
@@ -8640,6 +8874,50 @@ func (ec *executionContext) fieldContext_Mutation_startCopy(ctx context.Context,
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_startCopy_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_stopCopy(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_stopCopy(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().StopCopy(ctx, fc.Args["folder"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.DataCopy) graphql.Marshaler {
+			return ec.marshalNDataCopy2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDataCopy(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_stopCopy(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_DataCopy(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_stopCopy_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -13549,6 +13827,11 @@ func (ec *executionContext) _CopyPass(ctx context.Context, sel ast.SelectionSet,
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "stopped":
+			out.Values[i] = ec._CopyPass_stopped(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -13595,6 +13878,31 @@ func (ec *executionContext) _CopyProgress(ctx context.Context, sel ast.Selection
 			}
 		case "bytes":
 			out.Values[i] = ec._CopyProgress_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "counting":
+			out.Values[i] = ec._CopyProgress_counting(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalFiles":
+			out.Values[i] = ec._CopyProgress_totalFiles(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalBytes":
+			out.Values[i] = ec._CopyProgress_totalBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "doneFiles":
+			out.Values[i] = ec._CopyProgress_doneFiles(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "doneBytes":
+			out.Values[i] = ec._CopyProgress_doneBytes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -14890,6 +15198,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "startCopy":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_startCopy(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "stopCopy":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_stopCopy(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

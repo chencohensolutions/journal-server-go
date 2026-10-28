@@ -15,6 +15,11 @@ extend type Query {
 extend type Mutation {
   "Starts a full pass of one of the caller's copies now, in the background; a pass already going goes on."
   startCopy(folder: String!): DataCopy!
+  """
+  Stops the full pass of one of the caller's copies going now, in the middle of the file in hand (its partial file is
+  removed); what it copied stays. Nothing happens when no pass is going.
+  """
+  stopCopy(folder: String!): DataCopy!
 }
 
 extend type ServerInfo {
@@ -65,9 +70,17 @@ type DataCopy {
 
 type CopyProgress {
   startedAt: Time!
-  "Files copied so far, and their bytes."
+  "Files copied so far, sidecars too, and their bytes."
   files: Int!
   bytes: Int64!
+  "The pass is still finding what to copy; the totals below are 0 until it knows."
+  counting: Boolean!
+  "The originals this pass copies, and their bytes."
+  totalFiles: Int!
+  totalBytes: Int64!
+  "How many of them are in place, and the bytes written so far, the original in hand included."
+  doneFiles: Int!
+  doneBytes: Int64!
 }
 
 type CopyPass {
@@ -78,4 +91,6 @@ type CopyPass {
   bytes: Int64!
   "Files that couldn't be copied; the next pass tries them again."
   failed: Int!
+  "It was stopped (stopCopy) before it copied everything."
+  stopped: Boolean!
 }

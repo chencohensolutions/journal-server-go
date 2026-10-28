@@ -95,6 +95,12 @@ copies, and only counts and the copy's folder, never file names; the counts incl
   `sameDisk` and `freeBytes` (null while the folder is out of reach) are read at each request.
 - **`startCopy`** starts a full pass in the background, as `journal-server copy` does, unless one is going; a folder
   that isn't one of the caller's copies answers `INVALID_ARGUMENT`.
+- **Progress in what the pass really copies**: a full pass first finds the originals the copy lacks (`counting`, a
+  look at each one's size in the copy), so `running` has `totalFiles` and `totalBytes`, then `doneFiles` and
+  `doneBytes`, the bytes counted as they are written (a large video moves the bar too).
+- **`stopCopy`** stops the pass going now, in the middle of the original in hand: its temp file is removed, what was
+  copied stays, and the pass ends `stopped` (logged as stopped from a phone). The next pass, daily or Copy now, goes
+  on from there, since a pass copies only what the copy lacks.
 
 ## Code
 

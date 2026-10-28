@@ -31,6 +31,20 @@ func (r *Resolver) copiesOf(ctx context.Context) ([]*copies.Copier, error) {
 	return r.Copies.Of(auth.FromContext(ctx).Username), nil
 }
 
+// copyOf is the request's user's copy in folder.
+func (r *Resolver) copyOf(ctx context.Context, folder string) (*copies.Copier, error) {
+	mine, err := r.copiesOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range mine {
+		if c.Folder == folder {
+			return c, nil
+		}
+	}
+	return nil, coded(CodeInvalidArgument, "%q is not one of your copies", folder)
+}
+
 // dataCopy is how a copy is doing, from its status and its last compare; an old compare is made again meanwhile.
 func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 	r.Copies.CompareIfOld(c)
@@ -38,11 +52,13 @@ func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 	result.SameDisk, _ = c.SameDisk()
 	running, last := c.Status()
 	if running != nil {
-		result.Running = &model.CopyProgress{StartedAt: running.StartedAt, Files: running.Files, Bytes: running.Bytes}
+		result.Running = &model.CopyProgress{StartedAt: running.StartedAt, Files: running.Files, Bytes: running.Bytes,
+			Counting: running.Counting, TotalFiles: running.TotalFiles, TotalBytes: running.TotalBytes,
+			DoneFiles: running.DoneFiles, DoneBytes: running.DoneBytes}
 	}
 	if last != nil {
 		result.LastPass = &model.CopyPass{StartedAt: last.StartedAt, FinishedAt: last.FinishedAt, Files: last.Files,
-			Bytes: last.Bytes, Failed: last.Failed}
+			Bytes: last.Bytes, Failed: last.Failed, Stopped: last.Stopped}
 	}
 	compared, comparing := c.LastCompare()
 	result.Checking = comparing

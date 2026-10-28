@@ -80,6 +80,11 @@ func runCopy(ctx context.Context, c *copies.Copier) {
 			pass.Files, copies.Size(pass.Bytes), pass.Failed, pass.Err)
 		return
 	}
+	if pass.Stopped {
+		log.Printf("Copy %s → %s stopped from a phone after %s: %d files, %s copied, %d failed", c.User, c.Folder, took,
+			pass.Files, copies.Size(pass.Bytes), pass.Failed)
+		return
+	}
 	line := ""
 	if pass.Failed > 0 && compared.Err == nil {
 		line = ", not copied: " + notCopied(compared.Report)
