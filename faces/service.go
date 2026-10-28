@@ -209,17 +209,14 @@ func (s *Service) Record(user, sha string) []byte {
 	return nil
 }
 
-// Counts is how many of user's files have been read for faces, of all of them; files hide reports true for are left
+// Counts is how many of user's files have been read for faces, of all of them; files the view leaves out are left
 // out of both.
-func (s *Service) Counts(user string, hide func(media.Item) bool) (read, total int) {
+func (s *Service) Counts(user string, view media.View) (read, total int) {
 	p, store := s.users[user], s.library.Store(user)
 	if p == nil {
 		return 0, 0
 	}
-	store.Range(func(item media.Item) {
-		if hide(item) {
-			return
-		}
+	store.RangeSeen(view, func(item media.Item) {
 		total++
 		if p.index.Has(item.Sha256()) {
 			read++

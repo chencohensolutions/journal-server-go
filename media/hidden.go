@@ -278,6 +278,20 @@ func (s *Store) Hides(v View, item Item) bool {
 	return s.hides(v, item)
 }
 
+// RangeSeen is Range over the files the view doesn't leave out. Callers counting what a device may see use it rather
+// than calling Hides from Range's fn: a second read lock taken while a writer waits never comes, and both wait for
+// good.
+func (s *Store) RangeSeen(v View, fn func(Item)) {
+	s.CatchUp()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.items {
+		if !s.hides(v, *item) {
+			fn(*item)
+		}
+	}
+}
+
 // hides is Hides for callers holding s.mu.
 func (s *Store) hides(v View, item Item) bool {
 	if v.WithholdPrivate && item.Sidecar.IsPrivate() {

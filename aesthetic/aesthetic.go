@@ -248,16 +248,13 @@ func (s *Service) Record(user, sha string) []byte {
 	return nil
 }
 
-// Counts is how many of user's files have been scored, of all of them; files hide reports true for are left out.
-func (s *Service) Counts(user string, hide func(media.Item) bool) (read, total int) {
+// Counts is how many of user's files have been scored, of all of them; files the view leaves out are left out.
+func (s *Service) Counts(user string, view media.View) (read, total int) {
 	index, store := s.scores[user], s.library.Store(user)
 	if index == nil {
 		return 0, 0
 	}
-	store.Range(func(item media.Item) {
-		if hide(item) {
-			return
-		}
+	store.RangeSeen(view, func(item media.Item) {
 		total++
 		if index.Has(item.Sha256()) {
 			read++

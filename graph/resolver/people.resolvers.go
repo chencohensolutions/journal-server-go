@@ -174,7 +174,7 @@ func (r *queryResolver) People(ctx context.Context, includeGroups *bool, include
 	for i, p := range people {
 		result.People[i] = toPerson(service, user, p)
 	}
-	result.Read, result.Total = service.Counts(user, v.hides)
+	result.Read, result.Total = service.Counts(user, v.View)
 	return result, nil
 }
 

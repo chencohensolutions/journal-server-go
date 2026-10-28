@@ -152,15 +152,15 @@ func (s *Service) Record(user, sha string) []byte {
 	return data
 }
 
-// Counts is how many of user's photos have been read for text, of all of them; files hide reports true for are left
+// Counts is how many of user's photos have been read for text, of all of them; files the view leaves out are left
 // out of both.
-func (s *Service) Counts(user string, hide func(media.Item) bool) (read, total int) {
+func (s *Service) Counts(user string, view media.View) (read, total int) {
 	t, store := s.users[user], s.library.Store(user)
 	if t == nil {
 		return 0, 0
 	}
-	store.Range(func(item media.Item) {
-		if hide(item) || item.Sidecar.Facts.Kind != media.KindPhoto {
+	store.RangeSeen(view, func(item media.Item) {
+		if item.Sidecar.Facts.Kind != media.KindPhoto {
 			return
 		}
 		total++

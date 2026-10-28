@@ -187,7 +187,7 @@ func (e *testEnv) uploadPhotoWith(t *testing.T, client *http.Client, data []byte
 
 // indexed is how many of hen's files search has read.
 func indexed(env *testEnv) int {
-	n, _ := env.search.Counts("hen", func(media.Item) bool { return false })
+	n, _ := env.search.Counts("hen", media.View{})
 	return n
 }
 

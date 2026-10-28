@@ -93,13 +93,13 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []
 			}
 			hits = append(hits, found...)
 			result.Model = r.Search.Model()
-			result.Indexed, result.Total = r.Search.Counts(user, v.hides)
+			result.Indexed, result.Total = r.Search.Counts(user, v.View)
 		} else if r.TextInPhotos != nil {
-			result.Indexed, result.Total = r.TextInPhotos.Counts(user, v.hides)
+			result.Indexed, result.Total = r.TextInPhotos.Counts(user, v.View)
 		}
 	} else {
 		hits = lastTaken(v, withPeople, skip+n, keep)
-		result.Indexed, result.Total = r.Faces.Counts(user, v.hides)
+		result.Indexed, result.Total = r.Faces.Counts(user, v.View)
 	}
 	vector := func(string) []float32 { return nil }
 	if r.Search != nil {
