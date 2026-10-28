@@ -3,8 +3,9 @@
 // comes back from it (media.Store.KeepAsJXL). The JPEG XL's sidecar keeps the JPEG's sha256, size, type and name in
 // encodedFrom, so phones and imports holding the JPEG find it, and GET /media/{the JPEG's sha256} still gives the JPEG.
 // The server keeps new uploads so as they arrive; this does the files already there, and is made to run overnight:
-// beside the running server (media/turns.go), --jobs files at once, stopping at --until or Ctrl+C after the files in
-// hand. Running again continues where it stopped. A JPEG libjxl can't keep (CMYK, arithmetic coding, a damaged file)
+// beside the running server (media/turns.go), --jobs files at once, saying every 10 seconds how far it is and how much
+// smaller the JPEGs became, and stopping at --until or Ctrl+C after the files in hand. Running again continues where it
+// stopped: each JPEG is replaced in one short turn, so even a run killed outright leaves every file whole. A JPEG libjxl can't keep (CMYK, arithmetic coding, a damaged file)
 // stays, and is listed in .cache/jxl/failed.tsv so later runs skip it (--retry tries them again).
 //
 // It ends with what keeping JPEGs as JPEG XL has saved in the data folder, in all and in percent (also on its own,
@@ -206,18 +207,32 @@ func convert(ctx context.Context, store *media.Store, todo []media.Item, jobs in
 				errs = append(errs, fmt.Errorf("%s: %w", res.item.Path, res.err))
 			}
 		}
-		if time.Since(lastProgress) > 30*time.Second {
+		if time.Since(lastProgress) > progressEvery {
 			lastProgress = time.Now()
-			rate := float64(done) / time.Since(started).Seconds()
-			left := time.Duration(float64(len(todo)-done)/rate) * time.Second
-			fmt.Fprintf(progress, "... %d of %d (%.1f/s, about %s left), %s saved so far\n", done, len(todo), rate,
-				left.Round(time.Minute), size(r.jpegBytes-r.jxlBytes))
+			fmt.Fprintln(progress, r.progressLine(done, len(todo), time.Since(started)))
 		}
 	}
 	if len(errs) > 5 {
 		errs = append(errs[:5], fmt.Errorf("and %d more", len(errs)-5))
 	}
 	return r, errors.Join(errs...)
+}
+
+// progressEvery is how often a run says how far it is.
+const progressEvery = 10 * time.Second
+
+// progressLine is how far a run is after done of total files in elapsed, in plain ASCII for any terminal:
+// "12.3% | 10612 of 86127 | 31.2 GB as JPEG -> 24.7 GB as JPEG XL (20.8% smaller, 6.49 GB saved) | 6.2/s, about 3h50m
+// left".
+func (r *runReport) progressLine(done, total int, elapsed time.Duration) string {
+	rate := float64(done) / max(elapsed.Seconds(), 0.001)
+	left := "?"
+	if rate > 0 {
+		left = (time.Duration(float64(total-done)/rate) * time.Second).Round(time.Minute).String()
+	}
+	return fmt.Sprintf("%.1f%% | %d of %d | %s as JPEG -> %s as JPEG XL (%s smaller, %s saved) | %.1f/s, about %s left",
+		100*float64(done)/float64(max(total, 1)), done, total, size(r.jpegBytes), size(r.jxlBytes),
+		percent(r.jpegBytes-r.jxlBytes, r.jpegBytes), size(r.jpegBytes-r.jxlBytes), rate, left)
 }
 
 // reason is why a JPEG stays, in a few words for the failure list and the report.
