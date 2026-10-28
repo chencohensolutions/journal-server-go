@@ -26,7 +26,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
   faces, OCR, search, DINOv2 similar photos and duplicates, LAION aesthetic scores), the models and their costs,
   and how to add an index.
 - [docs/copies.md](docs/copies.md): plain copies of each user's data folder in other folders (another disk), daily
-  and as files arrive (`copies` per user in config.json, `Store.OnWrite`), and `copy` / `copy report`.
+  and as files arrive (`copies` per user in config.json, `Store.OnWrite`), `copy` / `copy report`, and the phone's
+  view of its copies (public `copies`, `startCopy`, from each copy's last compare).
 
 Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
 

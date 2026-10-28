@@ -54,15 +54,20 @@ type Copier struct {
 	store *media.Store
 	now   func() time.Time
 
-	passMu sync.Mutex // one pass, or realtime batch, at a time
+	passMu    sync.Mutex // one pass, or realtime batch, at a time
+	compareMu sync.Mutex // one compare at a time
 
-	mu      sync.Mutex
-	running *Progress
-	last    *Pass
-	queued  map[string]bool // sha256s waiting for the realtime batch
-	dropped map[string]bool // JPEGs kept as JPEG XL that this copy has no more (jxl.go)
-	root    bool            // the root files wait too
-	wake    chan struct{}
+	mu          sync.Mutex
+	running     *Progress
+	last        *Pass
+	queued      map[string]bool // sha256s waiting for the realtime batch
+	dropped     map[string]bool // JPEGs kept as JPEG XL that this copy has no more (jxl.go)
+	root        bool            // the root files wait too
+	wake        chan struct{}
+	compared    *Compare  // the last compare, for the apps; nil before the first
+	comparing   bool      // a compare is being made
+	stale       bool      // files were copied since the last compare
+	unreachable time.Time // when the folder was first found out of reach; zero while it can be reached
 }
 
 // New is a copier of store into config's folder.
@@ -91,6 +96,7 @@ type Pass struct {
 
 // Report is what a copy lacks: what a pass would copy now.
 type Report struct {
+	Total         int   // originals in the data folder
 	Originals     int   // originals not in the copy
 	OriginalBytes int64 // and their size
 	Sidecars      int   // sidecars, people.json, settings.json that differ from the copy's
@@ -113,16 +119,100 @@ func (c *Copier) Status() (running *Progress, last *Pass) {
 	return running, last
 }
 
-// Ready reports why the copy folder can't be written to now, or nil.
+// Ready reports why the copy folder can't be written to now, or nil. The copier remembers since when it can't
+// (UnreachableSince).
 func (c *Copier) Ready() error {
+	err := c.ready()
+	c.mu.Lock()
+	switch {
+	case err == nil:
+		c.unreachable = time.Time{}
+	case c.unreachable.IsZero():
+		c.unreachable = c.now()
+	}
+	c.mu.Unlock()
+	return err
+}
+
+func (c *Copier) ready() error {
 	info, err := os.Stat(c.Folder)
 	if err != nil {
-		return fmt.Errorf("the folder can't be reached (disk unplugged?): %w", err)
+		return fmt.Errorf("%w (disk unplugged?): %w", ErrUnreachable, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("%s is not a folder", c.Folder)
+		return fmt.Errorf("%w: %s is not a folder", ErrUnreachable, c.Folder)
 	}
 	return nil
+}
+
+// ErrUnreachable stops a pass or a compare when the copy folder isn't there: an unplugged disk, a share that is down.
+var ErrUnreachable = errors.New("the folder can't be reached")
+
+// UnreachableSince is when the copy folder was first found out of reach, by a pass, a compare or a realtime batch;
+// zero while it can be reached.
+func (c *Copier) UnreachableSince() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.unreachable
+}
+
+// Compare is a compare of the copy with the data folder (Check without paths), kept for the apps.
+type Compare struct {
+	// What the copy lacked at the last compare that could be made, made At; zero before one could.
+	Report
+	At time.Time
+	// Why the latest compare couldn't be made (the folder out of reach), or nil.
+	Err error
+}
+
+// LastCompare is the last compare (nil before the first ended), and whether one is being made now.
+func (c *Copier) LastCompare() (last *Compare, comparing bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.compared != nil {
+		cmp := *c.compared
+		last = &cmp
+	}
+	return last, c.comparing
+}
+
+// CompareNow compares the copy with the data folder and keeps the answer for LastCompare. When the folder can't be
+// reached, the counts of the last compare that could be made are kept, with the error.
+func (c *Copier) CompareNow(ctx context.Context) Compare {
+	c.compareMu.Lock()
+	defer c.compareMu.Unlock()
+	c.mu.Lock()
+	c.comparing, c.stale = true, false
+	c.mu.Unlock()
+	report, err := c.Check(ctx, false)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cmp := Compare{Report: report, At: c.now()}
+	if err != nil {
+		cmp = Compare{Err: err}
+		if c.compared != nil {
+			cmp.Report, cmp.At = c.compared.Report, c.compared.At
+		}
+	}
+	c.compared, c.comparing = &cmp, false
+	return cmp
+}
+
+// CompareIfOld starts a compare in the background when there is none yet, the last is older than maxAge, or files
+// were copied since it; not while a compare or a pass is going (the server compares after each pass). It reports
+// whether it started one.
+func (c *Copier) CompareIfOld(ctx context.Context, maxAge time.Duration) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.comparing || c.running != nil {
+		return false
+	}
+	if c.compared != nil && !c.stale && c.now().Sub(c.compared.At) < maxAge && c.compared.Err == nil {
+		return false
+	}
+	c.comparing = true
+	go c.CompareNow(ctx)
+	return true
 }
 
 // SameDisk reports whether the copy is on the data folder's disk, which a failing disk would take with it.
@@ -152,12 +242,13 @@ func (c *Copier) Run(ctx context.Context) Pass {
 // Check is a pass that copies nothing: what the copy lacks now. With paths, it lists them (relative to the data
 // folder, with forward slashes).
 func (c *Copier) Check(ctx context.Context, paths bool) (Report, error) {
-	var report Report
+	items := c.items()
+	report := Report{Total: len(items)}
 	if err := c.Ready(); err != nil {
 		return report, err
 	}
 	known := map[string]bool{}
-	for _, item := range c.items() {
+	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return report, err
 		}
@@ -265,6 +356,11 @@ func (c *Copier) RunRealtime(ctx context.Context) {
 			err = c.copy(ctx, items, root, &pass)
 		}
 		c.passMu.Unlock()
+		if pass.Files > 0 || pass.Dropped > 0 {
+			c.mu.Lock()
+			c.stale = true
+			c.mu.Unlock()
+		}
 		switch {
 		case err != nil:
 			log.Printf("copy %s → %s: %d files wait for the next full pass: %v", c.User, c.Folder, len(items), err)

@@ -25,6 +25,7 @@ import (
 
 	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/copies"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
@@ -46,6 +47,10 @@ type testEnv struct {
 	library    *media.Library
 	// Reads what journal-server index added ("index": "daily"); nil otherwise.
 	refreshIndexes func()
+	// The copies in config.json, which the public API shows; nothing copies until a test starts them (startCopies).
+	copiers []*copies.Copier
+	// Ends when the test does: passes and compares the API starts run until then.
+	copiesCtx context.Context
 }
 
 // fakeFaceModel as config.FaceModel gives a test env face search without the models: the test writes the faces
@@ -155,13 +160,17 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 			ix.runs = readerRuns{reader}
 		}
 	}
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix))
+	copiers := newCopiers(config, library)
+	copiesCtx, cancelCopies := context.WithCancel(context.Background())
+	t.Cleanup(cancelCopies)
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix, copyRunner{copiesCtx, copiers}))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
-		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes, library: library}
+		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes, library: library,
+		copiers: copiers, copiesCtx: copiesCtx}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {

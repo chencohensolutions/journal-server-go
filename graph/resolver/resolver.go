@@ -38,6 +38,8 @@ type Resolver struct {
 	Local *localindex.Server
 	// Starts, follows and pauses the reading of each user's files for the indexes; nil when no file is read.
 	IndexRuns IndexRunner
+	// Each user's copies of their data folder on other disks (copies); nil on a server that keeps none.
+	Copies CopyRunner
 }
 
 // APIVersion is serverInfo.api: raised when a change needs newer apps.

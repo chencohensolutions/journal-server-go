@@ -76,6 +76,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Aesthetic:    r.AestheticScores != nil,
 		LocalIndexes: r.Local.On(),
 		Indexing:     r.IndexRuns != nil,
+		Copies:       r.Resolver.Copies != nil,
 		Audio:        true,
 		// The stores find ffmpeg the way posters do.
 		EncodesWav: r.Previews != nil && r.Previews.PostersAvailable(),

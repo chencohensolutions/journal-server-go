@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"log"
@@ -253,4 +254,55 @@ func equalTrees(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// The apps read the last compare (LastCompare): its total and what the copy lacked, kept while the folder is out of
+// reach, and since when it is.
+func TestCompareIsKeptForTheApps(t *testing.T) {
+	store, c := newCopier(t)
+	addPhoto(t, store, "IMG_1.jpg", "first photo")
+	addPhoto(t, store, "IMG_2.jpg", "second photo")
+	if last, comparing := c.LastCompare(); last != nil || comparing {
+		t.Fatalf("before a compare: %+v %v", last, comparing)
+	}
+	if cmp := c.CompareNow(context.Background()); cmp.Err != nil || cmp.Total != 2 || cmp.Originals != 2 || cmp.At.IsZero() {
+		t.Fatalf("first compare: %+v", cmp)
+	}
+	c.Run(context.Background())
+	// A recent compare isn't made again; one older than maxAge is, in the background.
+	if c.CompareIfOld(context.Background(), time.Hour) {
+		t.Error("a recent compare was made again")
+	}
+	if !c.CompareIfOld(context.Background(), 0) {
+		t.Fatal("an old compare wasn't made again")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if last, comparing := c.LastCompare(); !comparing && last.Originals == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the compare after the pass never ended")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	folder := c.Folder
+	c.Folder = filepath.Join(folder, "unplugged")
+	if !c.UnreachableSince().IsZero() {
+		t.Error("unreachable before it was looked at")
+	}
+	cmp := c.CompareNow(context.Background())
+	since := c.UnreachableSince()
+	if !errors.Is(cmp.Err, ErrUnreachable) || cmp.Total != 2 || cmp.Originals != 0 || since.IsZero() {
+		t.Errorf("unplugged: %+v since %v", cmp, since)
+	}
+	c.Run(context.Background())
+	if got := c.UnreachableSince(); !got.Equal(since) {
+		t.Errorf("a later look moved since from %v to %v", since, got)
+	}
+	c.Folder = folder
+	if c.CompareNow(context.Background()); !c.UnreachableSince().IsZero() {
+		t.Error("still unreachable once back")
+	}
 }

@@ -91,7 +91,7 @@ func serve(config auth.AppConfig) {
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
-		Handler:   newMux(config, enrollment, library, previews, ix),
+		Handler:   newMux(config, enrollment, library, previews, ix, copyRunner{running, copiers}),
 		TLSConfig: tlsConfig,
 		HTTP2:     &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow},
 		// No overall read or write timeout: uploads and video streams take as long as they take.
@@ -209,7 +209,8 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
 // anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
-func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes) *http.ServeMux {
+func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes,
+	copyRuns resolver.CopyRunner) *http.ServeMux {
 	registry := enrollment.Registry
 	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
 	userStore := func(r *http.Request) *media.Store {
@@ -223,7 +224,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux := http.NewServeMux()
 	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix, local)))))
+		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix, local, copyRuns)))))
 	// The nudity scan, faces and search read a finished upload right away.
 	var wake []func()
 	if ix.reader != nil {
@@ -243,11 +244,12 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	return mux
 }
 
-func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes, local *localindex.Server) *handler.Server {
+func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes, local *localindex.Server,
+	copyRuns resolver.CopyRunner) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Enrollment: enrollment, Library: library, Search: ix.search, Faces: ix.faces,
 			TextInPhotos: ix.ocr, SimilarPhotos: ix.similar, AestheticScores: ix.aesthetic, NudityScan: ix.nudity != nil,
-			Previews: previews, Version: serverVersion(), Local: local, IndexRuns: ix.runs},
+			Previews: previews, Version: serverVersion(), Local: local, IndexRuns: ix.runs, Copies: copyRuns},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})

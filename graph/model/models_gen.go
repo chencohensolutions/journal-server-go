@@ -118,6 +118,56 @@ type Collection struct {
 	Hidden   bool `json:"hidden"`
 }
 
+type CopyPass struct {
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	// Files copied, and their bytes.
+	Files int   `json:"files"`
+	Bytes int64 `json:"bytes"`
+	// Files that couldn't be copied; the next pass tries them again.
+	Failed int `json:"failed"`
+}
+
+type CopyProgress struct {
+	StartedAt time.Time `json:"startedAt"`
+	// Files copied so far, and their bytes.
+	Files int   `json:"files"`
+	Bytes int64 `json:"bytes"`
+}
+
+type DataCopy struct {
+	// The copy's folder, as config.json names it.
+	Folder string `json:"folder"`
+	// Each file is also copied a few seconds after it arrives.
+	Realtime bool `json:"realtime"`
+	// The daily pass, in the server's local time ("03:30").
+	DailyAt string `json:"dailyAt"`
+	// The copy is on the data folder's own disk: a failing disk would take both.
+	SameDisk bool `json:"sameDisk"`
+	// Originals in the data folder at the last compare, and how many of them the copy held; 0 before a compare.
+	Originals int `json:"originals"`
+	Copied    int `json:"copied"`
+	// Originals the copy lacked, and their bytes.
+	Missing      int   `json:"missing"`
+	MissingBytes int64 `json:"missingBytes"`
+	// Originals in the copy that the data folder no longer has; they are kept.
+	InCopyOnly int `json:"inCopyOnly"`
+	// Free bytes on the copy's disk; null when its folder can't be reached.
+	FreeBytes *int64 `json:"freeBytes,omitempty"`
+	// When the counts were found; null before the first compare that could be made.
+	CheckedAt *time.Time `json:"checkedAt,omitempty"`
+	// A compare is being made: the counts change when it ends.
+	Checking bool `json:"checking"`
+	// A pass going now.
+	Running *CopyProgress `json:"running,omitempty"`
+	// How the last full pass since the server started ended.
+	LastPass *CopyPass `json:"lastPass,omitempty"`
+	// Why the copy isn't kept up now; null when it is.
+	Problem *CopyProblem `json:"problem,omitempty"`
+	// FOLDER_MISSING: since when the folder can't be reached. DISK_FULL: when the pass stopped.
+	ProblemSince *time.Time `json:"problemSince,omitempty"`
+}
+
 type DuplicateGroup struct {
 	// Copies of the same photo, the best looking first (by its aesthetic score, when it has one).
 	Media []*Media `json:"media"`
@@ -528,6 +578,8 @@ type ServerInfo struct {
 	KeepsJpegAsJxl bool `json:"keepsJpegAsJxl"`
 	// Photos' and videos' cameras are read when they arrive (Media.camera); cameras and setCamera are there.
 	Cameras bool `json:"cameras"`
+	// A phone can see how its user's copies are doing and start a pass (copies, startCopy).
+	Copies bool `json:"copies"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
@@ -679,6 +731,63 @@ func (e *ChangeKind) UnmarshalJSON(b []byte) error {
 }
 
 func (e ChangeKind) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type CopyProblem string
+
+const (
+	// The copy's folder can't be reached (a disk unplugged, a share that is down): passes stop until it is back.
+	CopyProblemFolderMissing CopyProblem = "FOLDER_MISSING"
+	// The last pass stopped: the copy's disk had no room for the next file (and 1 GB to spare).
+	CopyProblemDiskFull CopyProblem = "DISK_FULL"
+)
+
+var AllCopyProblem = []CopyProblem{
+	CopyProblemFolderMissing,
+	CopyProblemDiskFull,
+}
+
+func (e CopyProblem) IsValid() bool {
+	switch e {
+	case CopyProblemFolderMissing, CopyProblemDiskFull:
+		return true
+	}
+	return false
+}
+
+func (e CopyProblem) String() string {
+	return string(e)
+}
+
+func (e *CopyProblem) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = CopyProblem(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid CopyProblem", str)
+	}
+	return nil
+}
+
+func (e CopyProblem) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *CopyProblem) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e CopyProblem) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

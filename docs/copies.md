@@ -5,8 +5,8 @@ network share. A copy holds the originals, their sidecars, `people.json`, `setti
 own layout (`media/<year>/<year-month>/…`). It can be read without the server, and in an emergency a server's
 `data_folder` can point at it (the indexes are then rebuilt, since `.cache/` isn't copied).
 
-Copies are optional and set per user. Copies to other machines over the internet, encryption, history and the
-apps' view of copies are not built yet.
+Copies are optional and set per user. A phone sees how its user's copies are doing and can start a pass ("In the
+apps", below). Copies to other machines over the internet, encryption and history are not built yet.
 
 ## Setting it up
 
@@ -78,6 +78,24 @@ hen → E:\Journal copy\hen   (realtime, daily 03:30)
 "Last pass" covers the passes since the server started. `--list` prints the paths of the files the copy lacks.
 Every pass also writes one line to the server's log.
 
+## In the apps
+
+Since Oct 28, 2026 the public schema has `copies` and `startCopy(folder:)` (`graph/schema/copies.graphql`;
+`serverInfo.copies`), for the apps' Settings › Backup › Copies on other disks. A device sees only its own user's
+copies, and only counts and the copy's folder, never file names; the counts include files hidden on devices.
+
+- **The counts come from the last compare**, the report's compare kept per copy (`Copier.CompareNow`,
+  `LastCompare`): how many originals the data folder had (`originals`), how many the copy held (`copied`), what it
+  lacked (`missing`, `missingBytes`) and `inCopyOnly`, with `checkedAt`. Comparing reads every original's size in
+  both folders, seconds on a USB disk, so a request never waits for one: the server compares after every full pass,
+  and a request starts one in the background (`checking` until it ends) when the last is 10 minutes old, files were
+  copied in real time since, or it failed. A compare that can't reach the folder keeps the last good counts.
+- **Problems**: `FOLDER_MISSING` from the first time a pass, a compare or a realtime batch found the folder out of
+  reach (`Copier.UnreachableSince`) until one finds it again; `DISK_FULL` when the last pass stopped on a full disk.
+  `sameDisk` and `freeBytes` (null while the folder is out of reach) are read at each request.
+- **`startCopy`** starts a full pass in the background, as `journal-server copy` does, unless one is going; a folder
+  that isn't one of the caller's copies answers `INVALID_ARGUMENT`.
+
 ## Code
 
 - `copies/`: `Copier` (`Run` a full pass, `Check` the report's compare, `Changed` and `RunRealtime` for realtime
@@ -85,3 +103,4 @@ Every pass also writes one line to the server's log.
 - `copy.go`: making the copiers from config.json, the daily schedule, and the realtime start.
 - `auth.CopyConfig`, and `checkCopies` in `auth/config.go`.
 - The admin schema's `copyReport` and `startCopy`, and `admincli.go`'s `copy` commands.
+- The public schema's `copies` and `startCopy` (`graph/resolver/copies.go`, through `copyRunner` in `copy.go`).

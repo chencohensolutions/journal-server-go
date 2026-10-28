@@ -69,9 +69,11 @@ func copyDaily(ctx context.Context, c *copies.Copier) {
 	}
 }
 
-// runCopy runs a full pass and logs how it went, with what the copy still lacks when it stopped short.
+// runCopy runs a full pass and logs how it went, then compares the copy with the data folder for the apps (and the
+// log, when files failed).
 func runCopy(ctx context.Context, c *copies.Copier) {
 	pass := c.Run(ctx)
+	compared := c.CompareNow(ctx)
 	took := pass.FinishedAt.Sub(pass.StartedAt).Round(time.Second)
 	if pass.Err != nil {
 		log.Printf("Copy %s → %s stopped after %s: %d files, %s copied, %d failed: %v", c.User, c.Folder, took,
@@ -79,10 +81,8 @@ func runCopy(ctx context.Context, c *copies.Copier) {
 		return
 	}
 	line := ""
-	if pass.Failed > 0 {
-		if report, err := c.Check(ctx, false); err == nil {
-			line = ", not copied: " + notCopied(report)
-		}
+	if pass.Failed > 0 && compared.Err == nil {
+		line = ", not copied: " + notCopied(compared.Report)
 	}
 	if pass.Dropped > 0 {
 		line += fmt.Sprintf(", %d JPEGs kept as JPEG XL deleted from the copy (%s)", pass.Dropped, copies.Size(pass.DroppedBytes))
@@ -94,3 +94,31 @@ func runCopy(ctx context.Context, c *copies.Copier) {
 func notCopied(r copies.Report) string {
 	return fmt.Sprintf("%d originals (%s), %d sidecars", r.Originals, copies.Size(r.OriginalBytes), r.Sidecars)
 }
+
+// compareEvery is how old a copy's compare may be when an app asks how the copy is doing; an older one is made again.
+const compareEvery = 10 * time.Minute
+
+// copyRunner gives the public API each user's copies (resolver.CopyRunner); passes and compares it starts run until
+// ctx ends.
+type copyRunner struct {
+	ctx     context.Context
+	copiers []*copies.Copier
+}
+
+func (r copyRunner) Of(user string) []*copies.Copier {
+	var mine []*copies.Copier
+	for _, c := range r.copiers {
+		if c.User == user {
+			mine = append(mine, c)
+		}
+	}
+	return mine
+}
+
+func (r copyRunner) Start(c *copies.Copier) {
+	if running, _ := c.Status(); running == nil {
+		go runCopy(r.ctx, c)
+	}
+}
+
+func (r copyRunner) CompareIfOld(c *copies.Copier) { c.CompareIfOld(r.ctx, compareEvery) }
