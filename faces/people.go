@@ -200,7 +200,8 @@ func (p *people) add(files []string) {
 	named := map[string][]namedFace{} // the faces the user named, by file
 	for _, person := range p.named {
 		for _, ref := range person.Faces {
-			named[ref.Sha256] = append(named[ref.Sha256], namedFace{person.ID, ref})
+			sha := p.current(ref.Sha256)
+			named[sha] = append(named[sha], namedFace{person.ID, ref})
 		}
 	}
 	for _, f := range ordered {
@@ -331,14 +332,25 @@ func (p *people) notFaces() map[string]map[FaceID]bool {
 
 // find is the face found closest to ref's box in ref's file, if one overlaps it by half or more.
 func (p *people) find(ref media.FaceRef) (FaceID, bool) {
+	sha := p.current(ref.Sha256)
 	best, bestIoU := -1, 0.5
-	for n, f := range p.index.Faces(ref.Sha256) {
+	for n, f := range p.index.Faces(sha) {
 		box := [4]float64{float64(f.Box[0]), float64(f.Box[1]), float64(f.Box[2]), float64(f.Box[3])}
 		if o := iou(box, ref.Box); o >= bestIoU {
 			best, bestIoU = n, o
 		}
 	}
-	return FaceID{ref.Sha256, best}, best >= 0
+	return FaceID{sha, best}, best >= 0
+}
+
+// current is the sha256 the file named sha has now: a JPEG kept as JPEG XL since the user named a face in it is named
+// in people.json by the JPEG's, and is found by the JPEG XL's (media.Store.Find). The pixels, so the faces' boxes,
+// are the same.
+func (p *people) current(sha string) string {
+	if item, ok := p.store.Find(sha); ok {
+		return item.Sha256()
+	}
+	return sha
 }
 
 // ref is how people.json names face id.

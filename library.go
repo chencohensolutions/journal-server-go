@@ -81,6 +81,22 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	return previews
 }
 
+// loadJXL loads libjxl (config.json "libjxl", else beside the vips program found) and gives it to every store, which
+// then keeps uploaded JPEG photos as JPEG XL, losslessly; nil, and JPEGs kept as they are, without it.
+func loadJXL(config auth.AppConfig, library *media.Library) *media.JXL {
+	vips, _, _ := media.FindVips(config.Vips)
+	jxl, err := media.LoadJXL(media.JXLLibraries(vips, config.LibJXL))
+	if err != nil {
+		log.Printf("JPEG photos are kept as they are: %v (it comes with libvips: go run ./scripts/bundle-vips on Windows, brew install vips; or set \"libjxl\" in config.json)", err)
+		return nil
+	}
+	log.Printf("JPEG photos kept as JPEG XL, losslessly, with libjxl %s", jxl.Version)
+	for _, user := range library.Users() {
+		library.Store(user).JXL = jxl
+	}
+	return jxl
+}
+
 // readCamerasWith has every store read new files' cameras (media.ReadCamera) with what the previews use: libvips in
 // the server, or vipsheader with "vips_as_program", and ffprobe.
 func readCamerasWith(library *media.Library, previews *media.Previews) {

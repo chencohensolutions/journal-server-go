@@ -49,6 +49,21 @@ func (s *Store) Verify(ctx context.Context, sha string) (Verdict, error) {
 		return "", err
 	}
 	defer file.Close()
+	// A JPEG kept as JPEG XL, asked about by the JPEG's sha256: the JPEG is made again and hashed, so a device deletes
+	// its JPEG only when the server can give it back byte for byte.
+	if from := item.Sidecar.Facts.EncodedFrom; from != nil && from.Sha256 == sha && item.Sidecar.Facts.IsJXLOfJPEG() {
+		if s.JXL == nil {
+			return "", ErrNoJXL
+		}
+		file.Close()
+		if _, err := s.JPEGOf(item); errors.Is(err, ErrNotTheJPEG) {
+			log.Printf("media: verify %s: THE JPEG XL DOESN'T MAKE ITS JPEG: %v", item.Path, err)
+			return VerifyMismatch, nil
+		} else if err != nil {
+			return "", err
+		}
+		return VerifyOK, nil
+	}
 	h := sha256.New()
 	n, err := io.Copy(h, contextReader{ctx, file})
 	if err != nil {
@@ -100,6 +115,10 @@ func VerifyHandler(lookup StoreLookup) http.Handler {
 			return
 		}
 		verdict, err := store.Verify(r.Context(), sha)
+		if errors.Is(err, ErrNoJXL) {
+			http.Error(w, "a JPEG kept as JPEG XL can't be checked without libjxl", http.StatusServiceUnavailable)
+			return
+		}
 		if err != nil {
 			if r.Context().Err() == nil {
 				log.Printf("media: verify %s: %v", sha, err)

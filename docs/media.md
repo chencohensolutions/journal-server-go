@@ -36,7 +36,7 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
 
 ```
 <data_folder>/
-  media/2026/2026-10/IMG_1234.HEIC          ← the original, never modified
+  media/2026/2026-10/IMG_1234.HEIC          ← the original, never modified (a JPEG is kept as JPEG XL: below)
   media/2026/2026-10/IMG_1234.HEIC.json     ← its sidecar
   media/2026/2026-10/IMG_1234 (2).HEIC      ← a different file with the same name
   media/undated/…                           ← files the device sent no date for
@@ -55,6 +55,7 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   .cache/similar/<model>.vectors            ← DINOv2 vectors, for similar photos and duplicates (indexes.md)
   .cache/aesthetic/<model>.vectors          ← each file's aesthetic score (indexes.md)
   .cache/{nudity,faces,search}/<model>.failed.log  ← files those indexes could not read, one line each
+  .cache/jxl/failed.tsv                     ← JPEGs scripts/jxl could not keep as JPEG XL (JPEG XL, below)
 ```
 
 - The month folder is from `takenAt` in the photo's own local time (the offset the device sent).
@@ -296,7 +297,7 @@ PUT … the last piece                          ───▶   checks the sha256
 | `400`, `Upload-Offset: n` | The piece ended early; what arrived is kept | Continue from `n` |
 | `400` without `Upload-Offset` | Bad `Content-Range`, or `Content-Length` doesn't match it | Fix it (a client bug) |
 | `404` | No upload started for this sha256, or it expired | `startUpload` again |
-| `409` | The bytes don't have the declared sha256; the upload is deleted | Hash the file again and start over (it may have been edited meanwhile) |
+| `409` | The bytes don't have the declared sha256, or a JPEG XL doesn't make the JPEG its `encodedFrom` names ([JPEG XL](#jpeg-xl)); the upload is deleted | Hash the file again and start over (it may have been edited meanwhile); for a JPEG XL, send the JPEG itself |
 | `413` | Piece larger than 64 MB | Send smaller pieces |
 | `416`, `Upload-Offset: n` | The piece doesn't start where the received bytes end | Continue from `n` |
 
@@ -315,7 +316,9 @@ PUT … the last piece                          ───▶   checks the sha256
 
 `GET /media/{sha256}` returns the original with its MIME type, `ETag: "<sha256>"`, and
 `Cache-Control: private, max-age=31536000, immutable`, since the content of a sha256 never changes.
-It supports `Range`, which is how videos and sound recordings stream and seek; neither is ever converted.
+It supports `Range`, which is how videos and sound recordings stream and seek; neither is ever converted. A JPEG kept
+as JPEG XL is `image/jxl` at its own sha256; asked for by the JPEG's sha256 it is that JPEG, made again byte for byte
+([JPEG XL](#jpeg-xl)).
 
 ## Verifying before a device deletes its copy
 
@@ -323,7 +326,9 @@ It supports `Range`, which is how videos and sound recordings stream and seek; n
 It answers `200 {"sha256": "…", "result": "ok" | "missing" | "mismatch"}`:
 
 - `ok`: the original and its sidecar are there and the bytes have the sha256. Only then may a device delete its copy
-  (the app's "Free up space" hashes its own copy at the same time; see the client's design.md).
+  (the app's "Free up space" hashes its own copy at the same time; see the client's design.md). Asked by the sha256
+  of a JPEG kept as JPEG XL, the JPEG is made again from the JPEG XL and hashed: `ok` only when it is the JPEG byte
+  for byte (without libjxl, 503).
 - `missing`: not in the index, or the original or its sidecar is gone from the folder (logged).
 - `mismatch`: the original is there but its size or bytes are wrong. The server logs `THE ORIGINAL IS DAMAGED`;
   it doesn't repair it, and an upload of the same sha256 still answers `MediaExists`, so fix it by hand from the
@@ -413,7 +418,9 @@ returns the same cursor). A file changes when it is uploaded, and again when a s
 private or unmarked (see [Private files](#private-files)): it then comes again, whole. To a device the server keeps
 from private files, a private file comes as `deleted`, and so does a file the user hides (one of the
 [hidden collections](#hidden-collections), or nudity) to every device, with `hidden` set, so the device leaves out its
-own copy too. Pages are at most 5000; responses to `/query` are gzipped
+own copy too. A JPEG kept as JPEG XL comes as `deleted` (its JPEG's sha256) right before its JPEG XL, whose
+`encodedFrom` names the JPEG, and as `hidden` too when the user hides it, so the device leaves out its own copy of the
+JPEG ([JPEG XL](#jpeg-xl)). Pages are at most 5000; responses to `/query` are gzipped
 when the client accepts it.
 
 - **The cursor** is opaque. It carries where the device is in the feed (the time of the last change and sha256 of
@@ -605,6 +612,66 @@ shared with the import in `media/audionames.go`):
 `AUD-`/`PTT-` names get `source` `folder:whatsapp` (the rule's step 2). When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
 is encoded to FLAC first (`Store.keepAsFLAC`). Without ffmpeg its last piece answers 503 and the upload is kept for a
 later try; `serverInfo.encodesWav` says whether it can.
+
+## JPEG XL
+
+JPEG photos are kept as JPEG XL (the owner's choice, Oct 28, 2026), losslessly: libjxl packs the JPEG's own
+compressed data again with JPEG XL's better coding, and keeps everything else the JPEG had (its markers, Exif, the
+order of its bytes) in a `jbrd` box, so **the very same JPEG, byte for byte, can be made again from it**. That is
+checked every time before a JPEG is replaced (`JXL.Keep` packs it and makes the JPEG again; only an identical JPEG
+lets the JPEG XL in). Phone photos come out about 20% smaller; the pixels are the JPEG's (libjxl moves Exif's
+orientation into the JPEG XL's header, so it is decoded upright, as the JPEG was).
+
+The JPEG XL is the file from then on, under **its own sha256**, beside where the JPEG was and named like it
+(`IMG_1234.jpg` → `IMG_1234.jxl`), `mimeType` `image/jxl`, with the JPEG in `encodedFrom`, as a WAV kept as FLAC has:
+
+```json
+"encodedFrom": { "sha256": "9f2c…e1", "mimeType": "image/jpeg", "size": 3456789, "fileName": "IMG_1234.jpg" }
+```
+
+- **The JPEG's sha256 still finds it**, as a WAV's finds its FLAC (`Store.Find`): `missingMedia` doesn't list it,
+  `startUpload` answers `MediaExists`, `media(sha256:)` is the JPEG XL, `setPrivate` and `similarMedia` take it for the
+  JPEG XL (a phone names its gallery copy by the JPEG's), an import of the JPEG finds it, and
+  `/verify` makes the JPEG again and hashes it, so a phone holding the JPEG may free its space. `GET /media/{the
+  JPEG's sha256}` gives the JPEG back (made again, `image/jpeg`); `GET /media/{the JPEG XL's}` the JPEG XL. Comparing
+  for duplicates, the JPEG's sha256 is in the sidecar.
+- **The sidecar is the JPEG's** (facts, privacy, the nudity scan, the note), with the JPEG XL's sha256, size, type
+  and name, and `correctedAt` set to the time it was kept, so it comes in the change feed: there the JPEG comes as
+  `deleted` right before its JPEG XL. Edits and paired files that named the JPEG (`versionOf`, `pairedWith`) are
+  rewritten to name the JPEG XL (and come again too). The people the user named in face search keep naming the JPEG
+  in `people.json`, which only the server writes; face search finds them by the JPEG XL (`people.current`).
+- **The indexes aren't read again**: the pictures are the same, so each index (faces, OCR, search, similar photos,
+  aesthetic scores) gives the JPEG XL the JPEG's results (`reading.Carrier`), and the nudity score came with the
+  sidecar. The JPEG's records stay in the caches unused; results are shown only for files in the store.
+- **Previews** are made from the JPEG XL by libvips (it reads JPEG XL, which the Windows bundle has).
+- **When**: an uploaded JPEG photo is kept so before it is placed (`Store.keepUploadAsJXL`, its camera read from the
+  JPEG first). A phone may send the JPEG XL itself, with the JPEG in `StartUploadInput.encodedFrom` (and its
+  `fileName`); the server makes the JPEG again before placing it and answers `409` (`ErrNotTheJPEG`) unless it is
+  byte for byte the JPEG named. The files already there are kept so by `scripts/jxl` (below).
+- **What stays a JPEG**: a JPEG libjxl can't keep (CMYK, arithmetic coding, some unusual encoders, a damaged file),
+  one whose JPEG XL wouldn't be smaller, and every JPEG while libjxl isn't loaded. libjxl is found beside the vips
+  program (`vips/bin/libjxl.dll` from `scripts/bundle-vips`, Homebrew's `lib/libjxl.dylib`), or at `"libjxl"` in
+  config.json, and loaded through purego like libvips; `serverInfo.keepsJpegAsJxl` says whether it is.
+- **On disk**, `Store.KeepAsJXL` packs and checks before its turn; in the turn it places the JPEG XL and its sidecar,
+  then deletes the JPEG's sidecar and the JPEG. A stop in between leaves the JPEG on disk, which the index leaves out
+  (its sha256 is a JPEG XL's `encodedFrom`); delete it by hand. Other processes on the folder drop the JPEG when they
+  catch up (`indexItem`). The [copies](copies.md) drop the JPEG too, once the copy's JPEG XL is checked to make it
+  byte for byte: only the JPEG XL is kept anywhere.
+
+**The files already there** (`scripts/jxl`), made to run overnight beside the server:
+
+```bash
+go run ./scripts/jxl --user hen --dry-run              # packs 200 JPEGs in memory: what a run would save, and how long
+go run ./scripts/jxl --user hen --until 07:00          # keeps them as JPEG XL until 07:00; run again to continue
+go run ./scripts/jxl --user hen --report               # what has been saved so far, from the sidecars
+```
+
+It packs `--jobs` files at once (half the CPUs), one turn each to place them, oldest month first; `--limit n` stops
+after n files, Ctrl+C after the files in hand. It ends, as `--report` does, with what keeping JPEGs as JPEG XL has
+saved: the JPEGs kept and their JPEG XLs, in bytes and percent, the JPEGs still JPEG, and the whole data folder's
+originals before and after. JPEGs it couldn't keep are listed in `.cache/jxl/failed.tsv` with why, and skipped by
+later runs (`--retry` tries them again). With `"index": "daily"`, a JPEG XL gets its JPEG's index results at the next
+`journal-server index` run; until then text search, faces and the others don't find it.
 
 ## Search
 

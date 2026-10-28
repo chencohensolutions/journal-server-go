@@ -95,6 +95,7 @@ type ComplexityRoot struct {
 	}
 
 	EncodedFrom struct {
+		FileName func(childComplexity int) int
 		MimeType func(childComplexity int) int
 		Sha256   func(childComplexity int) int
 		Size     func(childComplexity int) int
@@ -317,22 +318,23 @@ type ComplexityRoot struct {
 	}
 
 	ServerInfo struct {
-		API          func(childComplexity int) int
-		Aesthetic    func(childComplexity int) int
-		Audio        func(childComplexity int) int
-		Cameras      func(childComplexity int) int
-		EncodesWav   func(childComplexity int) int
-		Faces        func(childComplexity int) int
-		Indexing     func(childComplexity int) int
-		LocalIndexes func(childComplexity int) int
-		NudityScan   func(childComplexity int) int
-		Posters      func(childComplexity int) int
-		Previews     func(childComplexity int) int
-		Search       func(childComplexity int) int
-		Similar      func(childComplexity int) int
-		SoundFolders func(childComplexity int) int
-		TextInPhotos func(childComplexity int) int
-		Version      func(childComplexity int) int
+		API            func(childComplexity int) int
+		Aesthetic      func(childComplexity int) int
+		Audio          func(childComplexity int) int
+		Cameras        func(childComplexity int) int
+		EncodesWav     func(childComplexity int) int
+		Faces          func(childComplexity int) int
+		Indexing       func(childComplexity int) int
+		KeepsJpegAsJxl func(childComplexity int) int
+		LocalIndexes   func(childComplexity int) int
+		NudityScan     func(childComplexity int) int
+		Posters        func(childComplexity int) int
+		Previews       func(childComplexity int) int
+		Search         func(childComplexity int) int
+		Similar        func(childComplexity int) int
+		SoundFolders   func(childComplexity int) int
+		TextInPhotos   func(childComplexity int) int
+		Version        func(childComplexity int) int
 	}
 
 	SimilarHit struct {
@@ -629,6 +631,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.DuplicateGroup.Score(childComplexity), true
 
+	case "EncodedFrom.fileName":
+		if e.ComplexityRoot.EncodedFrom.FileName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EncodedFrom.FileName(childComplexity), true
 	case "EncodedFrom.mimeType":
 		if e.ComplexityRoot.EncodedFrom.MimeType == nil {
 			break
@@ -1711,6 +1719,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Indexing(childComplexity), true
+	case "ServerInfo.keepsJpegAsJxl":
+		if e.ComplexityRoot.ServerInfo.KeepsJpegAsJxl == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.KeepsJpegAsJxl(childComplexity), true
 	case "ServerInfo.localIndexes":
 		if e.ComplexityRoot.ServerInfo.LocalIndexes == nil {
 			break
@@ -2024,6 +2038,13 @@ extend type ServerInfo {
   audio: Boolean!
   "The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503."
   encodesWav: Boolean!
+  """
+  The server keeps JPEG photos as JPEG XL, losslessly (libjxl is loaded): an uploaded JPEG is stored as its JPEG XL,
+  a phone's JPEG XL of a JPEG (StartUploadInput.encodedFrom) is checked to make that JPEG byte for byte, and GET
+  /media/{a JPEG's sha256} and verify make the JPEG again. Without it JPEGs are kept as they are, and a JPEG kept as
+  JPEG XL earlier answers 503 when asked for by the JPEG's sha256.
+  """
+  keepsJpegAsJxl: Boolean!
 }
 
 """
@@ -2343,11 +2364,16 @@ type ModelFile {
 # Originals in the user's data folder, identified by the sha256 of their content.
 # The bytes travel over plain HTTP (PUT /upload/{sha256}, GET /media/{sha256}); see docs/media.md.
 
-"The file a sound recording was encoded from, which isn't kept: a WAV kept as FLAC."
+"""
+The file this one was encoded from, which isn't kept: a WAV kept as FLAC, or a JPEG kept as JPEG XL (losslessly:
+GET /media/{the JPEG's sha256} gives that JPEG back byte for byte, and verify checks it so).
+"""
 type EncodedFrom {
   sha256: Sha256!
   mimeType: String!
   size: Int64!
+  "The name the file had; null on WAVs kept as FLAC before Oct 28, 2026."
+  fileName: String
 }
 
 "64 lowercase hex characters: the sha256 of a file's content."
@@ -2423,7 +2449,11 @@ type Media {
   private: Boolean!
   "Who a recorded phone call was with; null for anything but a call."
   call: Call
-  "The WAV this FLAC was made from (on a device, by the server or by the import); asking for its sha256 finds this file."
+  """
+  The WAV this FLAC was made from (on a device, by the server or by the import), or the JPEG this JPEG XL was made
+  from (by the server, or on a device); asking for its sha256 finds this file. In the change feed, a JPEG kept as JPEG
+  XL comes as deleted right before its JPEG XL.
+  """
   encodedFrom: EncodedFrom
   "The original: /media/{sha256}, with Range support."
   url: String!
@@ -2477,8 +2507,10 @@ input StartUploadInput {
   """
   call: CallInput
   """
-  The WAV this FLAC was made from on the device. A WAV is never kept: it is answered as its FLAC (missingMedia,
-  startUpload, media, verify), so neither is sent again. A WAV uploaded as it is, the server keeps as FLAC.
+  The WAV this FLAC was made from on the device, or the JPEG this JPEG XL was made from (losslessly, with libjxl; the
+  server makes the JPEG again and refuses the upload with 409 unless it is byte for byte the one named here). Neither
+  is kept: it is answered as its FLAC or JPEG XL (missingMedia, startUpload, media, verify), so neither is sent again.
+  A WAV or JPEG photo uploaded as it is, the server keeps as FLAC or JPEG XL.
   """
   encodedFrom: EncodedFromInput
 }
@@ -2487,6 +2519,8 @@ input EncodedFromInput {
   sha256: Sha256!
   mimeType: String!
   size: Int64!
+  "The name the file had on the device; a JPEG XL of a JPEG needs it or a JPEG mimeType."
+  fileName: String
 }
 
 union StartUploadResult = UploadReady | MediaExists | UploadRejected
@@ -3142,6 +3176,8 @@ func (ec *executionContext) childFields_EncodedFrom(ctx context.Context, field g
 		return ec.fieldContext_EncodedFrom_mimeType(ctx, field)
 	case "size":
 		return ec.fieldContext_EncodedFrom_size(ctx, field)
+	case "fileName":
+		return ec.fieldContext_EncodedFrom_fileName(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type EncodedFrom", field.Name)
 }
@@ -3472,6 +3508,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
 		return ec.fieldContext_ServerInfo_encodesWav(ctx, field)
+	case "keepsJpegAsJxl":
+		return ec.fieldContext_ServerInfo_keepsJpegAsJxl(ctx, field)
 	case "cameras":
 		return ec.fieldContext_ServerInfo_cameras(ctx, field)
 	case "indexing":
@@ -5083,6 +5121,29 @@ func (ec *executionContext) _EncodedFrom_size(ctx context.Context, field graphql
 }
 func (ec *executionContext) fieldContext_EncodedFrom_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("EncodedFrom", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _EncodedFrom_fileName(ctx context.Context, field graphql.CollectedField, obj *model.EncodedFrom) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EncodedFrom_fileName(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileName, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_EncodedFrom_fileName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EncodedFrom", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
@@ -9651,6 +9712,29 @@ func (ec *executionContext) fieldContext_ServerInfo_encodesWav(_ context.Context
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_keepsJpegAsJxl(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_keepsJpegAsJxl(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KeepsJpegAsJxl, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_keepsJpegAsJxl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_cameras(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -11441,7 +11525,7 @@ func (ec *executionContext) unmarshalInputEncodedFromInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"sha256", "mimeType", "size"}
+	fieldsInOrder := [...]string{"sha256", "mimeType", "size", "fileName"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -11469,6 +11553,13 @@ func (ec *executionContext) unmarshalInputEncodedFromInput(ctx context.Context, 
 				return it, err
 			}
 			it.Size = data
+		case "fileName":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("fileName"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.FileName = data
 		}
 	}
 	return it, nil
@@ -12451,6 +12542,8 @@ func (ec *executionContext) _EncodedFrom(ctx context.Context, sel ast.SelectionS
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "fileName":
+			out.Values[i] = ec._EncodedFrom_fileName(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -14436,6 +14529,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "encodesWav":
 			out.Values[i] = ec._ServerInfo_encodesWav(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "keepsJpegAsJxl":
+			out.Values[i] = ec._ServerInfo_keepsJpegAsJxl(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

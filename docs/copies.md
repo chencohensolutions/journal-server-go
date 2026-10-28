@@ -41,7 +41,13 @@ The copy folder itself is the record of what was copied; there is no other state
 - **Sidecars, people.json, settings.json.** One of these is copied when its size differs from the copy's, or its
   modified time and its bytes both differ. The copy gets the source's modified time, so the next pass can compare
   them without reading them. The time is only a hint that a file changed, never a photo's date.
-- **Nothing is deleted from a copy.** A file gone from the data folder stays in the copy.
+- **Nothing is deleted from a copy**, but for one thing. A file gone from the data folder stays in the copy. A JPEG
+  the data folder keeps as JPEG XL ([media.md](media.md) "JPEG XL") leaves the copy too (the owner's choice, Oct 28,
+  2026), and only when it really is the same file: once the copy has the JPEG XL, the copy's JPEG (found in the
+  same month folder by its sidecar's sha256) must have the sha256 the JPEG XL's `encodedFrom` names, and the copy's
+  JPEG XL, decoded with libjxl, must make it byte for byte. Then the JPEG's sidecar and the JPEG are deleted from
+  the copy, and the pass counts it (`Dropped`, logged with the bytes freed). Without libjxl, or when either check
+  fails, the JPEG stays and the pass counts it as failed, every pass, so it shows in the log.
 - **The data folder is only read.** Copying writes no files, locks or journal lines there, and takes no turn.
   Sidecars are always rewritten whole (by a rename), so reading one without a turn gives a whole file.
 - A file that fails is logged and counted, and the pass goes on. A missing folder or a full disk stops the pass.

@@ -174,6 +174,20 @@ func (s *Service) Read(ctx context.Context, user string, in reading.Input) error
 	return s.indexes[user].Add(in.Item.Sha256(), vector)
 }
 
+// Carry gives the file to the vector of the file from, whose pictures are the same (a JPEG kept as JPEG XL), so it
+// isn't read again; false when from has none.
+func (s *Service) Carry(user, from, to string) (bool, error) {
+	index := s.indexes[user]
+	if index == nil {
+		return false, nil
+	}
+	vector := index.Vector(from)
+	if vector == nil {
+		return false, nil
+	}
+	return true, index.Add(to, vector)
+}
+
 func (s *Service) Finish(user string) {}
 
 func (s *Service) FailureLog() (folder, name string) { return "search", s.model.Name + ".failed.log" }

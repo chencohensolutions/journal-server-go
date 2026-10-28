@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +35,8 @@ const chunkReadTimeout = 10 * time.Minute
 //	201 Upload-Offset: total   the file is stored (also when a piece is repeated afterwards)
 //	400 Upload-Offset: n       the piece ended early; what arrived is kept, go on from n (no header: a bad request)
 //	404                        no upload started (call startUpload), or it expired
-//	409                        the bytes don't match the sha256; the upload is gone, start over
+//	409                        the bytes don't match the sha256, or a JPEG XL doesn't make the JPEG its encodedFrom
+//	                           names; the upload is gone, start over (with the JPEG itself, for the second)
 //	416 Upload-Offset: n       the piece doesn't start at n; continue from n
 func UploadHandler(lookup StoreLookup) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +92,7 @@ func UploadHandler(lookup StoreLookup) http.Handler {
 		case errors.Is(err, ErrNoUpload):
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
-		case errors.Is(err, ErrHashMismatch):
+		case errors.Is(err, ErrHashMismatch), errors.Is(err, ErrNotTheJPEG):
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		case errors.Is(err, ErrNoEncoder):
@@ -134,7 +136,8 @@ func parseContentRange(value string) (start, end, total int64, err error) {
 }
 
 // OriginalHandler serves GET /media/{sha256}: the original, byte for byte, with Range requests,
-// so videos stream and seek. The content never changes, so clients may cache it for good.
+// so videos stream and seek. The content never changes, so clients may cache it for good. A JPEG kept as JPEG XL
+// asked for by the JPEG's sha256 is that JPEG, made again from the JPEG XL (Store.JPEGOf).
 func OriginalHandler(lookup StoreLookup) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		store, ok := storeOf(w, r, lookup)
@@ -144,7 +147,26 @@ func OriginalHandler(lookup StoreLookup) http.Handler {
 		sha := r.PathValue("sha256")
 		item, ok := store.Get(sha)
 		if !ok {
-			http.NotFound(w, r)
+			kept, ok := store.Find(sha)
+			if !ok || !kept.Sidecar.Facts.IsJXLOfJPEG() || kept.Sidecar.Facts.EncodedFrom.Sha256 != sha {
+				http.NotFound(w, r)
+				return
+			}
+			jpeg, err := store.JPEGOf(kept)
+			if errors.Is(err, ErrNoJXL) {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+			if err != nil {
+				log.Printf("media: the JPEG of %s: %v", kept.Path, err)
+				http.Error(w, "could not make the JPEG", http.StatusInternalServerError)
+				return
+			}
+			from := kept.Sidecar.Facts.EncodedFrom
+			w.Header().Set("Content-Type", from.MimeType)
+			w.Header().Set("ETag", `"`+sha+`"`)
+			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+			http.ServeContent(w, r, from.FileName, kept.Sidecar.Facts.UploadedAt, bytes.NewReader(jpeg))
 			return
 		}
 		file, err := store.Open(item)

@@ -64,7 +64,8 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 func hideFromDevice(lookup media.StoreLookup, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if store := lookup(r); store != nil {
-			if item, ok := store.Get(r.PathValue("sha256")); ok && store.Hides(store.ViewFor(auth.WithholdPrivateFromContext(r.Context())), item) {
+			// Find: a JPEG kept as JPEG XL, asked for by the JPEG's sha256, is hidden as its JPEG XL is.
+			if item, ok := store.Find(r.PathValue("sha256")); ok && store.Hides(store.ViewFor(auth.WithholdPrivateFromContext(r.Context())), item) {
 				http.NotFound(w, r)
 				return
 			}

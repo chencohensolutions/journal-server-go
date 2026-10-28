@@ -9,6 +9,13 @@ extend type ServerInfo {
   audio: Boolean!
   "The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503."
   encodesWav: Boolean!
+  """
+  The server keeps JPEG photos as JPEG XL, losslessly (libjxl is loaded): an uploaded JPEG is stored as its JPEG XL,
+  a phone's JPEG XL of a JPEG (StartUploadInput.encodedFrom) is checked to make that JPEG byte for byte, and GET
+  /media/{a JPEG's sha256} and verify make the JPEG again. Without it JPEGs are kept as they are, and a JPEG kept as
+  JPEG XL earlier answers 503 when asked for by the JPEG's sha256.
+  """
+  keepsJpegAsJxl: Boolean!
 }
 
 """

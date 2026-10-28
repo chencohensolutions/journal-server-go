@@ -104,11 +104,21 @@ type Call struct {
 	Number  *string `json:"number,omitempty"`
 }
 
-// EncodedFrom is the original an imported file was encoded from, which is not kept.
+// EncodedFrom is the original a file was encoded from, which is not kept: a WAV kept as FLAC, or a JPEG kept as JPEG
+// XL (KeepAsJXL), which can be made again from it byte for byte. Devices and imports holding that original find this
+// file by its sha256 (Store.Find).
 type EncodedFrom struct {
 	Sha256   string `json:"sha256"`
 	MimeType string `json:"mimeType"`
 	Size     int64  `json:"size"`
+	// The original's name; written since Oct 28, 2026 (JPEGs kept as JPEG XL), absent on WAVs kept as FLAC before.
+	FileName string `json:"fileName,omitempty"`
+}
+
+// IsJXLOfJPEG reports whether the file is a JPEG kept as JPEG XL: the JPEG comes back from it byte for byte, and its
+// pictures are the JPEG's.
+func (f Facts) IsJXLOfJPEG() bool {
+	return f.EncodedFrom != nil && f.MimeType == "image/jxl" && IsJPEG(f.EncodedFrom.FileName, f.EncodedFrom.MimeType)
 }
 
 // EndedAt is when a video or recording ended: its start plus its length. Nil without both.

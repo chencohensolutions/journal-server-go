@@ -95,6 +95,16 @@ func (s *Service) Read(ctx context.Context, user string, in reading.Input) error
 	return s.users[user].add(in.Item.Sha256(), lines)
 }
 
+// Carry gives the file the text of the file from, whose pictures are the same (a JPEG kept as JPEG XL), so it isn't
+// read again; false when from hasn't been read.
+func (s *Service) Carry(user, from, to string) (bool, error) {
+	t := s.users[user]
+	if t == nil || !t.has(from) {
+		return false, nil
+	}
+	return true, t.add(to, t.lines(from))
+}
+
 func (s *Service) Finish(user string) {}
 
 func (s *Service) FailureLog() (folder, name string) { return "ocr", s.model.Name + ".failed.log" }

@@ -114,7 +114,9 @@ same person.
   - each person's id, name, the faces they are (`faces`), the faces they are not (`notFaces`), and when the person was
     last changed;
   - a face is named by its file's sha256 and its box rather than by its place in the faces file, so the choices
-    outlive a change of model (the face found closest to the box, overlapping it by half or more, is taken);
+    outlive a change of model (the face found closest to the box, overlapping it by half or more, is taken); a face
+    named in a JPEG since kept as JPEG XL keeps the JPEG's sha256 here, and is found in the JPEG XL, whose faces are
+    the JPEG's (`people.current`, through `Store.Find`);
   - it is written whole inside a turn.
 
 ## Setting it up

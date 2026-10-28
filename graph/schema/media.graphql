@@ -2,11 +2,16 @@
 # Originals in the user's data folder, identified by the sha256 of their content.
 # The bytes travel over plain HTTP (PUT /upload/{sha256}, GET /media/{sha256}); see docs/media.md.
 
-"The file a sound recording was encoded from, which isn't kept: a WAV kept as FLAC."
+"""
+The file this one was encoded from, which isn't kept: a WAV kept as FLAC, or a JPEG kept as JPEG XL (losslessly:
+GET /media/{the JPEG's sha256} gives that JPEG back byte for byte, and verify checks it so).
+"""
 type EncodedFrom {
   sha256: Sha256!
   mimeType: String!
   size: Int64!
+  "The name the file had; null on WAVs kept as FLAC before Oct 28, 2026."
+  fileName: String
 }
 
 "64 lowercase hex characters: the sha256 of a file's content."
@@ -82,7 +87,11 @@ type Media {
   private: Boolean!
   "Who a recorded phone call was with; null for anything but a call."
   call: Call
-  "The WAV this FLAC was made from (on a device, by the server or by the import); asking for its sha256 finds this file."
+  """
+  The WAV this FLAC was made from (on a device, by the server or by the import), or the JPEG this JPEG XL was made
+  from (by the server, or on a device); asking for its sha256 finds this file. In the change feed, a JPEG kept as JPEG
+  XL comes as deleted right before its JPEG XL.
+  """
   encodedFrom: EncodedFrom
   "The original: /media/{sha256}, with Range support."
   url: String!
@@ -136,8 +145,10 @@ input StartUploadInput {
   """
   call: CallInput
   """
-  The WAV this FLAC was made from on the device. A WAV is never kept: it is answered as its FLAC (missingMedia,
-  startUpload, media, verify), so neither is sent again. A WAV uploaded as it is, the server keeps as FLAC.
+  The WAV this FLAC was made from on the device, or the JPEG this JPEG XL was made from (losslessly, with libjxl; the
+  server makes the JPEG again and refuses the upload with 409 unless it is byte for byte the one named here). Neither
+  is kept: it is answered as its FLAC or JPEG XL (missingMedia, startUpload, media, verify), so neither is sent again.
+  A WAV or JPEG photo uploaded as it is, the server keeps as FLAC or JPEG XL.
   """
   encodedFrom: EncodedFromInput
 }
@@ -146,6 +157,8 @@ input EncodedFromInput {
   sha256: Sha256!
   mimeType: String!
   size: Int64!
+  "The name the file had on the device; a JPEG XL of a JPEG needs it or a JPEG mimeType."
+  fileName: String
 }
 
 union StartUploadResult = UploadReady | MediaExists | UploadRejected

@@ -52,6 +52,9 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 	}
 	if e := input.EncodedFrom; e != nil {
 		request.EncodedFrom = &media.EncodedFrom{Sha256: e.Sha256, MimeType: e.MimeType, Size: e.Size}
+		if e.FileName != nil {
+			request.EncodedFrom.FileName = *e.FileName
+		}
 	}
 	if input.Location != nil {
 		request.Location = &media.GeoPoint{Lat: input.Location.Lat, Lon: input.Location.Lon}

@@ -49,8 +49,9 @@ func (r *Resolver) view(ctx context.Context) (view, error) {
 // hides reports whether the device may not see item.
 func (v view) hides(item media.Item) bool { return v.store.Hides(v.View, item) }
 
+// hidesSha is hides for the file sha (a JPEG kept as JPEG XL by either sha256: Store.Find).
 func (v view) hidesSha(sha string) bool {
-	item, ok := v.store.Get(sha)
+	item, ok := v.store.Find(sha)
 	return ok && v.hides(item)
 }
 
@@ -69,18 +70,26 @@ func (v view) visible(hashes []string) []string {
 }
 
 // changePage is a page of the feed as the device may see it: files it may not see come as deleted, and as hidden
-// when the user hides them (the device leaves out its own copy too).
+// when the user hides them (the device leaves out its own copy too). A JPEG kept as JPEG XL comes as deleted right
+// before its JPEG XL: the server has it under the JPEG XL's sha256 from then on (its encodedFrom names the JPEG). When
+// the user hides it, the JPEG comes as hidden too, so a device leaves out its own copy of the JPEG as well.
 func (v view) changePage(items []media.Item, next string, remaining int) *model.ChangePage {
 	versions, paired := v.store.RelatedIndex()
-	changes := make([]*model.Change, len(items))
-	for i, item := range items {
-		changes[i] = &model.Change{Kind: model.ChangeKindMedia, Path: "media/" + item.Sha256()}
-		if v.hides(item) {
-			changes[i].Deleted = true
-			changes[i].Hidden = v.store.Hides(media.View{Hidden: v.Hidden}, item)
-		} else {
-			changes[i].Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
+	changes := make([]*model.Change, 0, len(items))
+	for _, item := range items {
+		hidden := v.hides(item) && v.store.Hides(media.View{Hidden: v.Hidden}, item)
+		if item.Sidecar.Facts.IsJXLOfJPEG() {
+			changes = append(changes, &model.Change{Kind: model.ChangeKindMedia, Deleted: true, Hidden: hidden,
+				Path: "media/" + item.Sidecar.Facts.EncodedFrom.Sha256})
 		}
+		change := &model.Change{Kind: model.ChangeKindMedia, Path: "media/" + item.Sha256()}
+		if v.hides(item) {
+			change.Deleted = true
+			change.Hidden = hidden
+		} else {
+			change.Media = v.toMediaWith(item, versions[item.Sha256()], paired[item.Sha256()])
+		}
+		changes = append(changes, change)
 	}
 	return &model.ChangePage{Changes: changes, Cursor: next, HasMore: remaining > 0, Remaining: remaining}
 }
@@ -146,7 +155,7 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		m.Call = &model.Call{Contact: c.Contact, Number: c.Number}
 	}
 	if e := facts.EncodedFrom; e != nil {
-		m.EncodedFrom = &model.EncodedFrom{Sha256: e.Sha256, MimeType: e.MimeType, Size: e.Size}
+		m.EncodedFrom = &model.EncodedFrom{Sha256: e.Sha256, MimeType: e.MimeType, Size: e.Size, FileName: blankToNil(&e.FileName)}
 	}
 	if facts.Location != nil {
 		m.Location = &model.GeoPoint{Lat: facts.Location.Lat, Lon: facts.Location.Lon}

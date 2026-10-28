@@ -198,6 +198,21 @@ func (s *Service) Read(ctx context.Context, user string, in reading.Input) error
 }
 
 // Finish finds the duplicates among the files just read and the others.
+// Carry gives the file to the vector of the file from, whose pictures are the same (a JPEG kept as JPEG XL), so it
+// isn't read again; false when from has none. The two are each other's duplicates, but from has left the store, and
+// what keep leaves out is never shown.
+func (s *Service) Carry(user, from, to string) (bool, error) {
+	u := s.users[user]
+	if u == nil {
+		return false, nil
+	}
+	vector := u.index.Vector(from)
+	if vector == nil {
+		return false, nil
+	}
+	return true, u.index.Add(to, vector)
+}
+
 func (s *Service) Finish(user string) {
 	if u := s.users[user]; u != nil {
 		u.findDuplicates()

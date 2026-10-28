@@ -60,6 +60,9 @@ type AppConfig struct {
 	// libvips was loaded in (each start of them costs about 350 ms on Windows). A crash in libvips can't take the
 	// server down then.
 	VipsAsProgram bool `json:"vips_as_program"`
+	// Path of libjxl (libjxl.dll, libjxl.dylib, libjxl.so), which keeps JPEG photos as JPEG XL losslessly (docs/media.md,
+	// "JPEG XL"); the one beside the vips program, or the system's, when empty. Without it JPEGs are kept as they are.
+	LibJXL string `json:"libjxl"`
 	// How many files are decoded ahead of the indexes (nudity, faces, search) while they read the one before
 	// (default 2).
 	ReaderPrepare int `json:"reader_prepare"`

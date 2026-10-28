@@ -1,7 +1,8 @@
 // Package copies keeps a plain copy of a user's data folder in other folders (another disk, a USB disk, a network
 // share): the originals, their sidecars, people.json and settings.json, in the data folder's own layout, so a copy
 // can be opened as a data folder. It only reads the data folder; the copy folder itself is the record of what was
-// copied, and nothing is ever deleted from it. See docs/copies.md.
+// copied, and nothing is deleted from it but a JPEG the data folder keeps as JPEG XL, once the copy's JPEG XL makes
+// it byte for byte (jxl.go). See docs/copies.md.
 package copies
 
 import (
@@ -59,6 +60,7 @@ type Copier struct {
 	running *Progress
 	last    *Pass
 	queued  map[string]bool // sha256s waiting for the realtime batch
+	dropped map[string]bool // JPEGs kept as JPEG XL that this copy has no more (jxl.go)
 	root    bool            // the root files wait too
 	wake    chan struct{}
 }
@@ -66,7 +68,7 @@ type Copier struct {
 // New is a copier of store into config's folder.
 func New(user string, store *media.Store, config auth.CopyConfig, now func() time.Time) *Copier {
 	return &Copier{User: user, Folder: config.Folder, At: config.At, Realtime: config.Realtime, store: store, now: now,
-		queued: map[string]bool{}, wake: make(chan struct{}, 1)}
+		queued: map[string]bool{}, dropped: map[string]bool{}, wake: make(chan struct{}, 1)}
 }
 
 // Progress is a pass under way.
@@ -82,6 +84,8 @@ type Pass struct {
 	Files                 int   // copied
 	Bytes                 int64 // copied
 	Failed                int   // files that couldn't be copied; the pass went on
+	Dropped               int   // JPEGs deleted from the copy once their JPEG XL was in it (jxl.go)
+	DroppedBytes          int64 // and their size
 	Err                   error // what stopped the pass (folder missing, disk full), or nil
 }
 
@@ -264,9 +268,9 @@ func (c *Copier) RunRealtime(ctx context.Context) {
 		switch {
 		case err != nil:
 			log.Printf("copy %s → %s: %d files wait for the next full pass: %v", c.User, c.Folder, len(items), err)
-		case pass.Files > 0 || pass.Failed > 0:
-			log.Printf("copy %s → %s: %d files, %s in %s, %d failed", c.User, c.Folder, pass.Files, Size(pass.Bytes),
-				c.now().Sub(started).Round(time.Millisecond), pass.Failed)
+		case pass.Files > 0 || pass.Failed > 0 || pass.Dropped > 0:
+			log.Printf("copy %s → %s: %d files, %s in %s, %d failed, %d JPEGs kept as JPEG XL deleted", c.User, c.Folder,
+				pass.Files, Size(pass.Bytes), c.now().Sub(started).Round(time.Millisecond), pass.Failed, pass.Dropped)
 		}
 	}
 }
@@ -300,6 +304,7 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, root bool, pass *
 		pass.Failed++
 		log.Printf("copy %s → %s: %s: %v", c.User, c.Folder, path, err)
 	}
+	names := map[string][]string{} // the copy's month folders, for dropJPEG
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -324,6 +329,14 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, root bool, pass *
 			failed(item.Path+".json", err)
 		} else if copied {
 			counted(n)
+		}
+		if item.Sidecar.Facts.IsJXLOfJPEG() {
+			if n, err := c.dropJPEG(item, names); err != nil {
+				failed(item.Path, err)
+			} else if n > 0 {
+				pass.Dropped++
+				pass.DroppedBytes += n
+			}
 		}
 	}
 	if root {

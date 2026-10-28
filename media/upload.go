@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -308,20 +309,38 @@ func (s *Store) uploadedSize(sha string, item Item) int64 {
 }
 
 // finish checks the received file, moves it to its month folder and writes its sidecar. A sound recording first gets
-// what its file says (soundFacts), a WAV is kept as FLAC (keepAsFLAC), and a photo's or video's camera is read
-// (cameraFacts); all run before the turn, as they are slow.
+// what its file says (soundFacts), a WAV is kept as FLAC (keepAsFLAC), a photo's or video's camera is read
+// (cameraFacts), and a JPEG photo is kept as JPEG XL (keepUploadAsJXL), or a device's JPEG XL of a JPEG checked
+// (checkDeviceJXL); all run before the turn, as they are slow.
 func (s *Store) finish(req UploadRequest) (*Item, error) {
-	partialPath := s.partialPath(req.Sha256)
+	uploaded := req.Sha256
+	partialPath := s.partialPath(uploaded)
 	sum, err := HashFile(partialPath)
 	if err != nil {
 		return nil, err
 	}
 	if sum != req.Sha256 {
 		os.Remove(partialPath)
-		os.Remove(s.sessionPath(req.Sha256))
+		os.Remove(s.sessionPath(uploaded))
 		return nil, ErrHashMismatch
 	}
 	from := partialPath
+	switch {
+	case isDeviceJXLOfJPEG(req):
+		if err := s.checkDeviceJXL(partialPath, req); err != nil {
+			log.Printf("media: %s from %s refused: %v", req.FileName, req.UploadedBy, err)
+			os.Remove(partialPath)
+			os.Remove(s.sessionPath(uploaded))
+			return nil, err
+		}
+	case req.Kind == KindPhoto && req.EncodedFrom == nil && IsJPEG(req.FileName, req.MimeType):
+		req = s.cameraFacts(partialPath, req) // from the JPEG's own tags, before it is packed
+		if jxl, jxlReq, ok := s.keepUploadAsJXL(partialPath, req); ok {
+			defer os.Remove(jxl)
+			os.Remove(partialPath)
+			from, req = jxl, jxlReq
+		}
+	}
 	if req.Kind == KindAudio && IsWAV(req.FileName, req.MimeType) {
 		flac, flacReq, err := s.keepAsFLAC(partialPath, req)
 		if err != nil {
@@ -354,7 +373,7 @@ func (s *Store) finish(req UploadRequest) (*Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	os.Remove(s.sessionPath(req.Sha256))
+	os.Remove(s.sessionPath(uploaded))
 	return item, nil
 }
 

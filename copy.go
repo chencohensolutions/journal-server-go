@@ -84,6 +84,9 @@ func runCopy(ctx context.Context, c *copies.Copier) {
 			line = ", not copied: " + notCopied(report)
 		}
 	}
+	if pass.Dropped > 0 {
+		line += fmt.Sprintf(", %d JPEGs kept as JPEG XL deleted from the copy (%s)", pass.Dropped, copies.Size(pass.DroppedBytes))
+	}
 	log.Printf("Copy %s → %s: %d files, %s in %s, %d failed%s", c.User, c.Folder, pass.Files, copies.Size(pass.Bytes),
 		took, pass.Failed, line)
 }

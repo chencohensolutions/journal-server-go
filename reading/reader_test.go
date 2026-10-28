@@ -525,3 +525,55 @@ func TestPauseStopsARunAndResumeCarriesOn(t *testing.T) {
 		}
 	}
 }
+
+// carrier is a fake index that can give a file what it read for another (Carrier).
+type carrier struct{ *index }
+
+func (c carrier) Carry(user, from, to string) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.done[from] {
+		return false, nil
+	}
+	c.done[to] = true
+	return true, nil
+}
+
+// A JPEG kept as JPEG XL gets its JPEG's results from the indexes that can carry them; the others read it.
+func TestAJXLOfAJPEGGetsTheJPEGsResults(t *testing.T) {
+	lib, _ := library(t)
+	data := []byte("a JPEG XL of a JPEG")
+	path := filepath.Join(t.TempDir(), "f")
+	os.WriteFile(path, data, 0o644)
+	sum := sha256.Sum256(data)
+	sha := hex.EncodeToString(sum[:])
+	jpegSha := strings.Repeat("ab", 32)
+	req := media.UploadRequest{Sha256: sha, Size: int64(len(data)), FileName: "IMG_1.jxl", MimeType: "image/jxl",
+		Kind: media.KindPhoto, UploadedBy: "test",
+		EncodedFrom: &media.EncodedFrom{Sha256: jpegSha, MimeType: "image/jpeg", Size: 100, FileName: "IMG_1.jpg"}}
+	if _, _, err := lib.Store("hen").Import(path, req); err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	var mu sync.Mutex
+	carried := carrier{newIndex("search", 20, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{square}}, &calls, &mu)}
+	carried.done[jpegSha] = true
+	unread := carrier{newIndex("ocr", 15, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{small}}, &calls, &mu)}
+	plain := newIndex("faces", 10, Wants{Kinds: photos(), Pictures: []media.PreviewSpec{medium}}, &calls, &mu)
+	plain.done[jpegSha] = true
+	o := newOpener()
+	r := New(lib, o, 2)
+	r.Add(carried)
+	r.Add(unread)
+	r.Add(plain)
+	r.ReadNew(context.Background(), "hen")
+	if !carried.done[sha] || len(carried.reads) != 0 {
+		t.Errorf("search: carried %v, read %d", carried.done[sha], len(carried.reads))
+	}
+	if len(unread.reads) != 1 || len(plain.reads) != 1 {
+		t.Errorf("ocr read %d, faces read %d; want each once", len(unread.reads), len(plain.reads))
+	}
+	if made := o.made[sha]; len(made) != 2 {
+		t.Errorf("pictures made %v, want only ocr's and faces'", made)
+	}
+}

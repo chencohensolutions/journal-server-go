@@ -125,17 +125,22 @@ type DuplicateGroup struct {
 	Score float64 `json:"score"`
 }
 
-// The file a sound recording was encoded from, which isn't kept: a WAV kept as FLAC.
+// The file this one was encoded from, which isn't kept: a WAV kept as FLAC, or a JPEG kept as JPEG XL (losslessly:
+// GET /media/{the JPEG's sha256} gives that JPEG back byte for byte, and verify checks it so).
 type EncodedFrom struct {
 	Sha256   string `json:"sha256"`
 	MimeType string `json:"mimeType"`
 	Size     int64  `json:"size"`
+	// The name the file had; null on WAVs kept as FLAC before Oct 28, 2026.
+	FileName *string `json:"fileName,omitempty"`
 }
 
 type EncodedFromInput struct {
 	Sha256   string `json:"sha256"`
 	MimeType string `json:"mimeType"`
 	Size     int64  `json:"size"`
+	// The name the file had on the device; a JPEG XL of a JPEG needs it or a JPEG mimeType.
+	FileName *string `json:"fileName,omitempty"`
 }
 
 type EnrollDeviceInput struct {
@@ -371,7 +376,9 @@ type Media struct {
 	Private bool `json:"private"`
 	// Who a recorded phone call was with; null for anything but a call.
 	Call *Call `json:"call,omitempty"`
-	// The WAV this FLAC was made from (on a device, by the server or by the import); asking for its sha256 finds this file.
+	// The WAV this FLAC was made from (on a device, by the server or by the import), or the JPEG this JPEG XL was made
+	// from (by the server, or on a device); asking for its sha256 finds this file. In the change feed, a JPEG kept as JPEG
+	// XL comes as deleted right before its JPEG XL.
 	EncodedFrom *EncodedFrom `json:"encodedFrom,omitempty"`
 	// The original: /media/{sha256}, with Range support.
 	URL string `json:"url"`
@@ -514,6 +521,11 @@ type ServerInfo struct {
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
 	EncodesWav bool `json:"encodesWav"`
+	// The server keeps JPEG photos as JPEG XL, losslessly (libjxl is loaded): an uploaded JPEG is stored as its JPEG XL,
+	// a phone's JPEG XL of a JPEG (StartUploadInput.encodedFrom) is checked to make that JPEG byte for byte, and GET
+	// /media/{a JPEG's sha256} and verify make the JPEG again. Without it JPEGs are kept as they are, and a JPEG kept as
+	// JPEG XL earlier answers 503 when asked for by the JPEG's sha256.
+	KeepsJpegAsJxl bool `json:"keepsJpegAsJxl"`
 	// Photos' and videos' cameras are read when they arrive (Media.camera); cameras and setCamera are there.
 	Cameras bool `json:"cameras"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
@@ -572,8 +584,10 @@ type StartUploadInput struct {
 	// A sound recording that is a phone call (from a folder of calls), with who it was with when the device knows; an
 	// empty one is a call with no one named. The server also reads it from the file name (Samsung's call recorder).
 	Call *CallInput `json:"call,omitempty"`
-	// The WAV this FLAC was made from on the device. A WAV is never kept: it is answered as its FLAC (missingMedia,
-	// startUpload, media, verify), so neither is sent again. A WAV uploaded as it is, the server keeps as FLAC.
+	// The WAV this FLAC was made from on the device, or the JPEG this JPEG XL was made from (losslessly, with libjxl; the
+	// server makes the JPEG again and refuses the upload with 409 unless it is byte for byte the one named here). Neither
+	// is kept: it is answered as its FLAC or JPEG XL (missingMedia, startUpload, media, verify), so neither is sent again.
+	// A WAV or JPEG photo uploaded as it is, the server keeps as FLAC or JPEG XL.
 	EncodedFrom *EncodedFromInput `json:"encodedFrom,omitempty"`
 }
 

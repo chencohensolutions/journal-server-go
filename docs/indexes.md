@@ -200,6 +200,11 @@ Then add it to the reader in `newReader` (`library.go`). Where it keeps its resu
 - anything bigger, or derived and rebuildable, goes in `.cache/<name>/` (as faces and search do), written only by the
   server.
 
+Give it `Carry(user, from, to string) (bool, error)` too (`reading.Carrier`) when it keeps a result per file: a JPEG
+kept as JPEG XL ([media.md](media.md) "JPEG XL") has the JPEG's pictures, so the reader asks each index to keep for
+the JPEG XL what it kept for the JPEG (`encodedFrom`) instead of reading it again. Faces, OCR, search, similar photos
+and aesthetic scores do; the nudity score comes with the sidecar.
+
 For phones to keep the index too ([search.md](search.md) "On the phone"), give its service `CacheFile`, `Has` and
 `Record` (`localindex.Cache`) and add it to `newLocal` (`library.go`), with its cache file's format.
 

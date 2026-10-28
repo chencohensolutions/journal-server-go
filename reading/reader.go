@@ -43,6 +43,13 @@ type Index interface {
 	FailureLog() (folder, name string)
 }
 
+// Carrier is an index that can give a file the result it kept for another with the same pictures: a JPEG kept as
+// JPEG XL (media.Facts.IsJXLOfJPEG) gets the JPEG's, instead of being read again.
+type Carrier interface {
+	// Carry keeps for to what was kept for from; false when nothing was.
+	Carry(user, from, to string) (bool, error)
+}
+
 // Wants is what an index reads of a file.
 type Wants struct {
 	// The kinds of files it reads; a video is read as its poster frame.
@@ -287,6 +294,37 @@ type prepared struct {
 	release  func()                      // its memory, given back with it
 }
 
+// carry gives each JPEG kept as JPEG XL what the indexes kept for its JPEG (Carrier), and returns the files still to
+// read: those, for the indexes that kept nothing for the JPEG (or can't carry), and every other file.
+func (r *Reader) carry(user string, todo []file) []file {
+	carried := 0
+	kept := todo[:0]
+	for _, f := range todo {
+		if facts := f.item.Sidecar.Facts; facts.IsJXLOfJPEG() {
+			f.needing = slices.DeleteFunc(f.needing, func(x Index) bool {
+				c, ok := x.(Carrier)
+				if !ok {
+					return false
+				}
+				done, err := c.Carry(user, facts.EncodedFrom.Sha256, f.item.Sha256())
+				if err != nil {
+					log.Printf("reading: %s: %s: giving it its JPEG's result: %v", x.Model(), f.item.Path, err)
+				}
+				return done && err == nil
+			})
+			if len(f.needing) == 0 {
+				carried++
+				continue
+			}
+		}
+		kept = append(kept, f)
+	}
+	if carried > 0 {
+		log.Printf("reading: %d JPEG XL files of %s got their JPEG's results, not read again", carried, user)
+	}
+	return kept
+}
+
 // ReadNew reads user's files that any index needs, once each: stage 1 decodes the originals and makes the pictures
 // (prepare files ahead, in goroutines of their own), stage 2 runs the indexes on them in order. Nothing while user is
 // paused; Pause stops it after the file in hand.
@@ -317,6 +355,7 @@ func (r *Reader) ReadNew(ctx context.Context, user string) {
 			todo = append(todo, f)
 		}
 	})
+	todo = r.carry(user, todo)
 	if len(todo) == 0 {
 		return
 	}

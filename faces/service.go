@@ -263,6 +263,17 @@ func (x index) Read(ctx context.Context, user string, in reading.Input) error {
 	return x.users[user].index.Add(in.Item.Sha256(), keepable(faces, large.Bounds().Dx()))
 }
 
+// Carry gives the file the faces of the file from, whose pictures are the same (a JPEG kept as JPEG XL), so it isn't
+// read again; false when from hasn't been read. The faces' boxes are the same too, so the people the user named
+// (people.json, which names from) find them (people.current).
+func (x index) Carry(user, from, to string) (bool, error) {
+	p := x.users[user]
+	if p == nil || !p.index.Has(from) {
+		return false, nil
+	}
+	return true, p.index.Add(to, p.index.Faces(from))
+}
+
 // Finish puts the faces of the files just read with the others.
 func (x index) Finish(user string) {
 	if p := x.users[user]; p != nil {

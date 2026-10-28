@@ -32,6 +32,10 @@ func (r *queryResolver) SimilarMedia(ctx context.Context, sha256 string, limit *
 	if v.hidesSha(sha256) {
 		return nil, coded(CodeInvalidArgument, "no file %s", sha256)
 	}
+	// A phone names its copy of a JPEG kept as JPEG XL by the JPEG's sha256: like the JPEG XL, not like itself.
+	if item, ok := v.store.Find(sha256); ok {
+		sha256 = item.Sha256()
+	}
 	user := auth.FromContext(ctx).Username
 	hits, err := r.SimilarPhotos.Similar(user, sha256, skip+n, v.shows(includePrivate != nil && *includePrivate))
 	if errors.Is(err, similar.ErrNotRead) {

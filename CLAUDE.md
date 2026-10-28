@@ -15,8 +15,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/media.md](docs/media.md): the data folder and sidecar format, resumable `PUT /upload/{sha256}`,
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, sources (the one rule; folder kinds in lower
   case, named by `folderNames`), cameras and sound folders, the change feed, nudity scores, private
-  files, hidden collections, sound recordings (recordings, calls, voice messages; hidden until shown), imports,
-  turns between processes.
+  files, hidden collections, sound recordings (recordings, calls, voice messages; hidden until shown), JPEG photos
+  kept as JPEG XL losslessly (`scripts/jxl`), imports, turns between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
   "On the phone": the indexes a phone may keep and search itself (`localIndexes`, `/index/{name}` streams,
   `/index/people`, `/models/…`).
@@ -33,8 +33,9 @@ Not built yet: stories and notes in the change feed, the story trash, certificat
 **Platforms.** The owner's server is a Windows PC (search runs there since Oct 22, 2026), development happens on a
 Mac, and the owner plans to distribute the server to the community on Windows, macOS and Linux (Oct 21, 2026). So: no cgo, Windows-safe file names (compared ignoring
 case), per-OS files for file locks, disk-free checks and loading libraries (`*_unix.go`, `*_windows.go`,
-`*_other.go`), and ffmpeg runs as a separate program. Two libraries are loaded into the process through purego:
-ONNX Runtime, and libvips (since Oct 23, 2026; `"vips_as_program": true` keeps libvips out).
+`*_other.go`), and ffmpeg runs as a separate program. Three libraries are loaded into the process through purego:
+ONNX Runtime, libvips (since Oct 23, 2026; `"vips_as_program": true` keeps libvips out), and libjxl (since Oct 28,
+2026, beside libvips: JPEG photos are kept as JPEG XL, losslessly; `media/jxl*.go`).
 
 ## Commands
 
@@ -55,6 +56,7 @@ go run . copy [user] | copy report [user] [--list]   # start the copies' full pa
 go run . index [--user name] [--progress]  # read new files for the indexes once and exit ("index": "daily" runs it per user at "index_at")
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--delete-duplicates] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
+go run ./scripts/jxl --user <name> [--dry-run | --report] [--until 07:00]   # keep JPEGs as JPEG XL losslessly; the server does uploads itself
 go run ./scripts/read-cameras --user <name> [--dry-run]   # facts.camera for files placed before it was read; lists camera models
 go run ./scripts/fix-sources --user <name> [--dry-run] [--list <before>:<after>]   # relabel by media.SourceOf, journaled in relabels/
 go run ./scripts/fix-sources --user <name> --undo <journal> | --to-old-ids        # put a journal back; ids for an older server
@@ -113,7 +115,11 @@ the device's `View`, so a view change sends only the files whose visibility chan
 the feed, and notes and stories can join later), `library.go` the per-user map, `sidecar.go` the
 sidecar format and the only code that rewrites one (`rewriteSidecar`; a rewrite clients must see sets a time that
 `Sidecar.ChangedAt` counts). `source.go` has `SourceOf`, the only place a file's source (kind) is decided (name, path, camera tags and marks, what the device sent), with old ids such as `whatsapp` and folder kinds in any case mapped once at read; `camera.go` reads camera tags (`ReadCamera`) and `cameras.go` keeps the user's marks (`cameras.json`) and moves files when one changes; `soundfolders.go` keeps the sound folders merged into calls or recordings (`sound-folders.json`) and moves their files, journaled in `relabels/` (`moves.go`); `audionames.go` reads sound recordings (dates, calls,
-ffprobe, WAV to FLAC) for the import and uploads alike. HTTP handlers for
+ffprobe, WAV to FLAC) for the import and uploads alike. `keepjxl.go` keeps JPEG photos as JPEG XL (`KeepAsJXL` for
+files there, uploads before placing, `JPEGOf` makes the JPEG again; `jxl.go` checks every one comes back byte for
+byte): the JPEG XL has its own sha256 and names the JPEG in `encodedFrom`, as a WAV's FLAC does, so `Store.Find`, the
+feed (the JPEG as deleted), verify, `/media`, the indexes (`reading.Carrier`) and face search (`people.current`) all
+answer the JPEG's sha256. It is the one place an original is replaced; `indexItem` drops the JPEG. HTTP handlers for
 upload/original/preview/verify are in `http.go` and `verify.go`. Previews: `previewspec.go` parses and plans a
 request, `preview.go` makes previews with libvips (NumCPU/2 at once), inside the server through `vipslib*.go`
 (purego, fixed-argument calls only: an operation built by name and its properties; `vips.exe` as the fallback for
@@ -125,7 +131,7 @@ and a user's phone keeps every preview it asks for and is usually the only devic
 cache would hold copies of what the phone already has. Don't propose turning it on.
 
 **Multi-process writes go through turns** (`media/turns.go`). The server, one or more `scripts/import` runs,
-`scripts/scan-nudity`, `scripts/read-cameras` and `scripts/fix-sources` may share a data folder. Each holds an exclusive file lock on
+`scripts/scan-nudity`, `scripts/read-cameras`, `scripts/fix-sources` and `scripts/jxl` may share a data folder. Each holds an exclusive file lock on
 `.cache/write.lock` only for the milliseconds it takes to place a file or rewrite a sidecar, and appends to
 `.cache/write-journal.tsv` so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside

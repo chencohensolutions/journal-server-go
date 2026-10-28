@@ -59,6 +59,10 @@ func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (mod
 
 // ServerInfo is the resolver for the serverInfo field.
 func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, error) {
+	keepsJXL := false
+	if store, err := r.store(ctx); err == nil {
+		keepsJXL = store.JXL != nil
+	}
 	return &model.ServerInfo{
 		API:          APIVersion,
 		Version:      r.Version,
@@ -75,6 +79,8 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Audio:        true,
 		// The stores find ffmpeg the way posters do.
 		EncodesWav: r.Previews != nil && r.Previews.PostersAvailable(),
+		// libjxl is loaded into the server, given to every store (loadJXL).
+		KeepsJpegAsJxl: keepsJXL,
 		// A photo's camera is read with libvips (a video's with ffprobe), when it arrives.
 		Cameras:      r.Previews != nil && r.Previews.Available(),
 		SoundFolders: true,

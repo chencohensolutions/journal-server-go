@@ -14,10 +14,14 @@ func (s *Store) SetPrivate(hashes []string, private bool, by string) (changed []
 	err = s.Turn(func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		for _, sha := range hashes {
-			if _, ok := s.items[sha]; !ok {
+		// A phone names its copy of a JPEG kept as JPEG XL by the JPEG's sha256.
+		hashes = append([]string(nil), hashes...)
+		for i, sha := range hashes {
+			item, ok := s.find(sha)
+			if !ok {
 				return fmt.Errorf("%s isn't on the server", sha)
 			}
+			hashes[i] = item.Sidecar.Sha256
 		}
 		now := s.now().UTC()
 		for _, item := range s.groupOf(hashes) {

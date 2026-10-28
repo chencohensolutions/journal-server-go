@@ -59,6 +59,11 @@ type Store struct {
 	// What a new file's camera is read with (ReadCamera), before its turn: libvips in the server, or vipsheader, and
 	// ffprobe (FFprobe when it has none). The zero value reads only DNGs. Set once, before the store serves requests.
 	CameraTools CameraTools
+
+	// libjxl, when loaded: an uploaded JPEG is kept as JPEG XL (keepjxl.go), a device's JPEG XL of a JPEG is checked,
+	// and a JPEG kept so is made again for Verify and GET /media by the JPEG's sha256. Set once, before the store
+	// serves requests.
+	JXL *JXL
 }
 
 // OpenStore creates the folders it needs and indexes the sidecars already in root.
@@ -106,13 +111,21 @@ func (s *Store) Root() string { return s.root }
 
 func (s *Store) uploadsDir() string { return filepath.Join(s.root, ".cache", "uploads") }
 
-// indexItem puts item in the index, with the WAV it was encoded from. An old source id is read as the one written
-// now (normalizeFacts), so memory holds one id for every file, relabelled or not. Callers hold s.mu.
+// indexItem puts item in the index, with the file it was encoded from (a WAV kept as FLAC, a JPEG kept as JPEG XL),
+// which then leaves the index: a JPEG replaced by its JPEG XL in this or another process. A JPEG still on disk after
+// its JPEG XL was placed (KeepAsJXL stopped before deleting it) isn't indexed. An old source id is read as the one
+// written now (normalizeFacts), so memory holds one id for every file, relabelled or not. Callers hold s.mu.
 func (s *Store) indexItem(item *Item) {
 	normalizeFacts(&item.Sidecar.Facts)
-	s.items[item.Sidecar.Sha256] = item
+	sha := item.Sidecar.Sha256
+	if to, ok := s.encoded[sha]; ok && to != sha {
+		log.Printf("media: %s is kept as JPEG XL (%s) already; left out", item.Path, to)
+		return
+	}
+	s.items[sha] = item
 	if e := item.Sidecar.Facts.EncodedFrom; e != nil {
-		s.encoded[e.Sha256] = item.Sidecar.Sha256
+		s.encoded[e.Sha256] = sha
+		delete(s.items, e.Sha256)
 	}
 }
 
