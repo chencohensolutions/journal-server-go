@@ -90,6 +90,10 @@ copies, and only counts and the copy's folder, never file names; the counts incl
   both folders, seconds on a USB disk, so a request never waits for one: the server compares after every full pass,
   and a request starts one in the background (`checking` until it ends) when the last is 10 minutes old, files were
   copied in real time since, or it failed. A compare that can't reach the folder keeps the last good counts.
+- **They outlive a restart**: after each good compare and each full pass the copier writes both into
+  `.journal-copy.json` at the copy folder's root (`copies/saved.go`, `"v": 1`), and reads it back when the server
+  starts, so the apps show the last counts and pass at once instead of "comparing" for the minutes a first compare
+  takes. A compare walks only `media/`, so the file is never counted as a file in the copy only.
 - **Problems**: `FOLDER_MISSING` from the first time a pass, a compare or a realtime batch found the folder out of
   reach (`Copier.UnreachableSince`) until one finds it again; `DISK_FULL` when the last pass stopped on a full disk.
   `sameDisk` and `freeBytes` (null while the folder is out of reach) are read at each request.

@@ -72,10 +72,12 @@ type Copier struct {
 	stopped     bool               // Stop was asked during this pass
 }
 
-// New is a copier of store into config's folder.
+// New is a copier of store into config's folder, with the last compare and pass saved there (Load).
 func New(user string, store *media.Store, config auth.CopyConfig, now func() time.Time) *Copier {
-	return &Copier{User: user, Folder: config.Folder, At: config.At, Realtime: config.Realtime, store: store, now: now,
+	c := &Copier{User: user, Folder: config.Folder, At: config.At, Realtime: config.Realtime, store: store, now: now,
 		queued: map[string]bool{}, dropped: map[string]bool{}, wake: make(chan struct{}, 1)}
+	c.Load()
+	return c
 }
 
 // Progress is a pass under way.
@@ -196,7 +198,6 @@ func (c *Copier) CompareNow(ctx context.Context) Compare {
 	c.mu.Unlock()
 	report, err := c.Check(ctx, false)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	cmp := Compare{Report: report, At: c.now()}
 	if err != nil {
 		cmp = Compare{Err: err}
@@ -205,6 +206,10 @@ func (c *Copier) CompareNow(ctx context.Context) Compare {
 		}
 	}
 	c.compared, c.comparing = &cmp, false
+	c.mu.Unlock()
+	if err == nil {
+		c.save()
+	}
 	return cmp
 }
 
@@ -262,6 +267,7 @@ func (c *Copier) Run(ctx context.Context) Pass {
 	c.running, c.stop, c.stopped = nil, nil, false
 	c.last = &pass
 	c.mu.Unlock()
+	c.save()
 	return pass
 }
 

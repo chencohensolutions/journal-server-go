@@ -101,8 +101,13 @@ func TestPassCopiesTruthFilesAndLeavesTheDataFolderAlone(t *testing.T) {
 		t.Errorf("the pass changed the data folder")
 	}
 
-	// The copy has the originals, their sidecars and people.json, byte for byte, and no .cache or temp files.
+	// The copy has the originals, their sidecars and people.json, byte for byte, and no .cache or temp files; beside
+	// them only the copier's own record (saved.go).
 	copied := tree(t, c.Folder)
+	if _, ok := copied[savedName]; !ok {
+		t.Errorf("the pass wasn't saved in %s", savedName)
+	}
+	delete(copied, savedName)
 	var names []string
 	for path := range copied {
 		names = append(names, path)
@@ -352,5 +357,27 @@ func TestPassCountsWhatItCopiesAndStops(t *testing.T) {
 	}
 	if report, _ := c.Check(context.Background(), false); report.Originals != 0 {
 		t.Errorf("after the next pass the copy lacks %+v", report)
+	}
+}
+
+func TestTheLastCompareAndPassOutliveARestart(t *testing.T) {
+	store, c := newCopier(t)
+	addPhoto(t, store, "IMG_1.jpg", "first photo")
+	c.Run(context.Background())
+	addPhoto(t, store, "IMG_2.jpg", "second photo")
+	cmp := c.CompareNow(context.Background())
+
+	// The server starts again: a new copier of the same folder has both before it compares.
+	again := New("hen", store, auth.CopyConfig{Folder: c.Folder, At: "03:30"}, time.Now)
+	last, comparing := again.LastCompare()
+	if last == nil || comparing || last.Total != 2 || last.Originals != 1 || !last.At.Equal(cmp.At) {
+		t.Fatalf("compare after a restart: %+v %v", last, comparing)
+	}
+	if _, pass := again.Status(); pass == nil || pass.Files == 0 {
+		t.Fatalf("last pass after a restart: %+v", pass)
+	}
+	// It is the copier's own file: a compare doesn't count it as a file in the copy only.
+	if cmp := again.CompareNow(context.Background()); cmp.InCopyOnly != 0 || cmp.Originals != 1 {
+		t.Errorf("compare with the saved file there: %+v", cmp)
 	}
 }
