@@ -428,3 +428,28 @@ func hashLocal(file string) (string, int64, error) {
 	n, err := io.Copy(hash, f)
 	return hex.EncodeToString(hash.Sum(nil)), n, err
 }
+
+// KeyFromPassphrase is the key file a passphrase gives for the encrypted copy in src: its derivation (salt and
+// parameters) is beside the copy. A wrong passphrase gives a key that doesn't open the manifest, which Restore says.
+func KeyFromPassphrase(src Target, user, passphrase string) (KeyFile, error) {
+	data, err := readAll(src, derivationName)
+	if err != nil {
+		return KeyFile{}, fmt.Errorf("this copy's key doesn't come from a passphrase (no %s): give the key file with --key: %w", derivationName, err)
+	}
+	var stored struct {
+		V          int        `json:"v"`
+		User       string     `json:"user"`
+		Derivation Derivation `json:"derivation"`
+	}
+	if err := json.Unmarshal(data, &stored); err != nil || stored.V != 1 {
+		return KeyFile{}, fmt.Errorf("%s isn't readable: %v", derivationName, err)
+	}
+	if stored.User != user {
+		return KeyFile{}, fmt.Errorf("the copy is %s's, not %s's", stored.User, user)
+	}
+	key, identity, err := DeriveKey(user, passphrase, stored.Derivation, time.Now())
+	if err != nil {
+		return KeyFile{}, err
+	}
+	return KeyFile{Key: key, Identity: identity}, nil
+}

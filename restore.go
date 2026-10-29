@@ -16,17 +16,23 @@ import (
 	"github.com/journal/server-go/copies"
 )
 
-// restoreCommand: restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <key file>].
+// restoreCommand: restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder>
+// [--key <key file> | --passphrase].
 // It brings a copy back into an empty folder (docs/peers.md, "Restore"); the server needn't be running. --to is
 // always given: a restore never fills a folder it wasn't pointed at, the user's data_folder included.
 func restoreCommand(config auth.AppConfig, args []string, in io.Reader, out io.Writer) error {
-	usage := errors.New("restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <key file>]")
+	usage := errors.New("restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <key file> | --passphrase]")
 	if len(args) < 1 {
 		return usage
 	}
 	user := args[0]
 	var peer, fromFolder, to, keyPath string
+	passphrase := false
 	for i := 1; i < len(args); i++ {
+		if args[i] == "--passphrase" {
+			passphrase = true
+			continue
+		}
 		if i+1 >= len(args) {
 			return usage
 		}
@@ -44,7 +50,7 @@ func restoreCommand(config auth.AppConfig, args []string, in io.Reader, out io.W
 		}
 		i++
 	}
-	if to == "" || (peer == "") == (fromFolder == "") {
+	if to == "" || (peer == "") == (fromFolder == "") || (passphrase && keyPath != "") {
 		return usage
 	}
 
@@ -66,12 +72,24 @@ func restoreCommand(config auth.AppConfig, args []string, in io.Reader, out io.W
 	}
 
 	var key *copies.KeyFile
+	lines := bufio.NewReader(in)
+	if passphrase {
+		secret, err := readSecret(lines, out, "Passphrase of the copy key: ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "Deriving the key (a second or so)...")
+		kf, err := copies.KeyFromPassphrase(src, user, secret)
+		if err != nil {
+			return err
+		}
+		key = &kf
+	}
 	if keyPath != "" {
 		data, err := os.ReadFile(keyPath)
 		if err != nil {
 			return err
 		}
-		lines := bufio.NewReader(in)
 		kf, err := copies.ReadKeyFile(data, func() (string, error) { return readSecret(lines, out, "Passphrase of the key file: ") })
 		if err != nil {
 			return err

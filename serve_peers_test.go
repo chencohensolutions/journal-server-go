@@ -358,3 +358,56 @@ func bufioLine(r *strings.Reader) (string, error) {
 		}
 	}
 }
+
+// A copy key from a passphrase: no key file; the passphrase alone restores, and export writes a key file of it.
+func TestACopyKeyFromAPassphrase(t *testing.T) {
+	defer func(d copies.Derivation) { copies.DefaultDerivation = d }(copies.DefaultDerivation)
+	copies.DefaultDerivation = copies.Derivation{Time: 1, MemoryKiB: 1024, Threads: 1}
+	dana := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersFolder = t.TempDir()
+		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
+	})
+	code, _, _ := dana.peers.Invite("hen-home", 1e9)
+	config := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
+		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
+	if err := peerAddCommand(config, []string{"dana", dana.server.URL, code + "." + peers.Fingerprint(dana.server.Certificate())}); err != nil {
+		t.Fatal(err)
+	}
+	const passphrase = "six random words make a passphrase"
+	var out strings.Builder
+	if err := copyKeyCommand(config, []string{"new", "hen", "--from-passphrase"}, strings.NewReader("too short\n"), &out); err == nil {
+		t.Fatal("a weak passphrase was taken")
+	}
+	if err := copyKeyCommand(config, []string{"new", "hen", "--from-passphrase"}, strings.NewReader(passphrase+"\n"+passphrase+"\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if stored, _ := os.ReadFile(copyKeyFile(config, "hen")); strings.Contains(string(stored), passphrase) || !strings.Contains(string(stored), `"derived"`) {
+		t.Fatalf("what the server keeps: %s", stored)
+	}
+	hen := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersDir, c.CopyKeysDir = config.PeersDir, config.CopyKeysDir
+		c.Users[0].Copies = []auth.CopyConfig{{Peer: "dana", Encrypt: true}}
+	})
+	hen.uploadPhoto(t, hen.enrolledClient(t), []byte("a photo"), "IMG_1.jpg")
+	runCopy(context.Background(), hen.copiers[0])
+
+	to := filepath.Join(t.TempDir(), "hen")
+	if err := restoreCommand(config, []string{"hen", "--from", "dana", "--to", to, "--passphrase"}, strings.NewReader("a wrong passphrase, sadly\n"), &out); err == nil {
+		t.Error("restored with a wrong passphrase")
+	}
+	os.RemoveAll(to)
+	if err := restoreCommand(config, []string{"hen", "--from", "dana", "--to", to, "--passphrase"}, strings.NewReader(passphrase+"\n"), &out); err != nil {
+		t.Fatal(err, out.String())
+	}
+	keyFile := filepath.Join(t.TempDir(), "hen.journalkey")
+	if err := copyKeyCommand(config, []string{"export", "hen", "--out", keyFile}, strings.NewReader("not it at all, no\n"), &out); err == nil {
+		t.Error("exported with a wrong passphrase")
+	}
+	if err := copyKeyCommand(config, []string{"export", "hen", "--out", keyFile}, strings.NewReader(passphrase+"\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	to2 := filepath.Join(t.TempDir(), "hen2")
+	if err := restoreCommand(config, []string{"hen", "--from", "dana", "--to", to2, "--key", keyFile}, strings.NewReader(""), &out); err != nil {
+		t.Fatal("the exported key file: ", err)
+	}
+}

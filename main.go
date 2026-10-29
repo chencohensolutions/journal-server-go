@@ -38,7 +38,11 @@ const usage = `usage:
   journal-server copy-key new <user> --out <file> [--passphrase]
                                       make the key that encrypts the user's copies on peers; only the key file
                                       written to <file> can read them
-  journal-server restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <file>]
+  journal-server copy-key new <user> --from-passphrase
+                                      the same from a passphrase: no key file, the passphrase alone reads them
+  journal-server copy-key export <user> --out <file> [--passphrase]
+                                      a key file of a key made from a passphrase
+  journal-server restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <file> | --passphrase]
                                       bring a copy back into an empty folder; an encrypted one needs the key file
 `
 

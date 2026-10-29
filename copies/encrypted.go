@@ -40,8 +40,10 @@ type CopyKey struct {
 	// Names the files at the peer, and seals the manifest.
 	NamingKey []byte    `json:"naming_key"`
 	CreatedAt time.Time `json:"created_at"`
-	// Where copy-key new wrote the key file, to remind the owner.
-	KeyFile string `json:"key_file"`
+	// Where copy-key new wrote the key file, to remind the owner; "" for a key from a passphrase.
+	KeyFile string `json:"key_file,omitempty"`
+	// How the key comes from its passphrase (copy-key new --from-passphrase); nil for a key file's.
+	Derived *Derivation `json:"derived,omitempty"`
 }
 
 // NewCopyKey makes a user's copy key: what this server keeps, and the identity only the key file holds.
@@ -113,6 +115,7 @@ type Encrypted struct {
 	dirty    bool // the manifest changed since it was saved here
 	unpushed bool // since it was sent to the peer
 	pushedAt time.Time
+	salted   bool // copy-key.json is at the peer (a key from a passphrase)
 }
 
 // OpenEncrypted is an encrypted copy on inner, keeping its own state in dir. Its manifest is read from dir, or from
@@ -432,6 +435,15 @@ func (e *Encrypted) Flush(full bool) error {
 			e.mu.Unlock()
 			return err
 		}
+	}
+	if e.key.Derived != nil && !e.salted && full {
+		// The salt beside the copy, so the passphrase alone brings it back.
+		data, _ := json.Marshal(map[string]any{"v": 1, "user": e.key.User, "derivation": e.key.Derived})
+		sum := sha256.Sum256(data)
+		if err := e.Inner.Put(derivationName, bytes.NewReader(data), int64(len(data)), hex.EncodeToString(sum[:]), time.Now()); err != nil {
+			return err
+		}
+		e.salted = true
 	}
 	if !push {
 		return nil
