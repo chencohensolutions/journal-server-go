@@ -6,7 +6,9 @@ own layout (`media/<year>/<year-month>/…`). It can be read without the server,
 `data_folder` can point at it (the indexes are then rebuilt, since `.cache/` isn't copied).
 
 Copies are optional and set per user. A phone sees how its user's copies are doing and can start a pass ("In the
-apps", below). Copies to other machines over the internet, encryption and history are not built yet.
+apps", below). Copies to other machines over the internet, encryption and history are not built yet; copies on a
+friend's server (swap), encrypted copies and restore are planned in
+[../../journal-client-kmp/docs/plans/swap-and-encryption.md](../../journal-client-kmp/docs/plans/swap-and-encryption.md).
 
 ## Setting it up
 
