@@ -1,8 +1,8 @@
 // Package copies keeps a plain copy of a user's data folder in other folders (another disk, a USB disk, a network
 // share): the originals, their sidecars, people.json and settings.json, in the data folder's own layout, so a copy
-// can be opened as a data folder. It only reads the data folder; the copy folder itself is the record of what was
-// copied, and nothing is deleted from it but a JPEG the data folder keeps as JPEG XL, once the copy's JPEG XL makes
-// it byte for byte (jxl.go). See docs/copies.md.
+// can be opened as a data folder. It only reads the data folder; the copy itself is the record of what was copied,
+// and nothing is deleted from it but a JPEG the data folder keeps as JPEG XL, once the copy's JPEG XL makes it byte
+// for byte (jxl.go). The copier reaches the copy through a Target (target.go). See docs/copies.md.
 package copies
 
 import (
@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,7 +37,7 @@ func (c *Copier) rootFiles() []string {
 	files := []string{"people.json", "settings.json", "cameras.json", "sound-folders.json"}
 	journals, _ := filepath.Glob(c.source(filepath.Join("relabels", "*.tsv")))
 	for _, journal := range journals {
-		files = append(files, filepath.Join("relabels", filepath.Base(journal)))
+		files = append(files, "relabels/"+filepath.Base(journal))
 	}
 	return files
 }
@@ -50,6 +51,8 @@ type Copier struct {
 	Folder   string
 	At       string // the daily pass, "15:04"
 	Realtime bool
+	// Target is where the copy is kept; nil for Folder(Folder).
+	Target Target
 
 	store *media.Store
 	now   func() time.Time
@@ -64,10 +67,10 @@ type Copier struct {
 	dropped     map[string]bool // JPEGs kept as JPEG XL that this copy has no more (jxl.go)
 	root        bool            // the root files wait too
 	wake        chan struct{}
-	compared    *Compare  // the last compare, for the apps; nil before the first
-	comparing   bool      // a compare is being made
-	stale       bool      // files were copied since the last compare
-	unreachable time.Time // when the folder was first found out of reach; zero while it can be reached
+	compared    *Compare           // the last compare, for the apps; nil before the first
+	comparing   bool               // a compare is being made
+	stale       bool               // files were copied since the last compare
+	unreachable time.Time          // when the folder was first found out of reach; zero while it can be reached
 	stop        context.CancelFunc // ends the full pass going now
 	stopped     bool               // Stop was asked during this pass
 }
@@ -146,15 +149,14 @@ func (c *Copier) Ready() error {
 	return err
 }
 
-func (c *Copier) ready() error {
-	info, err := os.Stat(c.Folder)
-	if err != nil {
-		return fmt.Errorf("%w (disk unplugged?): %w", ErrUnreachable, err)
+func (c *Copier) ready() error { return c.dest().Ready() }
+
+// dest is where the copy is kept.
+func (c *Copier) dest() Target {
+	if c.Target != nil {
+		return c.Target
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("%w: %s is not a folder", ErrUnreachable, c.Folder)
-	}
-	return nil
+	return Folder(c.Folder)
 }
 
 // ErrUnreachable stops a pass or a compare when the copy folder isn't there: an unplugged disk, a share that is down.
@@ -205,11 +207,15 @@ func (c *Copier) CompareNow(ctx context.Context) Compare {
 			cmp.Report, cmp.At = c.compared.Report, c.compared.At
 		}
 	}
-	c.compared, c.comparing = &cmp, false
+	c.compared = &cmp
 	c.mu.Unlock()
 	if err == nil {
 		c.save()
 	}
+	// Comparing until it is saved, so nothing sees the compare over while its file is being written.
+	c.mu.Lock()
+	c.comparing = false
+	c.mu.Unlock()
 	return cmp
 }
 
@@ -236,8 +242,15 @@ func (c *Copier) Originals() int {
 	return u.Photos + u.Videos + u.Audio
 }
 
-// SameDisk reports whether the copy is on the data folder's disk, which a failing disk would take with it.
-func (c *Copier) SameDisk() (bool, error) { return sameDisk(c.store.Root(), c.Folder) }
+// SameDisk reports whether the copy is on the data folder's disk, which a failing disk would take with it. Only a
+// folder can be.
+func (c *Copier) SameDisk() (bool, error) {
+	folder, ok := c.dest().(Folder)
+	if !ok {
+		return false, nil
+	}
+	return sameDisk(c.store.Root(), string(folder))
+}
 
 // Run makes a full pass: everything the copy lacks is copied. A file that fails is logged and counted, and the pass
 // goes on; a missing folder or a full disk stops it.
@@ -334,7 +347,7 @@ func (c *Copier) Check(ctx context.Context, paths bool) (Report, error) {
 				report.Paths = append(report.Paths, item.Path)
 			}
 		}
-		if need, err := smallNeeded(c.source(item.Path)+".json", c.target(item.Path)+".json"); err != nil {
+		if need, err := c.smallNeeded(item.Path + ".json"); err != nil {
 			return report, err
 		} else if need {
 			report.Sidecars++
@@ -344,7 +357,7 @@ func (c *Copier) Check(ctx context.Context, paths bool) (Report, error) {
 		}
 	}
 	for _, name := range c.rootFiles() {
-		if need, err := smallNeeded(c.source(name), c.target(name)); err != nil {
+		if need, err := c.smallNeeded(name); err != nil {
 			return report, err
 		} else if need {
 			report.Sidecars++
@@ -354,22 +367,12 @@ func (c *Copier) Check(ctx context.Context, paths bool) (Report, error) {
 		}
 	}
 	// Originals in the copy only: files under media/ that aren't sidecars or our temp files.
-	err := filepath.WalkDir(c.target("media"), func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		name := d.Name()
-		if d.IsDir() || strings.HasSuffix(name, ".json") || strings.HasPrefix(name, ".") {
+	err := c.dest().Walk("media", func(f File) error {
+		name := path.Base(f.Path)
+		if strings.HasSuffix(name, ".json") || isTemp(name) {
 			return nil
 		}
-		rel, err := filepath.Rel(c.Folder, path)
-		if err != nil {
-			return err
-		}
-		if !known[strings.ToLower(filepath.ToSlash(rel))] {
+		if !known[strings.ToLower(f.Path)] {
 			report.InCopyOnly++
 		}
 		return nil
@@ -453,8 +456,6 @@ func (c *Copier) source(path string) string {
 	return filepath.Join(c.store.Root(), filepath.FromSlash(path))
 }
 
-func (c *Copier) target(path string) string { return filepath.Join(c.Folder, filepath.FromSlash(path)) }
-
 // copy copies what the copy lacks of items and (with root) the root files, adding to pass.
 func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string]bool, root bool, pass *Pass) error {
 	written := func(n int64) {
@@ -506,7 +507,7 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string
 			}
 			c.mu.Unlock()
 		}
-		if n, copied, err := copySmall(c.source(item.Path)+".json", c.target(item.Path)+".json"); err != nil {
+		if n, copied, err := c.copySmall(item.Path + ".json"); err != nil {
 			failed(item.Path+".json", err)
 		} else if copied {
 			counted(n)
@@ -522,7 +523,7 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string
 	}
 	if root {
 		for _, name := range c.rootFiles() {
-			if n, copied, err := copySmall(c.source(name), c.target(name)); err != nil {
+			if n, copied, err := c.copySmall(name); err != nil {
 				failed(name, err)
 			} else if copied {
 				counted(n)
@@ -535,7 +536,7 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string
 // originalNeeded: an original is in the copy when a file of its size is at its path (originals never change, and
 // are written to the copy whole or not at all).
 func (c *Copier) originalNeeded(item media.Item) (bool, error) {
-	info, err := os.Stat(c.target(item.Path))
+	info, err := c.dest().Stat(item.Path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return true, nil
 	}
@@ -546,11 +547,11 @@ func (c *Copier) originalNeeded(item media.Item) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return info.Size() != src.Size(), nil
+	return info.Size != src.Size(), nil
 }
 
-// copyOriginal copies an original through a temp file beside its place in the copy, checks the bytes against its
-// sha256 and only then renames it into place, so the copy never holds part of an original.
+// copyOriginal puts an original into the copy, checked against its sha256 before it takes its place (Target.Put), so
+// the copy never holds part of an original.
 func (c *Copier) copyOriginal(ctx context.Context, item media.Item, written func(int64)) (int64, error) {
 	src, err := os.Open(c.source(item.Path))
 	if err != nil {
@@ -561,41 +562,20 @@ func (c *Copier) copyOriginal(ctx context.Context, item media.Item, written func
 	if err != nil {
 		return 0, err
 	}
-	dest := c.target(item.Path)
-	dir := filepath.Dir(dest)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return 0, err
-	}
-	if free, err := media.FreeBytes(dir); err == nil && free < uint64(info.Size())+spaceReserve {
+	if free, err := c.dest().Free(item.Path); err == nil && free < uint64(info.Size())+spaceReserve {
 		return 0, fmt.Errorf("%w: %s free, %s needed for %s", ErrDiskFull, Size(int64(free)), Size(info.Size()), item.Path)
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(dest)+".*.copying")
-	if err != nil {
-		return 0, err
-	}
-	defer os.Remove(tmp.Name()) // already moved away once in place
-	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, hash, progress{ctx, written}), src)
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
+	err = c.dest().Put(item.Path, io.TeeReader(src, progress{ctx, written}), info.Size(), item.Sidecar.Sha256, info.ModTime())
+	if errors.Is(err, errDamaged) {
+		return 0, fmt.Errorf("%w: the original on the server may be damaged", err)
 	}
 	if err != nil {
 		return 0, err
 	}
-	if sum := hex.EncodeToString(hash.Sum(nil)); sum != item.Sidecar.Sha256 {
-		return 0, fmt.Errorf("its bytes have sha256 %s, not %s: the original on the server may be damaged", sum, item.Sidecar.Sha256)
-	}
-	if err := media.Rename(tmp.Name(), dest); err != nil {
-		return 0, err
-	}
-	os.Chtimes(dest, info.ModTime(), info.ModTime())
-	return n, nil
+	return info.Size(), nil
 }
 
-// progress counts an original's bytes as they are written, and ends its copy when the pass is stopped.
+// progress counts an original's bytes as they are read for the copy, and ends its copy when the pass is stopped.
 type progress struct {
 	ctx     context.Context
 	written func(int64)
@@ -611,38 +591,38 @@ func (p progress) Write(b []byte) (int, error) {
 
 // smallNeeded reports whether a small file (a sidecar, people.json, settings.json) differs from the copy's: a
 // different size, or a different modified time and different bytes. A missing source needs nothing.
-func smallNeeded(source, target string) (bool, error) {
-	src, err := os.Stat(source)
+func (c *Copier) smallNeeded(name string) (bool, error) {
+	src, err := os.Stat(c.source(name))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	dst, err := os.Stat(target)
+	dst, err := c.dest().Stat(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return true, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	if src.Size() != dst.Size() {
+	if src.Size() != dst.Size {
 		return true, nil
 	}
-	if src.ModTime().Equal(dst.ModTime()) {
+	if src.ModTime().Equal(dst.ModTime) {
 		return false, nil
 	}
 	// The same size at another time (or a disk that keeps times coarsely, like FAT): compare the bytes.
-	a, err := os.ReadFile(source)
+	a, err := os.ReadFile(c.source(name))
 	if err != nil {
 		return false, err
 	}
-	b, err := os.ReadFile(target)
+	b, err := readAll(c.dest(), name)
 	if err != nil {
 		return false, err
 	}
 	if bytes.Equal(a, b) {
-		os.Chtimes(target, src.ModTime(), src.ModTime()) // compared by time next time
+		c.dest().Touch(name, src.ModTime()) // compared by time next time
 		return false, nil
 	}
 	return true, nil
@@ -650,41 +630,23 @@ func smallNeeded(source, target string) (bool, error) {
 
 // copySmall copies a small file when the copy's differs, whole or not at all, with the source's modified time, so
 // the next pass sees them alike without reading them.
-func copySmall(source, target string) (int64, bool, error) {
-	need, err := smallNeeded(source, target)
+func (c *Copier) copySmall(name string) (int64, bool, error) {
+	need, err := c.smallNeeded(name)
 	if err != nil || !need {
 		return 0, false, err
 	}
-	info, err := os.Stat(source)
+	info, err := os.Stat(c.source(name))
 	if err != nil {
 		return 0, false, err
 	}
-	data, err := os.ReadFile(source)
+	data, err := os.ReadFile(c.source(name))
 	if err != nil {
 		return 0, false, err
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	sum := sha256.Sum256(data)
+	if err := c.dest().Put(name, bytes.NewReader(data), int64(len(data)), hex.EncodeToString(sum[:]), info.ModTime()); err != nil {
 		return 0, false, err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".*.copying")
-	if err != nil {
-		return 0, false, err
-	}
-	defer os.Remove(tmp.Name())
-	_, err = tmp.Write(data)
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return 0, false, err
-	}
-	if err := media.Rename(tmp.Name(), target); err != nil {
-		return 0, false, err
-	}
-	os.Chtimes(target, info.ModTime(), info.ModTime())
 	return int64(len(data)), true, nil
 }
 

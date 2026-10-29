@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -42,13 +40,12 @@ func (c *Copier) dropJPEG(item media.Item, names map[string][]string) (int64, er
 	if c.store.JXL == nil {
 		return 0, fmt.Errorf("%s stays in the copy beside its JPEG XL: %w", rel, media.ErrNoJXL)
 	}
-	jpegPath := c.target(rel)
-	if sum, size, err := hashFile(jpegPath); err != nil {
+	if sum, size, err := hashOf(c.dest(), rel); err != nil {
 		return 0, err
 	} else if sum != from.Sha256 || size != from.Size {
 		return 0, fmt.Errorf("%s stays in the copy: its bytes aren't the JPEG %s was kept from", rel, item.Path)
 	}
-	jxl, err := os.ReadFile(c.target(item.Path))
+	jxl, err := readAll(c.dest(), item.Path)
 	if err != nil {
 		return 0, err
 	}
@@ -63,10 +60,10 @@ func (c *Copier) dropJPEG(item media.Item, names map[string][]string) (int64, er
 		return 0, fmt.Errorf("%s stays in the copy: the copy's JPEG XL doesn't make it byte for byte", rel)
 	}
 	// Its sidecar first, as the data folder does: what a stop leaves is a file no sidecar names.
-	if err := os.Remove(jpegPath + ".json"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := c.dest().Remove(rel + ".json"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return 0, err
 	}
-	if err := os.Remove(jpegPath); err != nil {
+	if err := c.dest().Remove(rel); err != nil {
 		return 0, err
 	}
 	c.markDropped(from.Sha256)
@@ -88,14 +85,12 @@ func (c *Copier) findJPEG(item media.Item, names map[string][]string) (string, e
 	dir := path.Dir(item.Path)
 	listed, ok := names[dir]
 	if !ok {
-		entries, err := os.ReadDir(c.target(dir))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		files, err := c.dest().List(dir)
+		if err != nil {
 			return "", err
 		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				listed = append(listed, e.Name())
-			}
+		for _, f := range files {
+			listed = append(listed, path.Base(f.Path))
 		}
 		names[dir] = listed
 	}
@@ -106,16 +101,16 @@ func (c *Copier) findJPEG(item media.Item, names map[string][]string) (string, e
 			continue
 		}
 		rel := dir + "/" + name
-		if sha, err := sidecarSha(c.target(rel) + ".json"); err == nil && sha == item.Sidecar.Facts.EncodedFrom.Sha256 {
+		if sha, err := c.sidecarSha(rel + ".json"); err == nil && sha == item.Sidecar.Facts.EncodedFrom.Sha256 {
 			return rel, nil
 		}
 	}
 	return "", nil
 }
 
-// sidecarSha is the sha256 a sidecar names.
-func sidecarSha(path string) (string, error) {
-	data, err := os.ReadFile(path)
+// sidecarSha is the sha256 a sidecar in the copy names.
+func (c *Copier) sidecarSha(path string) (string, error) {
+	data, err := readAll(c.dest(), path)
 	if err != nil {
 		return "", err
 	}
@@ -126,15 +121,4 @@ func sidecarSha(path string) (string, error) {
 		return "", err
 	}
 	return sidecar.Sha256, nil
-}
-
-func hashFile(path string) (string, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
-	return hex.EncodeToString(h.Sum(nil)), n, err
 }

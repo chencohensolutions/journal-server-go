@@ -1,10 +1,12 @@
 package copies
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
-	"os"
 	"time"
 )
 
@@ -43,7 +45,7 @@ type savedPass struct {
 // Load takes the last compare and pass saved in the copy folder, when the copier has none of its own yet. A missing
 // or unreadable file leaves the copier as it was: the next compare makes it again.
 func (c *Copier) Load() {
-	data, err := os.ReadFile(c.target(savedName))
+	data, err := readAll(c.dest(), savedName)
 	if err != nil {
 		return
 	}
@@ -87,13 +89,8 @@ func (c *Copier) save() {
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err == nil {
-		path := c.target(savedName)
-		temp := path + ".tmp"
-		if err = os.WriteFile(temp, data, 0o644); err == nil {
-			if err = os.Rename(temp, path); err != nil {
-				os.Remove(temp)
-			}
-		}
+		sum := sha256.Sum256(data)
+		err = c.dest().Put(savedName, bytes.NewReader(data), int64(len(data)), hex.EncodeToString(sum[:]), c.now())
 	}
 	if err != nil {
 		log.Printf("copy %s → %s: saving %s: %v", c.User, c.Folder, savedName, err)

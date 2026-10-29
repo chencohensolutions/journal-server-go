@@ -111,7 +111,9 @@ copies, and only counts and the copy's folder, never file names; the counts incl
 ## Code
 
 - `copies/`: `Copier` (`Run` a full pass, `Check` the report's compare, `Changed` and `RunRealtime` for realtime
-  copies), and `disk_*.go` for the same-disk check per OS.
+  copies), and `disk_*.go` for the same-disk check per OS. The copier reaches the copy only through a `Target`
+  (`target.go`): `Folder` is a copy in a folder, the only kind today; a friend's server will be another (the plan
+  above). Every target passes `testTarget` in `target_test.go`.
 - `copy.go`: making the copiers from config.json, the daily schedule, and the realtime start.
 - `auth.CopyConfig`, and `checkCopies` in `auth/config.go`.
 - The admin schema's `copyReport` and `startCopy`, and `admincli.go`'s `copy` commands.
