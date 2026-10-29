@@ -31,7 +31,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/peers.md](docs/peers.md): copies on a friend's server (a peer): `peer invite` / `peer add`, the peer
   certificate (OU `journal-peer`, reaches only `/peer/`), the host's peer API (package `peers`) and `copies.Peer`.
 
-Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
+Not built yet: stories and notes in the change feed, the story trash. Certificates renew in their last 30 days
+(`renewCertificate` for devices, `POST /peer/renew` for peers; docs/authentication.md, docs/peers.md).
 
 **Platforms.** The owner's server is a Windows PC (search runs there since Oct 22, 2026), development happens on a
 Mac, and the owner plans to distribute the server to the community on Windows, macOS and Linux (Oct 21, 2026). So: no cgo, Windows-safe file names (compared ignoring

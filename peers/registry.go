@@ -25,6 +25,8 @@ type Peer struct {
 	AddedAt   time.Time  `json:"added_at"`
 	ExpiresAt time.Time  `json:"expires_at"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	// The certificate it renewed (POST /peer/renew), accepted until Serial is first used.
+	PreviousSerial string `json:"previous_serial,omitempty"`
 }
 
 // ErrPeerNotFound is a name no peer has.
@@ -87,16 +89,51 @@ func (r *Registry) Active(name string) (Peer, bool) {
 	return Peer{}, false
 }
 
-// BySerial is the peer with this certificate serial, revoked or not.
+// BySerial is the peer with this certificate serial, revoked or not; its certificate before a renewal counts until
+// the new one is used.
 func (r *Registry) BySerial(serial string) (Peer, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, p := range r.peers {
-		if p.Serial == serial {
+		if p.Serial == serial || (p.PreviousSerial != "" && p.PreviousSerial == serial) {
 			return p, true
 		}
 	}
 	return Peer{}, false
+}
+
+// renewed gives the active peer named a new certificate; the old one stays usable until the new is used.
+func (r *Registry) renewed(name, serial string, expires time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.peers {
+		if r.peers[i].Name != name || r.peers[i].RevokedAt != nil {
+			continue
+		}
+		before := r.peers[i]
+		r.peers[i].PreviousSerial, r.peers[i].Serial, r.peers[i].ExpiresAt = before.Serial, serial, expires
+		if err := r.save(); err != nil {
+			r.peers[i] = before
+			return err
+		}
+		return nil
+	}
+	return ErrPeerNotFound
+}
+
+// used forgets the certificate a peer renewed, once its new one (serial) is used.
+func (r *Registry) used(serial string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.peers {
+		if r.peers[i].Serial == serial && r.peers[i].PreviousSerial != "" {
+			before := r.peers[i]
+			r.peers[i].PreviousSerial = ""
+			if err := r.save(); err != nil {
+				r.peers[i] = before
+			}
+		}
+	}
 }
 
 func (r *Registry) add(p Peer) error {

@@ -411,3 +411,48 @@ func TestACopyKeyFromAPassphrase(t *testing.T) {
 		t.Fatal("the exported key file: ", err)
 	}
 }
+
+// A peer certificate near its end is renewed by the owner's server: the copies go on with the new one at once, and
+// the host refuses the old one from then on.
+func TestAPeerCertificateIsRenewed(t *testing.T) {
+	dana := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersFolder = t.TempDir()
+		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
+	})
+	code, _, _ := dana.peers.Invite("hen-home", 1e9)
+	config := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
+	if err := peerAddCommand(config, []string{"dana", dana.server.URL, code + "." + peers.Fingerprint(dana.server.Certificate()), "--trusted"}); err != nil {
+		t.Fatal(err)
+	}
+	hen := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersDir = config.PeersDir
+		c.Users[0].Copies = []auth.CopyConfig{{Peer: "dana"}}
+	})
+	_, oldCert, _ := loadPeer(config, "dana")
+	oldInfo, _, _ := loadPeer(config, "dana")
+
+	// Far from its end: nothing happens.
+	renewPeers(config, hen.copiers, oldInfo.ExpiresAt.Add(-40*24*time.Hour))
+	if _, cert, _ := loadPeer(config, "dana"); string(cert.Certificate[0]) != string(oldCert.Certificate[0]) {
+		t.Fatal("renewed 40 days before the end")
+	}
+	// Within 30 days of it: renewed, and the copy uses the new certificate.
+	renewPeers(config, hen.copiers, oldInfo.ExpiresAt.Add(-10*24*time.Hour))
+	_, newCert, err := loadPeer(config, "dana")
+	if err != nil || string(newCert.Certificate[0]) == string(oldCert.Certificate[0]) {
+		t.Fatalf("not renewed: %v", err)
+	}
+	hen.uploadPhoto(t, hen.enrolledClient(t), []byte("a photo"), "IMG_1.jpg")
+	runCopy(context.Background(), hen.copiers[0])
+	if _, last := hen.copiers[0].Status(); last == nil || last.Err != nil || last.Files == 0 {
+		t.Fatalf("the copy after renewing: %+v", last)
+	}
+	// The old certificate is refused now that the new one was used.
+	old := copies.NewPeer("dana", dana.server.URL, "hen", oldCert, peers.Fingerprint(dana.server.Certificate()))
+	if err := old.Ready(); err == nil {
+		t.Error("the old certificate still works")
+	}
+	if p, _ := dana.peers.Registry.Active("hen-home"); p.PreviousSerial != "" {
+		t.Errorf("dana still accepts the old certificate: %+v", p)
+	}
+}

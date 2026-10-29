@@ -20,6 +20,8 @@ type Query {
 type ServerInfo {
   "The API's version: raised when a change needs newer apps."
   api: Int!
+  "A device can renew its certificate (renewCertificate) before it expires."
+  renewCertificates: Boolean!
   "The server's build: its commit and time, or dev."
   version: String!
   "Text search (searchMedia) is on."
@@ -46,6 +48,13 @@ type ServerInfo {
 type Mutation {
   "Trades a one-time enrollment code and a certificate request for a client certificate."
   enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
+  """
+  Renews the calling device's certificate (serverInfo.renewCertificates): a new certificate for a new key, for the same
+  user and device, with its settings. The old certificate works until the new one is first used, and is then
+  revoked. A device renews in the last 30 days of its certificate (expiresAt). NOT_ENROLLED for a certificate made
+  outside enrollment, or revoked.
+  """
+  renewCertificate(csr: String!, keyProtection: KeyProtection!): EnrollDeviceResult!
 }
 
 input EnrollDeviceInput {
@@ -99,4 +108,6 @@ enum EnrollmentRejectedReason {
   INVALID_CSR
   "Too many wrong codes from this address; wait a minute."
   RATE_LIMITED
+  "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
+  NOT_ENROLLED
 }

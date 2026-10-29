@@ -158,9 +158,7 @@ func TestAPassToAPeer(t *testing.T) {
 	}
 }
 
-func (p *Peer) certificate(t *testing.T) tls.Certificate {
-	return p.client.Transport.(*http.Transport).TLSClientConfig.Certificates[0]
-}
+func (p *Peer) certificate(t *testing.T) tls.Certificate { return p.Certificate() }
 
 func mustPeer(t *testing.T, h *testHost, name string) peers.Peer {
 	t.Helper()

@@ -562,6 +562,8 @@ type SearchHit struct {
 type ServerInfo struct {
 	// The API's version: raised when a change needs newer apps.
 	API int `json:"api"`
+	// A device can renew its certificate (renewCertificate) before it expires.
+	RenewCertificates bool `json:"renewCertificates"`
 	// The server's build: its commit and time, or dev.
 	Version string `json:"version"`
 	// Text search (searchMedia) is on.
@@ -881,17 +883,20 @@ const (
 	EnrollmentRejectedReasonInvalidCsr EnrollmentRejectedReason = "INVALID_CSR"
 	// Too many wrong codes from this address; wait a minute.
 	EnrollmentRejectedReasonRateLimited EnrollmentRejectedReason = "RATE_LIMITED"
+	// renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again.
+	EnrollmentRejectedReasonNotEnrolled EnrollmentRejectedReason = "NOT_ENROLLED"
 )
 
 var AllEnrollmentRejectedReason = []EnrollmentRejectedReason{
 	EnrollmentRejectedReasonInvalidCode,
 	EnrollmentRejectedReasonInvalidCsr,
 	EnrollmentRejectedReasonRateLimited,
+	EnrollmentRejectedReasonNotEnrolled,
 }
 
 func (e EnrollmentRejectedReason) IsValid() bool {
 	switch e {
-	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited:
+	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited, EnrollmentRejectedReasonNotEnrolled:
 		return true
 	}
 	return false

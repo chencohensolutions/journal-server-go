@@ -54,7 +54,15 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 			http.Error(w, "client certificate revoked", http.StatusUnauthorized)
 			return
 		}
+		ctx = auth.WithSerial(ctx, serial)
 		if device, ok := registry.Find(serial); ok {
+			if device.RenewedFrom != "" {
+				if old, err := registry.UseRenewal(serial, time.Now().UTC()); err != nil {
+					log.Printf("Renewed certificate %s in use, but %s couldn't be revoked: %v", serial, device.RenewedFrom, err)
+				} else if old != "" {
+					log.Printf("Renewed certificate %s of %q in use: %s revoked", serial, device.Name, old)
+				}
+			}
 			ctx = auth.WithDeviceName(ctx, device.Name)
 			if device.WithholdPrivate {
 				ctx = auth.WithWithholdPrivate(ctx)

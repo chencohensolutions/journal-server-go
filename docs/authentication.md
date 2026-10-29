@@ -83,7 +83,13 @@ Signed by `client_ca` with `client_ca_key` (`enroll/issuer.go`):
 - Subject `CN` = the user the code was created for. The subject in the request is ignored.
 - Random 128-bit serial; `ExtKeyUsage: clientAuth`; valid **365 days**, never beyond the CA's own
   expiry; `NotBefore` is backdated 5 minutes to tolerate device clock skew.
-- There is no automatic renewal. When a certificate expires, enroll the device again.
+- **Renewal** (Oct 30, 2026): in the last 30 days of its certificate (`enroll.RenewBefore`), a device makes a new
+  key and calls `renewCertificate(csr, keyProtection)` with its current certificate (`serverInfo.renewCertificates`).
+  The server issues a certificate for the same user, with the device's name and `withhold_private` carried over,
+  and records it in the registry with `renewed_from`. The old certificate works until the new one is first used
+  (`identify` then revokes it, `Registry.UseRenewal`), so a device that fails to switch keeps working. A
+  certificate made outside enrollment, or revoked, gets `NOT_ENROLLED`. A certificate that expired can't renew:
+  enroll the device again.
 - The same CA signs **peer** certificates, for other journal servers that keep copies here ([peers.md](peers.md)):
   `CN` is the invite's name and `OU=journal-peer`. `identify` refuses a certificate with that OU on every route but
   `/peer/`, so a peer named like a user is never that user.

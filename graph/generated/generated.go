@@ -294,6 +294,7 @@ type ComplexityRoot struct {
 		NamePerson           func(childComplexity int, id string, name string) int
 		PauseIndexing        func(childComplexity int) int
 		PrepareSearch        func(childComplexity int) int
+		RenewCertificate     func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		SetCall              func(childComplexity int, sha256 string, call model.CallInput) int
 		SetCamera            func(childComplexity int, make string, model string, mine bool) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
@@ -362,25 +363,26 @@ type ComplexityRoot struct {
 	}
 
 	ServerInfo struct {
-		API            func(childComplexity int) int
-		Aesthetic      func(childComplexity int) int
-		Audio          func(childComplexity int) int
-		Cameras        func(childComplexity int) int
-		Copies         func(childComplexity int) int
-		EncodesWav     func(childComplexity int) int
-		Faces          func(childComplexity int) int
-		Indexing       func(childComplexity int) int
-		KeepsJpegAsJxl func(childComplexity int) int
-		LocalIndexes   func(childComplexity int) int
-		NudityScan     func(childComplexity int) int
-		PeerCopies     func(childComplexity int) int
-		Posters        func(childComplexity int) int
-		Previews       func(childComplexity int) int
-		Search         func(childComplexity int) int
-		Similar        func(childComplexity int) int
-		SoundFolders   func(childComplexity int) int
-		TextInPhotos   func(childComplexity int) int
-		Version        func(childComplexity int) int
+		API               func(childComplexity int) int
+		Aesthetic         func(childComplexity int) int
+		Audio             func(childComplexity int) int
+		Cameras           func(childComplexity int) int
+		Copies            func(childComplexity int) int
+		EncodesWav        func(childComplexity int) int
+		Faces             func(childComplexity int) int
+		Indexing          func(childComplexity int) int
+		KeepsJpegAsJxl    func(childComplexity int) int
+		LocalIndexes      func(childComplexity int) int
+		NudityScan        func(childComplexity int) int
+		PeerCopies        func(childComplexity int) int
+		Posters           func(childComplexity int) int
+		Previews          func(childComplexity int) int
+		RenewCertificates func(childComplexity int) int
+		Search            func(childComplexity int) int
+		Similar           func(childComplexity int) int
+		SoundFolders      func(childComplexity int) int
+		TextInPhotos      func(childComplexity int) int
+		Version           func(childComplexity int) int
 	}
 
 	SimilarHit struct {
@@ -432,6 +434,7 @@ type MediaResolver interface {
 }
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
+	RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error)
 	SetCall(ctx context.Context, sha256 string, call model.CallInput) (*model.Media, error)
 	SetCamera(ctx context.Context, make string, model string, mine bool) ([]*model.CameraModel, error)
 	StartCopy(ctx context.Context, folder string) (*model.DataCopy, error)
@@ -1569,6 +1572,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.PrepareSearch(childComplexity), true
+	case "Mutation.renewCertificate":
+		if e.ComplexityRoot.Mutation.RenewCertificate == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_renewCertificate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RenewCertificate(childComplexity, args["csr"].(string), args["keyProtection"].(model.KeyProtection)), true
 	case "Mutation.setCall":
 		if e.ComplexityRoot.Mutation.SetCall == nil {
 			break
@@ -2033,6 +2047,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Previews(childComplexity), true
+	case "ServerInfo.renewCertificates":
+		if e.ComplexityRoot.ServerInfo.RenewCertificates == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.RenewCertificates(childComplexity), true
 	case "ServerInfo.search":
 		if e.ComplexityRoot.ServerInfo.Search == nil {
 			break
@@ -3143,6 +3163,8 @@ type Query {
 type ServerInfo {
   "The API's version: raised when a change needs newer apps."
   api: Int!
+  "A device can renew its certificate (renewCertificate) before it expires."
+  renewCertificates: Boolean!
   "The server's build: its commit and time, or dev."
   version: String!
   "Text search (searchMedia) is on."
@@ -3169,6 +3191,13 @@ type ServerInfo {
 type Mutation {
   "Trades a one-time enrollment code and a certificate request for a client certificate."
   enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
+  """
+  Renews the calling device's certificate (serverInfo.renewCertificates): a new certificate for a new key, for the same
+  user and device, with its settings. The old certificate works until the new one is first used, and is then
+  revoked. A device renews in the last 30 days of its certificate (expiresAt). NOT_ENROLLED for a certificate made
+  outside enrollment, or revoked.
+  """
+  renewCertificate(csr: String!, keyProtection: KeyProtection!): EnrollDeviceResult!
 }
 
 input EnrollDeviceInput {
@@ -3222,6 +3251,8 @@ enum EnrollmentRejectedReason {
   INVALID_CSR
   "Too many wrong codes from this address; wait a minute."
   RATE_LIMITED
+  "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
+  NOT_ENROLLED
 }
 `, BuiltIn: false},
 	{Name: "../schema/search.graphql", Input: `# --- Text search ----------------------------------------------------------------
@@ -3966,6 +3997,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 	switch field.Name {
 	case "api":
 		return ec.fieldContext_ServerInfo_api(ctx, field)
+	case "renewCertificates":
+		return ec.fieldContext_ServerInfo_renewCertificates(ctx, field)
 	case "version":
 		return ec.fieldContext_ServerInfo_version(ctx, field)
 	case "search":
@@ -4325,6 +4358,28 @@ func (ec *executionContext) field_Mutation_namePerson_args(ctx context.Context, 
 		return nil, err
 	}
 	args["name"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_renewCertificate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "csr",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["csr"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "keyProtection",
+		func(ctx context.Context, v any) (model.KeyProtection, error) {
+			return ec.unmarshalNKeyProtection2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["keyProtection"] = arg1
 	return args, nil
 }
 
@@ -8838,6 +8893,50 @@ func (ec *executionContext) fieldContext_Mutation_enrollDevice(ctx context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_renewCertificate(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_renewCertificate(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RenewCertificate(ctx, fc.Args["csr"].(string), fc.Args["keyProtection"].(model.KeyProtection))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.EnrollDeviceResult) graphql.Marshaler {
+			return ec.marshalNEnrollDeviceResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_renewCertificate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type EnrollDeviceResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_renewCertificate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_setCall(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10843,6 +10942,29 @@ func (ec *executionContext) _ServerInfo_api(ctx context.Context, field graphql.C
 }
 func (ec *executionContext) fieldContext_ServerInfo_api(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_renewCertificates(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_renewCertificates(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RenewCertificates, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_renewCertificates(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _ServerInfo_version(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
@@ -15307,6 +15429,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "renewCertificate":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_renewCertificate(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "setCall":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setCall(ctx, field)
@@ -16186,6 +16315,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			out.Values[i] = graphql.MarshalString("ServerInfo")
 		case "api":
 			out.Values[i] = ec._ServerInfo_api(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "renewCertificates":
+			out.Values[i] = ec._ServerInfo_renewCertificates(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

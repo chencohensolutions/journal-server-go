@@ -9,7 +9,19 @@ const (
 	clientIPContextKey contextKey = "client_ip"
 	deviceContextKey   contextKey = "device"
 	withholdContextKey contextKey = "withhold_private"
+	serialContextKey   contextKey = "serial"
 )
+
+// WithSerial records the serial of the client certificate.
+func WithSerial(ctx context.Context, serial string) context.Context {
+	return context.WithValue(ctx, serialContextKey, serial)
+}
+
+// SerialFromContext is the client certificate's serial, or "" for an anonymous request.
+func SerialFromContext(ctx context.Context) string {
+	serial, _ := ctx.Value(serialContextKey).(string)
+	return serial
+}
 
 // WithUser records the user the client certificate named.
 func WithUser(ctx context.Context, user *UserConfig) context.Context {

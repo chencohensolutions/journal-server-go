@@ -69,6 +69,10 @@ can still read the files at the host.
 - On the host, `peers.json` (beside `devices.json`, `peers_file`) lists each peer: name, serial, quota, added,
   expires, revoked. Codes are kept in memory only, like enrollment codes, and wrong codes count against the same
   per-address limit.
+- **Renewal.** At start and daily, this server renews each peer certificate that expires within 30 days
+  (`renewPeers` in `peer.go`): a new key, `POST /peer/renew` with the current certificate, and the new pair in
+  place of the old in `peers_dir/<name>/` (the old kept as `*.pem.prev`). The copies switch to it at once. The host
+  accepts the old certificate (`previous_serial` in `peers.json`) until the new one is first used.
 - **A peer certificate reaches only the peer API**, and only its own space: `identify` refuses a certificate marked
   `journal-peer` on every other route, whatever its CN. A device certificate can't reach the peer API.
 - **A server set up again** (the old one lost with its `certs/`): the host's admin revokes the old peer and invites
@@ -211,5 +215,5 @@ journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-res
 
 ## Not built yet
 
-Peers' certificates renewing, pruning old versions in history/, and serving phones from a peer while the owner's server is
+Pruning old versions in history/, and serving phones from a peer while the owner's server is
 off. See the plan.

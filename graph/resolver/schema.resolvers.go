@@ -48,6 +48,34 @@ func (r *mutationResolver) EnrollDevice(ctx context.Context, input model.EnrollD
 	}, nil
 }
 
+// RenewCertificate is the resolver for the renewCertificate field.
+func (r *mutationResolver) RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error) {
+	der, err := base64.StdEncoding.DecodeString(csr)
+	if err != nil {
+		return model.EnrollmentRejected{Reason: model.EnrollmentRejectedReasonInvalidCsr}, nil
+	}
+	serial := auth.SerialFromContext(ctx)
+	enrolled, rejection, err := r.Enrollment.Renew(serial, der, keyProtection.String())
+	if err != nil {
+		log.Printf("Renewing certificate %s failed: %v", serial, err)
+		return nil, fmt.Errorf("renewing failed")
+	}
+	if rejection != "" {
+		log.Printf("Renewing certificate %s rejected: %s", serial, rejection)
+		return model.EnrollmentRejected{Reason: model.EnrollmentRejectedReason(rejection)}, nil
+	}
+	device := enrolled.Device
+	log.Printf("Renewed the certificate of %q for user %s: %s replaces %s, until %s", device.Name, device.User,
+		device.Serial, serial, device.ExpiresAt.Format("2006-01-02"))
+	return model.EnrolledDevice{
+		User:        device.User,
+		DeviceName:  device.Name,
+		Certificate: base64.StdEncoding.EncodeToString(enrolled.Certificate),
+		Serial:      device.Serial,
+		ExpiresAt:   device.ExpiresAt,
+	}, nil
+}
+
 // EnrollmentPreview is the resolver for the enrollmentPreview field.
 func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error) {
 	preview, rejection := r.Enrollment.Preview(auth.ClientIPFromContext(ctx), code)
@@ -64,21 +92,22 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		keepsJXL = store.JXL != nil
 	}
 	return &model.ServerInfo{
-		API:          APIVersion,
-		Version:      r.Version,
-		Search:       r.Search != nil,
-		Previews:     r.Previews != nil && r.Previews.Available(),
-		Posters:      r.Previews != nil && r.Previews.PostersAvailable(),
-		NudityScan:   r.NudityScan,
-		Faces:        r.Faces != nil,
-		TextInPhotos: r.TextInPhotos != nil,
-		Similar:      r.SimilarPhotos != nil,
-		Aesthetic:    r.AestheticScores != nil,
-		LocalIndexes: r.Local.On(),
-		Indexing:     r.IndexRuns != nil,
-		Copies:       r.Resolver.Copies != nil,
-		PeerCopies:   r.Resolver.Copies != nil,
-		Audio:        true,
+		API:               APIVersion,
+		Version:           r.Version,
+		Search:            r.Search != nil,
+		Previews:          r.Previews != nil && r.Previews.Available(),
+		Posters:           r.Previews != nil && r.Previews.PostersAvailable(),
+		NudityScan:        r.NudityScan,
+		Faces:             r.Faces != nil,
+		TextInPhotos:      r.TextInPhotos != nil,
+		Similar:           r.SimilarPhotos != nil,
+		Aesthetic:         r.AestheticScores != nil,
+		LocalIndexes:      r.Local.On(),
+		Indexing:          r.IndexRuns != nil,
+		RenewCertificates: true,
+		Copies:            r.Resolver.Copies != nil,
+		PeerCopies:        r.Resolver.Copies != nil,
+		Audio:             true,
 		// The stores find ffmpeg the way posters do.
 		EncodesWav: r.Previews != nil && r.Previews.PostersAvailable(),
 		// libjxl is loaded into the server, given to every store (loadJXL).

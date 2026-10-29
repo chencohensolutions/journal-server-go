@@ -133,11 +133,42 @@ func (h *Host) peerOf(r *http.Request) (Peer, bool) {
 	if !enroll.IsPeer(cert) {
 		return Peer{}, false
 	}
-	p, ok := h.Registry.BySerial(enroll.SerialString(cert.SerialNumber))
+	serial := enroll.SerialString(cert.SerialNumber)
+	p, ok := h.Registry.BySerial(serial)
 	if !ok || p.RevokedAt != nil || p.Name != cert.Subject.CommonName {
 		return Peer{}, false
 	}
+	if p.PreviousSerial != "" && serial == p.Serial {
+		h.Registry.used(serial)
+		log.Printf("Peer %s uses its renewed certificate: the one before is refused from now on", p.Name)
+	}
 	return p, true
+}
+
+// ServeRenew answers POST /peer/renew: a new certificate for the peer, for the request's key ({csr}), the same name
+// and quota. The one it called with works until the new one is first used.
+func ServeRenew(h *Host, p Peer, w http.ResponseWriter, r *http.Request) {
+	var req EnrollRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil {
+		answerError(w, http.StatusBadRequest, CodeInvalidCSR, "not a renew request")
+		return
+	}
+	csr, err := enroll.ParseDeviceCSR(req.CSR)
+	if err != nil {
+		answerError(w, http.StatusBadRequest, CodeInvalidCSR, err.Error())
+		return
+	}
+	cert, err := h.issuer.IssuePeer(csr, p.Name)
+	if err != nil {
+		answerError(w, http.StatusInternalServerError, "", err.Error())
+		return
+	}
+	if err := h.Registry.renewed(p.Name, enroll.SerialString(cert.SerialNumber), cert.NotAfter.UTC()); err != nil {
+		answerError(w, http.StatusInternalServerError, "", err.Error())
+		return
+	}
+	log.Printf("Peer %s renewed its certificate, until %s", p.Name, cert.NotAfter.Format("2006-01-02"))
+	writeJSON(w, Enrolled{Name: p.Name, Quota: p.Quota, Certificate: cert.Raw})
 }
 
 // Handler is the peer API but enroll, for the routes under /peer/ (serve.go names them).
@@ -558,6 +589,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 // Mount adds the peer API to mux (the server's, beside the devices' routes).
 func (h *Host) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /peer/enroll", http.HandlerFunc(h.ServeEnroll))
+	mux.Handle("POST /peer/renew", h.Handler(ServeRenew))
 	mux.Handle("GET /peer/space", h.Handler(ServeSpace))
 	mux.Handle("GET /peer/{user}/list", h.Handler(ServeList))
 	mux.Handle("/peer/{user}/files/{path...}", h.Handler(ServeFile))

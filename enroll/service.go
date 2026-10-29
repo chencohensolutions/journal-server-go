@@ -16,7 +16,12 @@ const (
 	RejectInvalidCode Rejection = "INVALID_CODE"
 	RejectInvalidCSR  Rejection = "INVALID_CSR"
 	RejectRateLimited Rejection = "RATE_LIMITED"
+	// A renewal from a certificate the registry doesn't know (made outside enrollment), or revoked.
+	RejectNotEnrolled Rejection = "NOT_ENROLLED"
 )
+
+// RenewBefore is how long before its certificate expires a device renews it.
+var RenewBefore = 30 * 24 * time.Hour
 
 const maxDeviceNameLength = 64
 
@@ -96,6 +101,41 @@ func (s *Service) Enroll(clientIP string, req Request) (Enrolled, Rejection, err
 		KeyProtection: req.KeyProtection,
 		RegisteredAt:  s.now().UTC(),
 		ExpiresAt:     cert.NotAfter.UTC(),
+	}
+	if err := s.Registry.Add(device); err != nil {
+		return Enrolled{}, "", err
+	}
+	return Enrolled{Device: device, Certificate: cert.Raw}, "", nil
+}
+
+// Renew issues a new certificate for the enrolled device with serial, for the request's key (a new one, made by the
+// device): the same user and name, and the device's choices (WithholdPrivate) carried over. The old certificate
+// works until the new one is first used (Registry.UseRenewal).
+func (s *Service) Renew(serial string, csrDER []byte, keyProtection string) (Enrolled, Rejection, error) {
+	old, ok := s.Registry.Find(serial)
+	if !ok || old.RevokedAt != nil {
+		return Enrolled{}, RejectNotEnrolled, nil
+	}
+	csr, err := ParseDeviceCSR(csrDER)
+	if err != nil {
+		return Enrolled{}, RejectInvalidCSR, nil
+	}
+	cert, err := s.Issuer.Issue(csr, old.User)
+	if err != nil {
+		return Enrolled{}, "", err
+	}
+	if keyProtection == "" {
+		keyProtection = old.KeyProtection
+	}
+	device := Device{
+		Serial:          SerialString(cert.SerialNumber),
+		User:            old.User,
+		Name:            old.Name,
+		KeyProtection:   keyProtection,
+		RegisteredAt:    s.now().UTC(),
+		ExpiresAt:       cert.NotAfter.UTC(),
+		WithholdPrivate: old.WithholdPrivate,
+		RenewedFrom:     old.Serial,
 	}
 	if err := s.Registry.Add(device); err != nil {
 		return Enrolled{}, "", err

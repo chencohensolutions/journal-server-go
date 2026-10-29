@@ -24,6 +24,9 @@ type Device struct {
 	// The server keeps the files the user marked private from this device: they aren't in its change feed and
 	// can't be fetched. Off unless set with `journal-server private <serial> withhold`.
 	WithholdPrivate bool `json:"withhold_private,omitempty"`
+	// The certificate this one renewed (renewCertificate): the same device with a new key. That one is revoked the
+	// first time this one is used.
+	RenewedFrom string `json:"renewed_from,omitempty"`
 }
 
 var ErrDeviceNotFound = errors.New("device not found")
@@ -131,6 +134,32 @@ func (r *Registry) Find(serial string) (Device, bool) {
 		}
 	}
 	return Device{}, false
+}
+
+// UseRenewal revokes the certificate the device with serial renewed, if it isn't yet: the new one is in use. It
+// reports the old serial when it revoked one.
+func (r *Registry) UseRenewal(serial string, at time.Time) (string, error) {
+	r.mu.RLock()
+	var from string
+	for _, d := range r.devices {
+		if d.Serial == serial {
+			from = d.RenewedFrom
+		}
+	}
+	revoked := true
+	for _, d := range r.devices {
+		if from != "" && d.Serial == from {
+			revoked = d.RevokedAt != nil
+		}
+	}
+	r.mu.RUnlock()
+	if from == "" || revoked {
+		return "", nil
+	}
+	if _, err := r.Revoke(from, at); err != nil {
+		return "", err
+	}
+	return from, nil
 }
 
 func (r *Registry) IsRevoked(serial string) bool {

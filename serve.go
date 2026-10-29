@@ -75,6 +75,7 @@ func serve(config auth.AppConfig) {
 		log.Fatalf("config.json copies: %v", err)
 	}
 	startCopies(running, library, copiers)
+	go renewPeersDaily(running, config, copiers)
 	host, err := openPeerHost(config, enrollment.Issuer)
 	if err != nil {
 		log.Fatal(err)

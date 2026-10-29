@@ -2,6 +2,7 @@ package copies
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/journal/server-go/peers"
@@ -37,6 +39,7 @@ type Peer struct {
 	BytesPerSecond int64
 
 	client *http.Client
+	cert   *certHolder
 
 	mu      sync.Mutex
 	listed  map[string]listing // by group (listGroup)
@@ -58,12 +61,53 @@ const spaceFor = time.Minute
 // NewPeer reaches the host at url with the peer certificate cert, trusting only a server whose key has fingerprint
 // (peers.Fingerprint), as the invite named it.
 func NewPeer(name, url, user string, cert tls.Certificate, fingerprint string) *Peer {
-	return &Peer{Name: name, URL: strings.TrimSuffix(url, "/"), User: user, client: PeerClient(cert, fingerprint),
-		listed: map[string]listing{}}
+	holder := &certHolder{}
+	holder.Store(&cert)
+	return &Peer{Name: name, URL: strings.TrimSuffix(url, "/"), User: user, client: peerClient(holder, fingerprint),
+		cert: holder, listed: map[string]listing{}}
+}
+
+// certHolder is the certificate a peer client shows, swapped when it is renewed.
+type certHolder struct {
+	atomic.Pointer[tls.Certificate]
+}
+
+// Certificate is the peer certificate this server shows the host.
+func (p *Peer) Certificate() tls.Certificate { return *p.cert.Load() }
+
+// SetCertificate shows cert from the next connection on (a renewed certificate).
+func (p *Peer) SetCertificate(cert tls.Certificate) {
+	p.cert.Store(&cert)
+	p.client.CloseIdleConnections()
+}
+
+// Renew asks the host for a new certificate for the key in csr (POST /peer/renew); its DER.
+func (p *Peer) Renew(csr []byte) ([]byte, error) {
+	body, _ := json.Marshal(peers.EnrollRequest{CSR: csr})
+	req, err := http.NewRequest(http.MethodPost, p.URL+"/peer/renew", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.do(req, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var renewed peers.Enrolled
+	if err := json.NewDecoder(resp.Body).Decode(&renewed); err != nil {
+		return nil, err
+	}
+	return renewed.Certificate, nil
 }
 
 // PeerClient is an HTTPS client that shows cert and accepts only the server key fingerprint names.
 func PeerClient(cert tls.Certificate, fingerprint string) *http.Client {
+	holder := &certHolder{}
+	holder.Store(&cert)
+	return peerClient(holder, fingerprint)
+}
+
+func peerClient(cert *certHolder, fingerprint string) *http.Client {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		// The host's certificate is signed by its own authority, which this server doesn't know: the pinned key is
@@ -79,8 +123,8 @@ func PeerClient(cert tls.Certificate, fingerprint string) *http.Client {
 			return nil
 		},
 	}
-	if cert.Certificate != nil {
-		tlsConfig.Certificates = []tls.Certificate{cert}
+	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return cert.Load(), nil // an empty one shows none (peer add)
 	}
 	return &http.Client{Transport: &http.Transport{
 		DialContext:     (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,

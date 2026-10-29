@@ -11,6 +11,7 @@ import (
 // with forward slashes, as in a data folder.
 //
 //	POST   /peer/enroll                       {code, csr} → {name, quota, certificate}; anonymous, rate limited
+//	POST   /peer/renew                        {csr} → {name, quota, certificate}; the old certificate works until the new is used
 //	GET    /peer/space                        Space
 //	GET    /peer/{user}/list?prefix=&recursive=1   one ListEntry per line (JSON)
 //	HEAD   /peer/{user}/files/{path}          Content-Length and HeaderModified

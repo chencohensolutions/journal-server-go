@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -13,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -408,4 +410,98 @@ func openPeerHost(config auth.AppConfig, issuer *enroll.Issuer) (*peers.Host, er
 		return nil, err
 	}
 	return peers.NewHost(config.PeersFolder, registry, issuer, time.Now), nil
+}
+
+// renewPeersDaily renews this server's peer certificates that expire within enroll.RenewBefore: now, and daily
+// until ctx ends. The copies to a peer switch to the new certificate at once.
+func renewPeersDaily(ctx context.Context, config auth.AppConfig, copiers []*copies.Copier) {
+	for {
+		renewPeers(config, copiers, time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(24 * time.Hour):
+		}
+	}
+}
+
+// renewPeers renews each added peer's certificate that expires within enroll.RenewBefore of now.
+func renewPeers(config auth.AppConfig, copiers []*copies.Copier, now time.Time) {
+	live := map[string][]*copies.Peer{}
+	for _, c := range copiers {
+		switch t := c.Target.(type) {
+		case *copies.Peer:
+			live[t.Name] = append(live[t.Name], t)
+		case *copies.Encrypted:
+			live[t.Inner.Name] = append(live[t.Inner.Name], t.Inner)
+		}
+	}
+	entries, _ := os.ReadDir(config.PeersDir)
+	for _, e := range entries {
+		if !e.IsDir() || strings.Contains(e.Name(), ".removed-") {
+			continue
+		}
+		info, cert, err := loadPeer(config, e.Name())
+		if err != nil || info.ExpiresAt.Sub(now) > enroll.RenewBefore {
+			continue
+		}
+		renewed, err := renewPeer(config, info, cert)
+		if err != nil {
+			log.Printf("Peer %s: renewing the certificate (until %s): %v", info.Name, info.ExpiresAt.Format("2006-01-02"), err)
+			continue
+		}
+		for _, p := range live[info.Name] {
+			p.SetCertificate(renewed)
+		}
+		log.Printf("Peer %s: certificate renewed", info.Name)
+	}
+}
+
+// renewPeer gets a new certificate for a new key from the peer, and keeps both in its folder in place of the old.
+func renewPeer(config auth.AppConfig, info peerInfo, cert tls.Certificate) (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: info.Name}}, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	der, err := copies.NewPeer(info.Name, info.URL, "", cert, info.Fingerprint).Renew(csr)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	parsed, err := x509.ParseCertificate(der)
+	if err != nil || !enroll.IsPeer(parsed) {
+		return tls.Certificate{}, fmt.Errorf("the host's certificate isn't a peer's: %v", err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	dir := peerDir(config, info.Name)
+	// The old pair is kept until the new is in place, so a stop between the two renames leaves a pair that works.
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	for name, data := range map[string][]byte{"key.pem.new": keyPEM, "cert.pem.new": certPEM} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			return tls.Certificate{}, err
+		}
+	}
+	for _, name := range []string{"key.pem", "cert.pem"} {
+		os.Remove(filepath.Join(dir, name+".prev"))
+		if err := os.Rename(filepath.Join(dir, name), filepath.Join(dir, name+".prev")); err != nil {
+			return tls.Certificate{}, err
+		}
+	}
+	for _, name := range []string{"key.pem", "cert.pem"} {
+		if err := os.Rename(filepath.Join(dir, name+".new"), filepath.Join(dir, name)); err != nil {
+			return tls.Certificate{}, err
+		}
+	}
+	info.ExpiresAt = parsed.NotAfter.UTC()
+	if data, err := json.MarshalIndent(info, "", "  "); err == nil {
+		os.WriteFile(filepath.Join(dir, "peer.json"), data, 0o644)
+	}
+	return tls.X509KeyPair(certPEM, keyPEM)
 }
