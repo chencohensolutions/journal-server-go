@@ -28,6 +28,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/copies.md](docs/copies.md): plain copies of each user's data folder in other folders (another disk), daily
   and as files arrive (`copies` per user in config.json, `Store.OnWrite`), `copy` / `copy report`, and the phone's
   view of its copies (public `copies`, `startCopy`, from each copy's last compare).
+- [docs/peers.md](docs/peers.md): copies on a friend's server (a peer): `peer invite` / `peer add`, the peer
+  certificate (OU `journal-peer`, reaches only `/peer/`), the host's peer API (package `peers`) and `copies.Peer`.
 
 Not built yet: stories and notes in the change feed, the story trash, certificate renewal.
 
@@ -54,6 +56,7 @@ go run ./scripts/bundle-vips               # portable libvips for Windows into v
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run . copy [user] | copy report [user] [--list]   # start the copies' full pass now; what each copy lacks
+go run . peer invite --name <n> --quota 2TB | peer add <name> <url> <code> [--trusted] | peers   # swap (docs/peers.md)
 go run . index [--user name] [--progress]  # read new files for the indexes once and exit ("index": "daily" runs it per user at "index_at")
 go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--delete-duplicates] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself

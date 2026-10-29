@@ -17,6 +17,11 @@ type failureLimiter struct {
 	now      func() time.Time
 }
 
+// Limiter blocks a client IP after a few wrong codes in a minute; peer invites use it too.
+type Limiter = failureLimiter
+
+func NewLimiter(now func() time.Time) *Limiter { return newFailureLimiter(now) }
+
 func newFailureLimiter(now func() time.Time) *failureLimiter {
 	return &failureLimiter{failures: map[string][]time.Time{}, now: now}
 }

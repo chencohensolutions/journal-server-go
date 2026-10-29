@@ -53,3 +53,4 @@ devices.json
 
 # Output of "go run . > server.log"
 /server.log
+peers.json

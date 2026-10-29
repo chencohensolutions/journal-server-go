@@ -71,6 +71,30 @@ func (r *mutationResolver) StartCopy(ctx context.Context, user *string) ([]*mode
 	return reports, nil
 }
 
+// CreatePeerInvite is the resolver for the createPeerInvite field.
+func (r *mutationResolver) CreatePeerInvite(ctx context.Context, name string, quota float64) (*model.PeerInvite, error) {
+	if r.PeerHost == nil {
+		return nil, errNoPeersFolder
+	}
+	code, expires, err := r.PeerHost.Invite(name, int64(quota))
+	if err != nil {
+		return nil, err
+	}
+	return &model.PeerInvite{Code: code, Name: name, Quota: quota, ExpiresAt: expires}, nil
+}
+
+// RevokePeer is the resolver for the revokePeer field.
+func (r *mutationResolver) RevokePeer(ctx context.Context, name string) (*model.HostedPeer, error) {
+	if r.PeerHost == nil {
+		return nil, errNoPeersFolder
+	}
+	p, err := r.PeerHost.Registry.Revoke(name, r.Now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("peer %q: %w", name, err)
+	}
+	return hostedPeer(r.PeerHost, p), nil
+}
+
 // Devices is the resolver for the devices field.
 func (r *queryResolver) Devices(ctx context.Context, user *string) ([]*enroll.Device, error) {
 	filter := ""
@@ -95,6 +119,18 @@ func (r *queryResolver) CopyReport(ctx context.Context, user *string, paths *boo
 		reports = append(reports, copyReport(ctx, c, true, paths != nil && *paths))
 	}
 	return reports, nil
+}
+
+// Peers is the resolver for the peers field.
+func (r *queryResolver) Peers(ctx context.Context) ([]*model.HostedPeer, error) {
+	list := []*model.HostedPeer{}
+	if r.PeerHost == nil {
+		return list, nil
+	}
+	for _, p := range r.PeerHost.Registry.List() {
+		list = append(list, hostedPeer(r.PeerHost, p))
+	}
+	return list, nil
 }
 
 // Mutation returns generated.MutationResolver implementation.

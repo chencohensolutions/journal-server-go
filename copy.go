@@ -11,8 +11,9 @@ import (
 	"github.com/journal/server-go/media"
 )
 
-// newCopiers makes a copier for each copy in config.json of each user with a data folder (docs/copies.md).
-func newCopiers(config auth.AppConfig, library *media.Library) []*copies.Copier {
+// newCopiers makes a copier for each copy in config.json of each user with a data folder (docs/copies.md), on a
+// folder or a peer (docs/peers.md). A copy to a peer that isn't added, or isn't trusted, stops the server.
+func newCopiers(config auth.AppConfig, library *media.Library) ([]*copies.Copier, error) {
 	var copiers []*copies.Copier
 	for _, user := range config.Users {
 		store := library.Store(user.Username)
@@ -20,10 +21,18 @@ func newCopiers(config auth.AppConfig, library *media.Library) []*copies.Copier 
 			continue
 		}
 		for _, cc := range user.Copies {
-			copiers = append(copiers, copies.New(user.Username, store, cc, time.Now))
+			var target copies.Target
+			if cc.Peer != "" {
+				p, err := peerTarget(config, user.Username, cc)
+				if err != nil {
+					return nil, fmt.Errorf("user %s: %w", user.Username, err)
+				}
+				target = p
+			}
+			copiers = append(copiers, copies.NewTo(user.Username, store, cc, target, time.Now))
 		}
 	}
-	return copiers
+	return copiers, nil
 }
 
 // startCopies keeps the copies up to date until ctx ends: each one daily at its time, and the realtime ones as

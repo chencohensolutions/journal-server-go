@@ -35,6 +35,12 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 		}
 
 		clientCert := r.TLS.PeerCertificates[0]
+		if enroll.IsPeer(clientCert) {
+			log.Printf("Client connection rejected: a peer's certificate (%s) from %s on %s", clientCert.Subject.CommonName,
+				r.RemoteAddr, r.URL.Path)
+			http.Error(w, "a peer's certificate reaches only /peer/", http.StatusUnauthorized)
+			return
+		}
 		commonName := clientCert.Subject.CommonName
 		currentUser := config.FindUser(commonName)
 		if currentUser == nil {

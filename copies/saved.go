@@ -39,6 +39,7 @@ type savedPass struct {
 	Dropped      int       `json:"dropped"`
 	DroppedBytes int64     `json:"droppedBytes"`
 	DiskFull     bool      `json:"diskFull,omitempty"`
+	QuotaFull    bool      `json:"quotaFull,omitempty"`
 	Stopped      bool      `json:"stopped,omitempty"`
 }
 
@@ -63,8 +64,11 @@ func (c *Copier) Load() {
 	if p := s.LastPass; p != nil && c.last == nil {
 		c.last = &Pass{StartedAt: p.StartedAt, FinishedAt: p.FinishedAt, Files: p.Files, Bytes: p.Bytes,
 			Failed: p.Failed, Dropped: p.Dropped, DroppedBytes: p.DroppedBytes, Stopped: p.Stopped}
-		if p.DiskFull {
+		switch {
+		case p.DiskFull:
 			c.last.Err = ErrDiskFull
+		case p.QuotaFull:
+			c.last.Err = ErrQuotaFull
 		}
 	}
 }
@@ -81,7 +85,8 @@ func (c *Copier) save() {
 	if p := c.last; p != nil {
 		s.LastPass = &savedPass{StartedAt: p.StartedAt, FinishedAt: p.FinishedAt, Files: p.Files, Bytes: p.Bytes,
 			Failed: p.Failed, Dropped: p.Dropped, DroppedBytes: p.DroppedBytes, DiskFull: errors.Is(p.Err, ErrDiskFull),
-			Stopped: p.Stopped}
+			QuotaFull: errors.Is(p.Err, ErrQuotaFull),
+			Stopped:   p.Stopped}
 	}
 	c.mu.Unlock()
 	if c.ready() != nil {

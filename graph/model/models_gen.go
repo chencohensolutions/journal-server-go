@@ -146,8 +146,11 @@ type CopyProgress struct {
 }
 
 type DataCopy struct {
-	// The copy's folder, as config.json names it.
-	Folder string `json:"folder"`
+	// The copy's folder, as config.json names it; for a peer, the peer's name. It names the copy in startCopy and stopCopy.
+	Folder string   `json:"folder"`
+	Kind   CopyKind `json:"kind"`
+	// The copy is encrypted: the friend can't read it.
+	Encrypted bool `json:"encrypted"`
 	// Each file is also copied a few seconds after it arrives.
 	Realtime bool `json:"realtime"`
 	// The daily pass, in the server's local time ("03:30").
@@ -163,7 +166,7 @@ type DataCopy struct {
 	MissingBytes int64 `json:"missingBytes"`
 	// Originals in the copy that the data folder no longer has; they are kept.
 	InCopyOnly int `json:"inCopyOnly"`
-	// Free bytes on the copy's disk; null when its folder can't be reached.
+	// Free bytes on the copy's disk, or left of a peer's quota; null when the copy can't be reached.
 	FreeBytes *int64 `json:"freeBytes,omitempty"`
 	// When the counts were found; null before the first compare that could be made.
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
@@ -175,7 +178,7 @@ type DataCopy struct {
 	LastPass *CopyPass `json:"lastPass,omitempty"`
 	// Why the copy isn't kept up now; null when it is.
 	Problem *CopyProblem `json:"problem,omitempty"`
-	// FOLDER_MISSING: since when the folder can't be reached. DISK_FULL: when the pass stopped.
+	// FOLDER_MISSING, PEER_UNREACHABLE: since when the copy can't be reached. DISK_FULL, QUOTA_FULL: when the pass stopped.
 	ProblemSince *time.Time `json:"problemSince,omitempty"`
 }
 
@@ -591,6 +594,8 @@ type ServerInfo struct {
 	Cameras bool `json:"cameras"`
 	// A phone can see how its user's copies are doing and start a pass (copies, startCopy).
 	Copies bool `json:"copies"`
+	// Copies can be on a friend's server too: DataCopy has kind and encrypted, and the peers' problems.
+	PeerCopies bool `json:"peerCopies"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).
@@ -747,6 +752,63 @@ func (e ChangeKind) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+type CopyKind string
+
+const (
+	// A folder on this server: another disk, a USB disk, a network share.
+	CopyKindFolder CopyKind = "FOLDER"
+	// A friend's journal server.
+	CopyKindPeer CopyKind = "PEER"
+)
+
+var AllCopyKind = []CopyKind{
+	CopyKindFolder,
+	CopyKindPeer,
+}
+
+func (e CopyKind) IsValid() bool {
+	switch e {
+	case CopyKindFolder, CopyKindPeer:
+		return true
+	}
+	return false
+}
+
+func (e CopyKind) String() string {
+	return string(e)
+}
+
+func (e *CopyKind) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = CopyKind(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid CopyKind", str)
+	}
+	return nil
+}
+
+func (e CopyKind) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *CopyKind) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e CopyKind) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
 type CopyProblem string
 
 const (
@@ -754,16 +816,22 @@ const (
 	CopyProblemFolderMissing CopyProblem = "FOLDER_MISSING"
 	// The last pass stopped: the copy's disk had no room for the next file (and 1 GB to spare).
 	CopyProblemDiskFull CopyProblem = "DISK_FULL"
+	// The friend's server can't be reached, or refused this server (its internet down, the server off, revoked).
+	CopyProblemPeerUnreachable CopyProblem = "PEER_UNREACHABLE"
+	// The last pass stopped: the friend's server had no room left of what it keeps for this server.
+	CopyProblemQuotaFull CopyProblem = "QUOTA_FULL"
 )
 
 var AllCopyProblem = []CopyProblem{
 	CopyProblemFolderMissing,
 	CopyProblemDiskFull,
+	CopyProblemPeerUnreachable,
+	CopyProblemQuotaFull,
 }
 
 func (e CopyProblem) IsValid() bool {
 	switch e {
-	case CopyProblemFolderMissing, CopyProblemDiskFull:
+	case CopyProblemFolderMissing, CopyProblemDiskFull, CopyProblemPeerUnreachable, CopyProblemQuotaFull:
 		return true
 	}
 	return false

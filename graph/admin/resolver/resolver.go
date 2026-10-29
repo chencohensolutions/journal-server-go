@@ -10,6 +10,7 @@ import (
 	"github.com/journal/server-go/copies"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/graph/admin/model"
+	"github.com/journal/server-go/peers"
 )
 
 // This file will not be regenerated automatically.
@@ -26,6 +27,8 @@ type Resolver struct {
 	// The copies of the users' data folders (docs/copies.md), and how a full pass of one is run (and logged).
 	Copies  []*copies.Copier
 	RunCopy func(*copies.Copier)
+	// The servers that keep copies here (docs/peers.md); nil without peers_folder.
+	PeerHost *peers.Host
 }
 
 // copiersOf are the copies of user, or of every user when user is nil.
@@ -84,3 +87,10 @@ func noCopies(user *string) error {
 	}
 	return fmt.Errorf("user %q has no copies in config.json", *user)
 }
+
+func hostedPeer(h *peers.Host, p peers.Peer) *model.HostedPeer {
+	return &model.HostedPeer{Name: p.Name, Serial: p.Serial, Quota: float64(p.Quota), Used: float64(h.Used(p)),
+		AddedAt: p.AddedAt, ExpiresAt: p.ExpiresAt, RevokedAt: p.RevokedAt}
+}
+
+var errNoPeersFolder = errors.New("this server keeps no copies for others: set peers_folder in config.json and restart")

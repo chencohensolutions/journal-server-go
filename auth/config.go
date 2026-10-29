@@ -24,11 +24,19 @@ type UserConfig struct {
 	Copies []CopyConfig `json:"copies"`
 }
 
-// CopyConfig is one copy of a user's data folder: a folder, kept up to date daily and, if asked, as files arrive.
+// CopyConfig is one copy of a user's data folder: a folder or a peer, kept up to date daily and, if asked, as files
+// arrive.
 type CopyConfig struct {
 	// The copy's folder, which must exist (an unplugged disk is then noticed, not written around). Outside the
 	// data folder, and best on another disk.
 	Folder string `json:"folder"`
+	// Or a friend's server, as `journal-server peer add` named it (docs/peers.md); a plain copy needs the peer added
+	// with --trusted.
+	Peer string `json:"peer"`
+	// Encrypt the copy for the peer (not built yet: refused).
+	Encrypt bool `json:"encrypt"`
+	// Most kilobits a second a copy to a peer may send, so it doesn't fill the home upload; 0 for no limit.
+	BandwidthKbps int `json:"bandwidth_kbps"`
 	// The local time of the daily full pass, "15:04" (default "03:30").
 	At string `json:"at"`
 	// Also copy each file a few seconds after it arrives or its sidecar changes, and once when the server starts.
@@ -47,6 +55,14 @@ type AppConfig struct {
 	Port string `json:"port"`
 	// Registry of enrolled devices (default devices.json).
 	DevicesFile string `json:"devices_file"`
+	// The peers this server keeps copies on: a folder per peer with its certificate and address, made by
+	// `journal-server peer add` (default certs/peers).
+	PeersDir string `json:"peers_dir"`
+	// Where the copies other servers keep here go, a folder per peer (docs/peers.md); none by default, and then
+	// this server can't be invited as a host.
+	PeersFolder string `json:"peers_folder"`
+	// Registry of the peers that keep copies here (default peers.json).
+	PeersFile string `json:"peers_file"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8081).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
@@ -119,6 +135,8 @@ const (
 	IndexInServer         = "server"
 	IndexDaily            = "daily"
 	DefaultCopyAt         = "03:30"
+	DefaultPeersDir       = "certs/peers"
+	DefaultPeersFile      = "peers.json"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -164,6 +182,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.DevicesFile == "" {
 		c.DevicesFile = DefaultDevicesFile
+	}
+	if c.PeersDir == "" {
+		c.PeersDir = DefaultPeersDir
+	}
+	if c.PeersFile == "" {
+		c.PeersFile = DefaultPeersFile
 	}
 	if c.AdminAddr == "" {
 		c.AdminAddr = DefaultAdminAddr
@@ -222,9 +246,35 @@ func (c AppConfig) WithDefaults() AppConfig {
 // would be copied into itself, and copies never write into the data folder) or holding it.
 func (u UserConfig) checkCopies() error {
 	seen := map[string]bool{}
+	peers := map[string]bool{}
 	for _, cp := range u.Copies {
+		if cp.Folder != "" && cp.Peer != "" {
+			return fmt.Errorf("copy %s names a peer (%s) too: a copy is one or the other", cp.Folder, cp.Peer)
+		}
+		if cp.BandwidthKbps < 0 {
+			return fmt.Errorf("a copy's bandwidth_kbps is %d", cp.BandwidthKbps)
+		}
+		if cp.Peer != "" {
+			if _, err := time.Parse("15:04", cp.At); err != nil {
+				return fmt.Errorf("copy to peer %s: at is a time like \"03:30\", not %q", cp.Peer, cp.At)
+			}
+			if peers[cp.Peer] {
+				return fmt.Errorf("two copies to peer %s: one per peer", cp.Peer)
+			}
+			peers[cp.Peer] = true
+			if cp.Encrypt {
+				return fmt.Errorf("copy to peer %s: encrypted copies aren't built yet", cp.Peer)
+			}
+			if u.DataFolder == "" {
+				return fmt.Errorf("copy to peer %s: the user has no data_folder", cp.Peer)
+			}
+			continue
+		}
+		if cp.Encrypt {
+			return fmt.Errorf("copy %s: only a copy to a peer is encrypted", cp.Folder)
+		}
 		if cp.Folder == "" {
-			return fmt.Errorf("a copy has no folder")
+			return fmt.Errorf("a copy has no folder or peer")
 		}
 		if _, err := time.Parse("15:04", cp.At); err != nil {
 			return fmt.Errorf("copy %s: at is a time like \"03:30\", not %q", cp.Folder, cp.At)

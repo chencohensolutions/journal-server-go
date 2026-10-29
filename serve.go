@@ -26,6 +26,7 @@ import (
 	"github.com/journal/server-go/graph/resolver"
 	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/peers"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -69,9 +70,16 @@ func serve(config auth.AppConfig) {
 		daily = newDailyRuns(running, config, ix.refresh)
 		ix.runs = daily
 	}
-	copiers := newCopiers(config, library)
+	copiers, err := newCopiers(config, library)
+	if err != nil {
+		log.Fatalf("config.json copies: %v", err)
+	}
 	startCopies(running, library, copiers)
-	go serveAdmin(config, enrollment, refreshIndexes, copiers, func(c *copies.Copier) { runCopy(running, c) })
+	host, err := openPeerHost(config, enrollment.Issuer)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go serveAdmin(config, enrollment, refreshIndexes, copiers, func(c *copies.Copier) { runCopy(running, c) }, host)
 	switch {
 	case ix.daily:
 		go func() { indexDaily(running, daily, library.Users()); close(readerDone) }()
@@ -91,7 +99,7 @@ func serve(config auth.AppConfig) {
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
-		Handler:   newMux(config, enrollment, library, previews, ix, copyRunner{running, copiers}),
+		Handler:   newMux(config, enrollment, library, previews, ix, copyRunner{running, copiers}, host),
 		TLSConfig: tlsConfig,
 		HTTP2:     &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow},
 		// No overall read or write timeout: uploads and video streams take as long as they take.
@@ -210,7 +218,7 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
 // anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
 func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes,
-	copyRuns resolver.CopyRunner) *http.ServeMux {
+	copyRuns resolver.CopyRunner, host *peers.Host) *http.ServeMux {
 	registry := enrollment.Registry
 	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
 	userStore := func(r *http.Request) *media.Store {
@@ -241,6 +249,11 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux.Handle("GET /index/people", withUser(gzipped(http.HandlerFunc(local.ServePeople))))
 	mux.Handle("GET /index/{name}", withUser(http.HandlerFunc(local.ServeIndex)))
 	mux.Handle("GET /models/{index}/{name}", withUser(http.HandlerFunc(local.ServeModel)))
+	// The peer API (docs/peers.md): other servers keeping copies here, each with a peer certificate; never identify,
+	// which refuses those. Only with peers_folder.
+	if host != nil {
+		host.Mount(mux)
+	}
 	return mux
 }
 

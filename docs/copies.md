@@ -6,8 +6,8 @@ own layout (`media/<year>/<year-month>/…`). It can be read without the server,
 `data_folder` can point at it (the indexes are then rebuilt, since `.cache/` isn't copied).
 
 Copies are optional and set per user. A phone sees how its user's copies are doing and can start a pass ("In the
-apps", below). Copies to other machines over the internet, encryption and history are not built yet; copies on a
-friend's server (swap), encrypted copies and restore are planned in
+apps", below). A copy can also be on a friend's journal server, a peer ([peers.md](peers.md)): it works as this
+page says but for what peers.md says. Encrypted copies and restore are planned in
 [../../journal-client-kmp/docs/plans/swap-and-encryption.md](../../journal-client-kmp/docs/plans/swap-and-encryption.md).
 
 ## Setting it up
@@ -112,8 +112,8 @@ copies, and only counts and the copy's folder, never file names; the counts incl
 
 - `copies/`: `Copier` (`Run` a full pass, `Check` the report's compare, `Changed` and `RunRealtime` for realtime
   copies), and `disk_*.go` for the same-disk check per OS. The copier reaches the copy only through a `Target`
-  (`target.go`): `Folder` is a copy in a folder, the only kind today; a friend's server will be another (the plan
-  above). Every target passes `testTarget` in `target_test.go`.
+  (`target.go`): `Folder` is a copy in a folder, `Peer` (`peer.go`) one on a friend's server ([peers.md](peers.md)).
+  Every target passes `testTarget` in `target_test.go`.
 - `copy.go`: making the copiers from config.json, the daily schedule, and the realtime start.
 - `auth.CopyConfig`, and `checkCopies` in `auth/config.go`.
 - The admin schema's `copyReport` and `startCopy`, and `admincli.go`'s `copy` commands.

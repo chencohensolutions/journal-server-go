@@ -114,9 +114,11 @@ type ComplexityRoot struct {
 		Checking     func(childComplexity int) int
 		Copied       func(childComplexity int) int
 		DailyAt      func(childComplexity int) int
+		Encrypted    func(childComplexity int) int
 		Folder       func(childComplexity int) int
 		FreeBytes    func(childComplexity int) int
 		InCopyOnly   func(childComplexity int) int
+		Kind         func(childComplexity int) int
 		LastPass     func(childComplexity int) int
 		Missing      func(childComplexity int) int
 		MissingBytes func(childComplexity int) int
@@ -371,6 +373,7 @@ type ComplexityRoot struct {
 		KeepsJpegAsJxl func(childComplexity int) int
 		LocalIndexes   func(childComplexity int) int
 		NudityScan     func(childComplexity int) int
+		PeerCopies     func(childComplexity int) int
 		Posters        func(childComplexity int) int
 		Previews       func(childComplexity int) int
 		Search         func(childComplexity int) int
@@ -774,6 +777,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.DataCopy.DailyAt(childComplexity), true
+	case "DataCopy.encrypted":
+		if e.ComplexityRoot.DataCopy.Encrypted == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DataCopy.Encrypted(childComplexity), true
 	case "DataCopy.folder":
 		if e.ComplexityRoot.DataCopy.Folder == nil {
 			break
@@ -792,6 +801,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.DataCopy.InCopyOnly(childComplexity), true
+	case "DataCopy.kind":
+		if e.ComplexityRoot.DataCopy.Kind == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DataCopy.Kind(childComplexity), true
 	case "DataCopy.lastPass":
 		if e.ComplexityRoot.DataCopy.LastPass == nil {
 			break
@@ -2000,6 +2015,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.NudityScan(childComplexity), true
+	case "ServerInfo.peerCopies":
+		if e.ComplexityRoot.ServerInfo.PeerCopies == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.PeerCopies(childComplexity), true
 	case "ServerInfo.posters":
 		if e.ComplexityRoot.ServerInfo.Posters == nil {
 			break
@@ -2391,8 +2412,9 @@ extend type Mutation {
   setCamera(make: String!, model: String!, mine: Boolean!): [CameraModel!]!
 }
 `, BuiltIn: false},
-	{Name: "../schema/copies.graphql", Input: `# --- Copies of the user's data folder on other disks ---------------------------------------------
-# The server can keep plain copies of each user's data folder in other folders (docs/copies.md), set in config.json.
+	{Name: "../schema/copies.graphql", Input: `# --- Copies of the user's data folder on other disks and on friends' servers ----------------------
+# The server can keep plain copies of each user's data folder in other folders (docs/copies.md) and on a friend's
+# journal server, a peer (docs/peers.md), set in config.json.
 # A phone can see how its user's copies are doing and start a pass of one now; it sees only its own user's copies,
 # and only counts and the copy's folder, never the files' names. The counts include the files hidden on devices.
 
@@ -2418,6 +2440,8 @@ extend type Mutation {
 extend type ServerInfo {
   "A phone can see how its user's copies are doing and start a pass (copies, startCopy)."
   copies: Boolean!
+  "Copies can be on a friend's server too: DataCopy has kind and encrypted, and the peers' problems."
+  peerCopies: Boolean!
 }
 
 enum CopyProblem {
@@ -2425,11 +2449,25 @@ enum CopyProblem {
   FOLDER_MISSING
   "The last pass stopped: the copy's disk had no room for the next file (and 1 GB to spare)."
   DISK_FULL
+  "The friend's server can't be reached, or refused this server (its internet down, the server off, revoked)."
+  PEER_UNREACHABLE
+  "The last pass stopped: the friend's server had no room left of what it keeps for this server."
+  QUOTA_FULL
+}
+
+enum CopyKind {
+  "A folder on this server: another disk, a USB disk, a network share."
+  FOLDER
+  "A friend's journal server."
+  PEER
 }
 
 type DataCopy {
-  "The copy's folder, as config.json names it."
+  "The copy's folder, as config.json names it; for a peer, the peer's name. It names the copy in startCopy and stopCopy."
   folder: String!
+  kind: CopyKind!
+  "The copy is encrypted: the friend can't read it."
+  encrypted: Boolean!
   "Each file is also copied a few seconds after it arrives."
   realtime: Boolean!
   "The daily pass, in the server's local time (\"03:30\")."
@@ -2445,7 +2483,7 @@ type DataCopy {
   missingBytes: Int64!
   "Originals in the copy that the data folder no longer has; they are kept."
   inCopyOnly: Int!
-  "Free bytes on the copy's disk; null when its folder can't be reached."
+  "Free bytes on the copy's disk, or left of a peer's quota; null when the copy can't be reached."
   freeBytes: Int64
   "When the counts were found; null before the first compare that could be made."
   checkedAt: Time
@@ -2457,7 +2495,7 @@ type DataCopy {
   lastPass: CopyPass
   "Why the copy isn't kept up now; null when it is."
   problem: CopyProblem
-  "FOLDER_MISSING: since when the folder can't be reached. DISK_FULL: when the pass stopped."
+  "FOLDER_MISSING, PEER_UNREACHABLE: since when the copy can't be reached. DISK_FULL, QUOTA_FULL: when the pass stopped."
   problemSince: Time
 }
 
@@ -3562,6 +3600,10 @@ func (ec *executionContext) childFields_DataCopy(ctx context.Context, field grap
 	switch field.Name {
 	case "folder":
 		return ec.fieldContext_DataCopy_folder(ctx, field)
+	case "kind":
+		return ec.fieldContext_DataCopy_kind(ctx, field)
+	case "encrypted":
+		return ec.fieldContext_DataCopy_encrypted(ctx, field)
 	case "realtime":
 		return ec.fieldContext_DataCopy_realtime(ctx, field)
 	case "dailyAt":
@@ -3952,6 +3994,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_cameras(ctx, field)
 	case "copies":
 		return ec.fieldContext_ServerInfo_copies(ctx, field)
+	case "peerCopies":
+		return ec.fieldContext_ServerInfo_peerCopies(ctx, field)
 	case "indexing":
 		return ec.fieldContext_ServerInfo_indexing(ctx, field)
 	case "localIndexes":
@@ -5810,6 +5854,52 @@ func (ec *executionContext) _DataCopy_folder(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_DataCopy_folder(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("DataCopy", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DataCopy_kind(ctx context.Context, field graphql.CollectedField, obj *model.DataCopy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DataCopy_kind(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Kind, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.CopyKind) graphql.Marshaler {
+			return ec.marshalNCopyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKind(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DataCopy_kind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DataCopy", field, false, false, errors.New("field of type CopyKind does not have child fields"))
+}
+
+func (ec *executionContext) _DataCopy_encrypted(ctx context.Context, field graphql.CollectedField, obj *model.DataCopy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DataCopy_encrypted(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Encrypted, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DataCopy_encrypted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DataCopy", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _DataCopy_realtime(ctx context.Context, field graphql.CollectedField, obj *model.DataCopy) (ret graphql.Marshaler) {
@@ -11077,6 +11167,29 @@ func (ec *executionContext) fieldContext_ServerInfo_copies(_ context.Context, fi
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_peerCopies(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_peerCopies(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PeerCopies, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_peerCopies(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_indexing(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13945,6 +14058,16 @@ func (ec *executionContext) _DataCopy(ctx context.Context, sel ast.SelectionSet,
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "kind":
+			out.Values[i] = ec._DataCopy_kind(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "encrypted":
+			out.Values[i] = ec._DataCopy_encrypted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "realtime":
 			out.Values[i] = ec._DataCopy_realtime(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -16136,6 +16259,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "peerCopies":
+			out.Values[i] = ec._ServerInfo_peerCopies(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "indexing":
 			out.Values[i] = ec._ServerInfo_indexing(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -16959,6 +17087,16 @@ func (ec *executionContext) marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserve
 		return graphql.Null
 	}
 	return ec._Collection(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNCopyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKind(ctx context.Context, v any) (model.CopyKind, error) {
+	var res model.CopyKind
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNCopyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKind(ctx context.Context, sel ast.SelectionSet, v model.CopyKind) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) marshalNDataCopy2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDataCopy(ctx context.Context, sel ast.SelectionSet, v model.DataCopy) graphql.Marshaler {

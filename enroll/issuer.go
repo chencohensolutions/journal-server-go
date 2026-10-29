@@ -104,6 +104,29 @@ func ParseDeviceCSR(der []byte) (*x509.CertificateRequest, error) {
 // Issue signs a client certificate for csr's key. The subject comes from user, never from the
 // request, because the enrollment code alone decides who the device belongs to.
 func (i *Issuer) Issue(csr *x509.CertificateRequest, user string) (*x509.Certificate, error) {
+	return i.issue(csr, pkix.Name{CommonName: user})
+}
+
+// PeerUnit marks a peer's certificate (OU): another journal server that keeps copies here (docs/peers.md). A peer
+// certificate reaches only the peer API, never a user's, whatever its CN.
+const PeerUnit = "journal-peer"
+
+// IssuePeer signs a peer's client certificate, named by the invite (CN) and marked PeerUnit.
+func (i *Issuer) IssuePeer(csr *x509.CertificateRequest, name string) (*x509.Certificate, error) {
+	return i.issue(csr, pkix.Name{CommonName: name, OrganizationalUnit: []string{PeerUnit}})
+}
+
+// IsPeer reports whether cert is a peer's certificate.
+func IsPeer(cert *x509.Certificate) bool {
+	for _, unit := range cert.Subject.OrganizationalUnit {
+		if unit == PeerUnit {
+			return true
+		}
+	}
+	return false
+}
+
+func (i *Issuer) issue(csr *x509.CertificateRequest, subject pkix.Name) (*x509.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
 		return nil, err
@@ -115,7 +138,7 @@ func (i *Issuer) Issue(csr *x509.CertificateRequest, user string) (*x509.Certifi
 	}
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: user},
+		Subject:      subject,
 		NotBefore:    now.Add(-5 * time.Minute), // tolerate clock skew on the device
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,

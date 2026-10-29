@@ -55,7 +55,25 @@ type EnrollmentCode struct {
 	ServerURL *string `json:"serverUrl,omitempty"`
 }
 
+type HostedPeer struct {
+	Name   string  `json:"name"`
+	Serial string  `json:"serial"`
+	Quota  float64 `json:"quota"`
+	// Bytes its files take here now.
+	Used      float64    `json:"used"`
+	AddedAt   time.Time  `json:"addedAt"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+}
+
 type Mutation struct {
+}
+
+type PeerInvite struct {
+	Code      string    `json:"code"`
+	Name      string    `json:"name"`
+	Quota     float64   `json:"quota"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type Query struct {

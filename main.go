@@ -27,6 +27,14 @@ const usage = `usage:
   journal-server copy [user]          start a full pass of the user's copies now (config.json "copies")
   journal-server copy report [user] [--list]
                                       how each copy is doing, and what it lacks now
+  journal-server peer invite --name <name> --quota <size>
+                                      let another server keep copies here (needs peers_folder): prints its code
+  journal-server peer add <name> <url> <code> [--trusted]
+                                      keep copies on another server, with the code its peer invite printed;
+                                      --trusted allows plain copies there (its admin can read them)
+  journal-server peers                the servers our copies are on, and those whose copies are here
+  journal-server peer revoke <name>   refuse a server that keeps copies here; its files stay
+  journal-server peer remove <name>   stop using a server for copies (take it out of config.json first)
 `
 
 func main() {
@@ -50,7 +58,11 @@ func main() {
 		}
 		return
 	}
-	if err := runAdminCommand(config, os.Args[1], os.Args[2:]); err != nil {
+	run := runAdminCommand
+	if os.Args[1] == "peer" || os.Args[1] == "peers" {
+		run = runPeerCommand
+	}
+	if err := run(config, os.Args[1], os.Args[2:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

@@ -7,7 +7,6 @@ import (
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/copies"
 	"github.com/journal/server-go/graph/model"
-	"github.com/journal/server-go/media"
 )
 
 // CopyRunner gives the copies fields each user's copies (copy.go in the server): passes and compares it starts run
@@ -48,7 +47,12 @@ func (r *Resolver) copyOf(ctx context.Context, folder string) (*copies.Copier, e
 // dataCopy is how a copy is doing, from its status and its last compare; an old compare is made again meanwhile.
 func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 	r.Copies.CompareIfOld(c)
-	result := &model.DataCopy{Folder: c.Folder, Realtime: c.Realtime, DailyAt: c.At, Originals: c.Originals()}
+	result := &model.DataCopy{Folder: c.Folder, Kind: model.CopyKindFolder, Realtime: c.Realtime, DailyAt: c.At,
+		Originals: c.Originals()}
+	missing := model.CopyProblemFolderMissing
+	if c.PeerName() != "" {
+		result.Kind, missing = model.CopyKindPeer, model.CopyProblemPeerUnreachable
+	}
 	result.SameDisk, _ = c.SameDisk()
 	running, last := c.Status()
 	if running != nil {
@@ -70,15 +74,17 @@ func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 		result.InCopyOnly = compared.InCopyOnly
 	}
 	if since := c.UnreachableSince(); !since.IsZero() {
-		problem := model.CopyProblemFolderMissing
-		result.Problem, result.ProblemSince = &problem, &since
-	} else if last != nil && errors.Is(last.Err, copies.ErrDiskFull) {
+		result.Problem, result.ProblemSince = &missing, &since
+	} else if last != nil && (errors.Is(last.Err, copies.ErrDiskFull) || errors.Is(last.Err, copies.ErrQuotaFull)) {
 		problem := model.CopyProblemDiskFull
+		if errors.Is(last.Err, copies.ErrQuotaFull) {
+			problem = model.CopyProblemQuotaFull
+		}
 		at := last.FinishedAt
 		result.Problem, result.ProblemSince = &problem, &at
 	}
-	if result.Problem == nil || *result.Problem != model.CopyProblemFolderMissing {
-		if free, err := media.FreeBytes(c.Folder); err == nil {
+	if result.Problem == nil || *result.Problem != missing {
+		if free, err := c.FreeBytes(); err == nil {
 			bytes := int64(free)
 			result.FreeBytes = &bytes
 		}

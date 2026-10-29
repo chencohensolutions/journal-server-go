@@ -37,6 +37,21 @@ func (c *Copier) dropJPEG(item media.Item, names map[string][]string) (int64, er
 		}
 		return 0, err
 	}
+	if hasher, ok := c.dest().(remoteHasher); ok {
+		// On a peer, the host hashes both: downloading them to decode would cost twice their size. The JPEG XL was
+		// checked to make the JPEG byte for byte on this server, when it was made.
+		if sum, size, err := hasher.Sha256(rel); err != nil {
+			return 0, err
+		} else if sum != from.Sha256 || size != from.Size {
+			return 0, fmt.Errorf("%s stays in the copy: its bytes aren't the JPEG %s was kept from", rel, item.Path)
+		}
+		if sum, _, err := hasher.Sha256(item.Path); err != nil {
+			return 0, err
+		} else if sum != item.Sha256() {
+			return 0, fmt.Errorf("%s stays in the copy: the copy's %s isn't the JPEG XL", rel, item.Path)
+		}
+		return c.removeJPEG(rel, from.Sha256, from.Size)
+	}
 	if c.store.JXL == nil {
 		return 0, fmt.Errorf("%s stays in the copy beside its JPEG XL: %w", rel, media.ErrNoJXL)
 	}
@@ -59,15 +74,25 @@ func (c *Copier) dropJPEG(item media.Item, names map[string][]string) (int64, er
 	if sum := sha256.Sum256(jpeg); hex.EncodeToString(sum[:]) != from.Sha256 || int64(len(jpeg)) != from.Size {
 		return 0, fmt.Errorf("%s stays in the copy: the copy's JPEG XL doesn't make it byte for byte", rel)
 	}
-	// Its sidecar first, as the data folder does: what a stop leaves is a file no sidecar names.
+	return c.removeJPEG(rel, from.Sha256, from.Size)
+}
+
+// remoteHasher is a target that hashes its own files (a peer).
+type remoteHasher interface {
+	Sha256(path string) (string, int64, error)
+}
+
+// removeJPEG deletes the checked JPEG at rel from the copy: its sidecar first, as the data folder does, so what a
+// stop leaves is a file no sidecar names.
+func (c *Copier) removeJPEG(rel, sha string, size int64) (int64, error) {
 	if err := c.dest().Remove(rel + ".json"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return 0, err
 	}
 	if err := c.dest().Remove(rel); err != nil {
 		return 0, err
 	}
-	c.markDropped(from.Sha256)
-	return from.Size, nil
+	c.markDropped(sha)
+	return size, nil
 }
 
 func (c *Copier) markDropped(sha string) {

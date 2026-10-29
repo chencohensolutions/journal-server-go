@@ -84,6 +84,9 @@ Signed by `client_ca` with `client_ca_key` (`enroll/issuer.go`):
 - Random 128-bit serial; `ExtKeyUsage: clientAuth`; valid **365 days**, never beyond the CA's own
   expiry; `NotBefore` is backdated 5 minutes to tolerate device clock skew.
 - There is no automatic renewal. When a certificate expires, enroll the device again.
+- The same CA signs **peer** certificates, for other journal servers that keep copies here ([peers.md](peers.md)):
+  `CN` is the invite's name and `OU=journal-peer`. `identify` refuses a certificate with that OU on every route but
+  `/peer/`, so a peer named like a user is never that user.
 
 ## Device registry and revocation
 
@@ -165,6 +168,9 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
   "devices_file": "devices.json",               // optional (default)
   "admin_addr": "127.0.0.1:8081",               // optional (default), must be loopback
   "admin_token_file": "admin.token",            // optional (default)
+  "peers_dir": "certs/peers",                   // optional (default): the peers our copies go to (docs/peers.md)
+  "peers_folder": "F:/Peers",                   // optional: keep other servers' copies here; off without it
+  "peers_file": "peers.json",                   // optional (default): those servers
   "users": [{ "username": "hen", "data_folder": "/path/to/journal" }]
 }
 ```

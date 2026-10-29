@@ -50,7 +50,7 @@ func TestCopiesFollowUploadsAndReport(t *testing.T) {
 	}
 
 	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes, copiers,
-		func(c *copies.Copier) { runCopy(ctx, c) }))
+		func(c *copies.Copier) { runCopy(ctx, c) }, env.peers))
 	defer admin.Close()
 	tokenFile := filepath.Join(t.TempDir(), "admin.token")
 	os.WriteFile(tokenFile, []byte("secret\n"), 0o600)

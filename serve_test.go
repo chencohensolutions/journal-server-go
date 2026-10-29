@@ -30,6 +30,7 @@ import (
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/ocr"
+	"github.com/journal/server-go/peers"
 	"github.com/journal/server-go/reading"
 	"github.com/journal/server-go/search"
 	"github.com/journal/server-go/similar"
@@ -51,6 +52,8 @@ type testEnv struct {
 	copiers []*copies.Copier
 	// Ends when the test does: passes and compares the API starts run until then.
 	copiesCtx context.Context
+	// The host of other servers' copies, with peers_folder; nil otherwise.
+	peers *peers.Host
 }
 
 // fakeFaceModel as config.FaceModel gives a test env face search without the models: the test writes the faces
@@ -160,17 +163,24 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 			ix.runs = readerRuns{reader}
 		}
 	}
-	copiers := newCopiers(config, library)
+	copiers, err := newCopiers(config, library)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := openPeerHost(config, enrollment.Issuer)
+	if err != nil {
+		t.Fatal(err)
+	}
 	copiesCtx, cancelCopies := context.WithCancel(context.Background())
 	t.Cleanup(cancelCopies)
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix, copyRunner{copiesCtx, copiers}))
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix, copyRunner{copiesCtx, copiers}, host))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
 		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes, library: library,
-		copiers: copiers, copiesCtx: copiesCtx}
+		copiers: copiers, copiesCtx: copiesCtx, peers: host}
 }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {
@@ -312,7 +322,7 @@ func TestEnrolledDeviceCanUseItsCertificateUntilRevoked(t *testing.T) {
 
 func TestAdminAPIRequiresTokenAndCreatesCodes(t *testing.T) {
 	env := newTestEnv(t)
-	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes, nil, nil))
+	admin := httptest.NewServer(newAdminMux(env.config, env.enrollment, "secret", env.refreshIndexes, nil, nil, env.peers))
 	defer admin.Close()
 
 	unauthorized, err := http.Post(admin.URL+"/admin/query", "application/json", strings.NewReader(`{"query":"{ devices { serial } }"}`))

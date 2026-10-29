@@ -12,6 +12,8 @@ type Query {
   the files it lacks are listed too.
   """
   copyReport(user: String, paths: Boolean = false): [CopyReport!]!
+  "The servers that keep copies here (docs/peers.md), revoked ones too; empty without peers_folder."
+  peers: [HostedPeer!]!
 }
 
 type Mutation {
@@ -31,6 +33,31 @@ type Mutation {
   running is left to finish. Returns the copies started.
   """
   startCopy(user: String): [CopyReport!]!
+  """
+  Creates a one-time code another server uses to keep copies here (journal-server peer add), with at most quota bytes.
+  A revoked peer's name may be given again: the new peer then has its files. Needs peers_folder in config.json.
+  """
+  createPeerInvite(name: String!, quota: Float!): PeerInvite!
+  "Refuses a peer's certificate from now on; its files stay in peers_folder."
+  revokePeer(name: String!): HostedPeer!
+}
+
+type PeerInvite {
+  code: String!
+  name: String!
+  quota: Float!
+  expiresAt: Time!
+}
+
+type HostedPeer {
+  name: String!
+  serial: String!
+  quota: Float!
+  "Bytes its files take here now."
+  used: Float!
+  addedAt: Time!
+  expiresAt: Time!
+  revokedAt: Time
 }
 
 type CopyReport {

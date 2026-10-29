@@ -87,17 +87,37 @@ type ComplexityRoot struct {
 		User      func(childComplexity int) int
 	}
 
+	HostedPeer struct {
+		AddedAt   func(childComplexity int) int
+		ExpiresAt func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Quota     func(childComplexity int) int
+		RevokedAt func(childComplexity int) int
+		Serial    func(childComplexity int) int
+		Used      func(childComplexity int) int
+	}
+
 	Mutation struct {
 		CreateEnrollmentCode func(childComplexity int, user string) int
+		CreatePeerInvite     func(childComplexity int, name string, quota float64) int
 		IndexesUpdated       func(childComplexity int) int
 		RevokeDevice         func(childComplexity int, serial string) int
+		RevokePeer           func(childComplexity int, name string) int
 		SetWithholdPrivate   func(childComplexity int, serial string, withhold bool) int
 		StartCopy            func(childComplexity int, user *string) int
+	}
+
+	PeerInvite struct {
+		Code      func(childComplexity int) int
+		ExpiresAt func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Quota     func(childComplexity int) int
 	}
 
 	Query struct {
 		CopyReport func(childComplexity int, user *string, paths *bool) int
 		Devices    func(childComplexity int, user *string) int
+		Peers      func(childComplexity int) int
 	}
 }
 
@@ -107,10 +127,13 @@ type MutationResolver interface {
 	SetWithholdPrivate(ctx context.Context, serial string, withhold bool) (*enroll.Device, error)
 	IndexesUpdated(ctx context.Context) (bool, error)
 	StartCopy(ctx context.Context, user *string) ([]*model.CopyReport, error)
+	CreatePeerInvite(ctx context.Context, name string, quota float64) (*model.PeerInvite, error)
+	RevokePeer(ctx context.Context, name string) (*model.HostedPeer, error)
 }
 type QueryResolver interface {
 	Devices(ctx context.Context, user *string) ([]*enroll.Device, error)
 	CopyReport(ctx context.Context, user *string, paths *bool) ([]*model.CopyReport, error)
+	Peers(ctx context.Context) ([]*model.HostedPeer, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -336,6 +359,49 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.EnrollmentCode.User(childComplexity), true
 
+	case "HostedPeer.addedAt":
+		if e.ComplexityRoot.HostedPeer.AddedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.AddedAt(childComplexity), true
+	case "HostedPeer.expiresAt":
+		if e.ComplexityRoot.HostedPeer.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.ExpiresAt(childComplexity), true
+	case "HostedPeer.name":
+		if e.ComplexityRoot.HostedPeer.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.Name(childComplexity), true
+	case "HostedPeer.quota":
+		if e.ComplexityRoot.HostedPeer.Quota == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.Quota(childComplexity), true
+	case "HostedPeer.revokedAt":
+		if e.ComplexityRoot.HostedPeer.RevokedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.RevokedAt(childComplexity), true
+	case "HostedPeer.serial":
+		if e.ComplexityRoot.HostedPeer.Serial == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.Serial(childComplexity), true
+	case "HostedPeer.used":
+		if e.ComplexityRoot.HostedPeer.Used == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.Used(childComplexity), true
+
 	case "Mutation.createEnrollmentCode":
 		if e.ComplexityRoot.Mutation.CreateEnrollmentCode == nil {
 			break
@@ -347,6 +413,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateEnrollmentCode(childComplexity, args["user"].(string)), true
+	case "Mutation.createPeerInvite":
+		if e.ComplexityRoot.Mutation.CreatePeerInvite == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createPeerInvite_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.CreatePeerInvite(childComplexity, args["name"].(string), args["quota"].(float64)), true
 	case "Mutation.indexesUpdated":
 		if e.ComplexityRoot.Mutation.IndexesUpdated == nil {
 			break
@@ -364,6 +441,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RevokeDevice(childComplexity, args["serial"].(string)), true
+	case "Mutation.revokePeer":
+		if e.ComplexityRoot.Mutation.RevokePeer == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_revokePeer_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RevokePeer(childComplexity, args["name"].(string)), true
 	case "Mutation.setWithholdPrivate":
 		if e.ComplexityRoot.Mutation.SetWithholdPrivate == nil {
 			break
@@ -387,6 +475,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Mutation.StartCopy(childComplexity, args["user"].(*string)), true
 
+	case "PeerInvite.code":
+		if e.ComplexityRoot.PeerInvite.Code == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PeerInvite.Code(childComplexity), true
+	case "PeerInvite.expiresAt":
+		if e.ComplexityRoot.PeerInvite.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PeerInvite.ExpiresAt(childComplexity), true
+	case "PeerInvite.name":
+		if e.ComplexityRoot.PeerInvite.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PeerInvite.Name(childComplexity), true
+	case "PeerInvite.quota":
+		if e.ComplexityRoot.PeerInvite.Quota == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PeerInvite.Quota(childComplexity), true
+
 	case "Query.copyReport":
 		if e.ComplexityRoot.Query.CopyReport == nil {
 			break
@@ -409,6 +522,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Devices(childComplexity, args["user"].(*string)), true
+
+	case "Query.peers":
+		if e.ComplexityRoot.Query.Peers == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Peers(childComplexity), true
 
 	}
 	return 0, false
@@ -506,6 +626,8 @@ type Query {
   the files it lacks are listed too.
   """
   copyReport(user: String, paths: Boolean = false): [CopyReport!]!
+  "The servers that keep copies here (docs/peers.md), revoked ones too; empty without peers_folder."
+  peers: [HostedPeer!]!
 }
 
 type Mutation {
@@ -525,6 +647,31 @@ type Mutation {
   running is left to finish. Returns the copies started.
   """
   startCopy(user: String): [CopyReport!]!
+  """
+  Creates a one-time code another server uses to keep copies here (journal-server peer add), with at most quota bytes.
+  A revoked peer's name may be given again: the new peer then has its files. Needs peers_folder in config.json.
+  """
+  createPeerInvite(name: String!, quota: Float!): PeerInvite!
+  "Refuses a peer's certificate from now on; its files stay in peers_folder."
+  revokePeer(name: String!): HostedPeer!
+}
+
+type PeerInvite {
+  code: String!
+  name: String!
+  quota: Float!
+  expiresAt: Time!
+}
+
+type HostedPeer {
+  name: String!
+  serial: String!
+  quota: Float!
+  "Bytes its files take here now."
+  used: Float!
+  addedAt: Time!
+  expiresAt: Time!
+  revokedAt: Time
 }
 
 type CopyReport {
@@ -693,6 +840,40 @@ func (ec *executionContext) childFields_EnrollmentCode(ctx context.Context, fiel
 	return nil, fmt.Errorf("no field named %q was found under type EnrollmentCode", field.Name)
 }
 
+func (ec *executionContext) childFields_HostedPeer(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_HostedPeer_name(ctx, field)
+	case "serial":
+		return ec.fieldContext_HostedPeer_serial(ctx, field)
+	case "quota":
+		return ec.fieldContext_HostedPeer_quota(ctx, field)
+	case "used":
+		return ec.fieldContext_HostedPeer_used(ctx, field)
+	case "addedAt":
+		return ec.fieldContext_HostedPeer_addedAt(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_HostedPeer_expiresAt(ctx, field)
+	case "revokedAt":
+		return ec.fieldContext_HostedPeer_revokedAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type HostedPeer", field.Name)
+}
+
+func (ec *executionContext) childFields_PeerInvite(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "code":
+		return ec.fieldContext_PeerInvite_code(ctx, field)
+	case "name":
+		return ec.fieldContext_PeerInvite_name(ctx, field)
+	case "quota":
+		return ec.fieldContext_PeerInvite_quota(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_PeerInvite_expiresAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type PeerInvite", field.Name)
+}
+
 func (ec *executionContext) childFields___Directive(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "name":
@@ -823,6 +1004,28 @@ func (ec *executionContext) field_Mutation_createEnrollmentCode_args(ctx context
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_createPeerInvite_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "quota",
+		func(ctx context.Context, v any) (float64, error) {
+			return ec.unmarshalNFloat2float64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["quota"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_revokeDevice_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -834,6 +1037,20 @@ func (ec *executionContext) field_Mutation_revokeDevice_args(ctx context.Context
 		return nil, err
 	}
 	args["serial"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_revokePeer_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg0
 	return args, nil
 }
 
@@ -1787,6 +2004,167 @@ func (ec *executionContext) fieldContext_EnrollmentCode_serverUrl(_ context.Cont
 	return graphql.NewScalarFieldContext("EnrollmentCode", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _HostedPeer_name(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_serial(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_serial(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Serial, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_serial(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_quota(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_quota(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Quota, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_used(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_used(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Used, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_used(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_addedAt(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_addedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AddedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_addedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_revokedAt(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_revokedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RevokedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_revokedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
 func (ec *executionContext) _Mutation_createEnrollmentCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1986,6 +2364,186 @@ func (ec *executionContext) fieldContext_Mutation_startCopy(ctx context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_createPeerInvite(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_createPeerInvite(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CreatePeerInvite(ctx, fc.Args["name"].(string), fc.Args["quota"].(float64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.PeerInvite) graphql.Marshaler {
+			return ec.marshalNPeerInvite2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐPeerInvite(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_createPeerInvite(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PeerInvite(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createPeerInvite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_revokePeer(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_revokePeer(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RevokePeer(ctx, fc.Args["name"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.HostedPeer) graphql.Marshaler {
+			return ec.marshalNHostedPeer2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐHostedPeer(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_revokePeer(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_HostedPeer(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_revokePeer_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PeerInvite_code(ctx context.Context, field graphql.CollectedField, obj *model.PeerInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PeerInvite_code(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Code, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PeerInvite_code(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PeerInvite", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _PeerInvite_name(ctx context.Context, field graphql.CollectedField, obj *model.PeerInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PeerInvite_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PeerInvite_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PeerInvite", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _PeerInvite_quota(ctx context.Context, field graphql.CollectedField, obj *model.PeerInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PeerInvite_quota(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Quota, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
+			return ec.marshalNFloat2float64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PeerInvite_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PeerInvite", field, false, false, errors.New("field of type Float does not have child fields"))
+}
+
+func (ec *executionContext) _PeerInvite_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.PeerInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PeerInvite_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PeerInvite_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PeerInvite", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
 func (ec *executionContext) _Query_devices(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -2070,6 +2628,38 @@ func (ec *executionContext) fieldContext_Query_copyReport(ctx context.Context, f
 	if fc.Args, err = ec.field_Query_copyReport_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_peers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_peers(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Peers(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.HostedPeer) graphql.Marshaler {
+			return ec.marshalNHostedPeer2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐHostedPeerᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_peers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_HostedPeer(ctx, field)
+		},
 	}
 	return fc, nil
 }
@@ -3536,6 +4126,72 @@ func (ec *executionContext) _EnrollmentCode(ctx context.Context, sel ast.Selecti
 	return out
 }
 
+var hostedPeerImplementors = []string{"HostedPeer"}
+
+func (ec *executionContext) _HostedPeer(ctx context.Context, sel ast.SelectionSet, obj *model.HostedPeer) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, hostedPeerImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("HostedPeer")
+		case "name":
+			out.Values[i] = ec._HostedPeer_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "serial":
+			out.Values[i] = ec._HostedPeer_serial(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "quota":
+			out.Values[i] = ec._HostedPeer_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "used":
+			out.Values[i] = ec._HostedPeer_used(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "addedAt":
+			out.Values[i] = ec._HostedPeer_addedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._HostedPeer_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokedAt":
+			out.Values[i] = ec._HostedPeer_revokedAt(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var mutationImplementors = []string{"Mutation"}
 
 func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -3587,6 +4243,74 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_startCopy(ctx, field)
 			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createPeerInvite":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createPeerInvite(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokePeer":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_revokePeer(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var peerInviteImplementors = []string{"PeerInvite"}
+
+func (ec *executionContext) _PeerInvite(ctx context.Context, sel ast.SelectionSet, obj *model.PeerInvite) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, peerInviteImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PeerInvite")
+		case "code":
+			out.Values[i] = ec._PeerInvite_code(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._PeerInvite_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "quota":
+			out.Values[i] = ec._PeerInvite_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._PeerInvite_expiresAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -3664,6 +4388,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_copyReport(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "peers":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_peers(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -4144,6 +4890,36 @@ func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.S
 	return graphql.WrapContextMarshaler(ctx, res)
 }
 
+func (ec *executionContext) marshalNHostedPeer2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐHostedPeer(ctx context.Context, sel ast.SelectionSet, v model.HostedPeer) graphql.Marshaler {
+	return ec._HostedPeer(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNHostedPeer2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐHostedPeerᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.HostedPeer) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNHostedPeer2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐHostedPeer(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNHostedPeer2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐHostedPeer(ctx context.Context, sel ast.SelectionSet, v *model.HostedPeer) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._HostedPeer(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -4158,6 +4934,20 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalNPeerInvite2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐPeerInvite(ctx context.Context, sel ast.SelectionSet, v model.PeerInvite) graphql.Marshaler {
+	return ec._PeerInvite(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPeerInvite2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋadminᚋmodelᚐPeerInvite(ctx context.Context, sel ast.SelectionSet, v *model.PeerInvite) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PeerInvite(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

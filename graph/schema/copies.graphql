@@ -1,5 +1,6 @@
-# --- Copies of the user's data folder on other disks ---------------------------------------------
-# The server can keep plain copies of each user's data folder in other folders (docs/copies.md), set in config.json.
+# --- Copies of the user's data folder on other disks and on friends' servers ----------------------
+# The server can keep plain copies of each user's data folder in other folders (docs/copies.md) and on a friend's
+# journal server, a peer (docs/peers.md), set in config.json.
 # A phone can see how its user's copies are doing and start a pass of one now; it sees only its own user's copies,
 # and only counts and the copy's folder, never the files' names. The counts include the files hidden on devices.
 
@@ -25,6 +26,8 @@ extend type Mutation {
 extend type ServerInfo {
   "A phone can see how its user's copies are doing and start a pass (copies, startCopy)."
   copies: Boolean!
+  "Copies can be on a friend's server too: DataCopy has kind and encrypted, and the peers' problems."
+  peerCopies: Boolean!
 }
 
 enum CopyProblem {
@@ -32,11 +35,25 @@ enum CopyProblem {
   FOLDER_MISSING
   "The last pass stopped: the copy's disk had no room for the next file (and 1 GB to spare)."
   DISK_FULL
+  "The friend's server can't be reached, or refused this server (its internet down, the server off, revoked)."
+  PEER_UNREACHABLE
+  "The last pass stopped: the friend's server had no room left of what it keeps for this server."
+  QUOTA_FULL
+}
+
+enum CopyKind {
+  "A folder on this server: another disk, a USB disk, a network share."
+  FOLDER
+  "A friend's journal server."
+  PEER
 }
 
 type DataCopy {
-  "The copy's folder, as config.json names it."
+  "The copy's folder, as config.json names it; for a peer, the peer's name. It names the copy in startCopy and stopCopy."
   folder: String!
+  kind: CopyKind!
+  "The copy is encrypted: the friend can't read it."
+  encrypted: Boolean!
   "Each file is also copied a few seconds after it arrives."
   realtime: Boolean!
   "The daily pass, in the server's local time (\"03:30\")."
@@ -52,7 +69,7 @@ type DataCopy {
   missingBytes: Int64!
   "Originals in the copy that the data folder no longer has; they are kept."
   inCopyOnly: Int!
-  "Free bytes on the copy's disk; null when its folder can't be reached."
+  "Free bytes on the copy's disk, or left of a peer's quota; null when the copy can't be reached."
   freeBytes: Int64
   "When the counts were found; null before the first compare that could be made."
   checkedAt: Time
@@ -64,7 +81,7 @@ type DataCopy {
   lastPass: CopyPass
   "Why the copy isn't kept up now; null when it is."
   problem: CopyProblem
-  "FOLDER_MISSING: since when the folder can't be reached. DISK_FULL: when the pass stopped."
+  "FOLDER_MISSING, PEER_UNREACHABLE: since when the copy can't be reached. DISK_FULL, QUOTA_FULL: when the pass stopped."
   problemSince: Time
 }
 

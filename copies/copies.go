@@ -45,6 +45,24 @@ func (c *Copier) rootFiles() []string {
 // ErrDiskFull stops a pass when the copy's disk has no room for the next original.
 var ErrDiskFull = errors.New("the copy's disk is full")
 
+// stops reports whether err ends the pass rather than one file: no room left, or the copy out of reach (a peer's
+// network error, after RetryAfter).
+func stops(err error) bool {
+	return errors.Is(err, ErrDiskFull) || errors.Is(err, ErrQuotaFull) || errors.Is(err, ErrUnreachable)
+}
+
+// outOfReach notes when a pass stopped on the copy out of reach (UnreachableSince), and returns err.
+func (c *Copier) outOfReach(err error) error {
+	if errors.Is(err, ErrUnreachable) {
+		c.mu.Lock()
+		if c.unreachable.IsZero() {
+			c.unreachable = c.now()
+		}
+		c.mu.Unlock()
+	}
+	return err
+}
+
 // Copier keeps one copy of one user's data folder.
 type Copier struct {
 	User     string
@@ -77,11 +95,30 @@ type Copier struct {
 
 // New is a copier of store into config's folder, with the last compare and pass saved there (Load).
 func New(user string, store *media.Store, config auth.CopyConfig, now func() time.Time) *Copier {
-	c := &Copier{User: user, Folder: config.Folder, At: config.At, Realtime: config.Realtime, store: store, now: now,
-		queued: map[string]bool{}, dropped: map[string]bool{}, wake: make(chan struct{}, 1)}
+	return NewTo(user, store, config, nil, now)
+}
+
+// NewTo is a copier of store into target (a peer: config names it), or config's folder when target is nil.
+func NewTo(user string, store *media.Store, config auth.CopyConfig, target Target, now func() time.Time) *Copier {
+	c := &Copier{User: user, Folder: config.Folder, At: config.At, Realtime: config.Realtime, Target: target,
+		store: store, now: now, queued: map[string]bool{}, dropped: map[string]bool{}, wake: make(chan struct{}, 1)}
+	if config.Peer != "" {
+		c.Folder = config.Peer
+	}
 	c.Load()
 	return c
 }
+
+// PeerName is the peer the copy is on, or "" for a copy in a folder.
+func (c *Copier) PeerName() string {
+	if p, ok := c.dest().(*Peer); ok {
+		return p.Name
+	}
+	return ""
+}
+
+// FreeBytes is how much the copy can still take: the free space on its disk, or what is left of a peer's quota.
+func (c *Copier) FreeBytes() (uint64, error) { return c.dest().Free(savedName) }
 
 // Progress is a pass under way.
 type Progress struct {
@@ -486,15 +523,17 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string
 		need := needed[item.Path]
 		if needed == nil {
 			var err error
-			if need, err = c.originalNeeded(item); err != nil {
+			if need, err = c.originalNeeded(item); stops(err) {
+				return c.outOfReach(err)
+			} else if err != nil {
 				failed(item.Path, err)
 				continue
 			}
 		}
 		if need {
 			n, err := c.copyOriginal(ctx, item, written)
-			if errors.Is(err, ErrDiskFull) || ctx.Err() != nil {
-				return errors.Join(err, ctx.Err())
+			if stops(err) || ctx.Err() != nil {
+				return errors.Join(c.outOfReach(err), ctx.Err())
 			}
 			if err != nil {
 				failed(item.Path, err)
@@ -507,7 +546,9 @@ func (c *Copier) copy(ctx context.Context, items []media.Item, needed map[string
 			}
 			c.mu.Unlock()
 		}
-		if n, copied, err := c.copySmall(item.Path + ".json"); err != nil {
+		if n, copied, err := c.copySmall(item.Path + ".json"); stops(err) {
+			return c.outOfReach(err)
+		} else if err != nil {
 			failed(item.Path+".json", err)
 		} else if copied {
 			counted(n)
@@ -550,6 +591,9 @@ func (c *Copier) originalNeeded(item media.Item) (bool, error) {
 	return info.Size != src.Size(), nil
 }
 
+// RetryAfter are the waits before each new try of a file a network error stopped; after the last, the pass stops.
+var RetryAfter = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
+
 // copyOriginal puts an original into the copy, checked against its sha256 before it takes its place (Target.Put), so
 // the copy never holds part of an original.
 func (c *Copier) copyOriginal(ctx context.Context, item media.Item, written func(int64)) (int64, error) {
@@ -562,10 +606,33 @@ func (c *Copier) copyOriginal(ctx context.Context, item media.Item, written func
 	if err != nil {
 		return 0, err
 	}
-	if free, err := c.dest().Free(item.Path); err == nil && free < uint64(info.Size())+spaceReserve {
+	if c.PeerName() != "" {
+		// The host keeps its own disk's reserve; the quota is all this server's.
+		if free, err := c.dest().Free(item.Path); err == nil && free < uint64(info.Size()) {
+			return 0, fmt.Errorf("%w: %s left, %s needed for %s", ErrQuotaFull, Size(int64(free)), Size(info.Size()), item.Path)
+		}
+	} else if free, err := c.dest().Free(item.Path); err == nil && free < uint64(info.Size())+spaceReserve {
 		return 0, fmt.Errorf("%w: %s free, %s needed for %s", ErrDiskFull, Size(int64(free)), Size(info.Size()), item.Path)
 	}
-	err = c.dest().Put(item.Path, io.TeeReader(src, progress{ctx, written}), info.Size(), item.Sidecar.Sha256, info.ModTime())
+	for try := 0; ; try++ {
+		var sent int64
+		count := func(n int64) { sent += n; written(n) }
+		err = c.dest().Put(item.Path, io.TeeReader(src, progress{ctx, count}), info.Size(), item.Sidecar.Sha256, info.ModTime())
+		if !errors.Is(err, ErrUnreachable) || errors.Is(err, errRefused) || try >= len(RetryAfter) || ctx.Err() != nil {
+			break
+		}
+		// A network error: the same file again after a while (a peer resumes where it stopped).
+		written(-sent)
+		log.Printf("copy %s → %s: %s: %v; trying again in %s", c.User, c.Folder, item.Path, err, RetryAfter[try])
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(RetryAfter[try]):
+		}
+		if _, err := src.Seek(0, io.SeekStart); err != nil {
+			return 0, err
+		}
+	}
 	if errors.Is(err, errDamaged) {
 		return 0, fmt.Errorf("%w: the original on the server may be damaged", err)
 	}
