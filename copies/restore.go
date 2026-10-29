@@ -120,24 +120,33 @@ func IsEncrypted(src Target) bool {
 // Restore brings the copy in src back into folder, which must be empty (or hold a restore stopped part way). key is
 // needed for an encrypted copy. report is called as files come back.
 func Restore(ctx context.Context, src Target, key *KeyFile, folder string, report func(RestoreProgress)) (RestoreResult, error) {
+	return RestoreAsOf(ctx, src, key, folder, time.Time{}, report)
+}
+
+// RestoreAsOf is Restore with each file as it was at asOf: a sidecar or root file the copy replaced since comes back
+// in the version it kept (history/); the zero time is now. Files added since come back as they are.
+func RestoreAsOf(ctx context.Context, src Target, key *KeyFile, folder string, asOf time.Time, report func(RestoreProgress)) (RestoreResult, error) {
 	if err := prepareFolder(folder); err != nil {
 		return RestoreResult{}, err
 	}
-	var jobs []restoreJob
+	var jobs, versions []restoreJob
 	encrypted := IsEncrypted(src)
 	if encrypted {
 		if key == nil {
 			return RestoreResult{}, errors.New("this copy is encrypted: give the key file with --key")
 		}
 		var err error
-		if jobs, err = encryptedJobs(src, key); err != nil {
+		if jobs, versions, err = encryptedJobs(src, key); err != nil {
 			return RestoreResult{}, err
 		}
 	} else {
 		var err error
-		if jobs, err = plainJobs(src); err != nil {
+		if jobs, versions, err = plainJobs(src); err != nil {
 			return RestoreResult{}, err
 		}
+	}
+	if !asOf.IsZero() {
+		jobs = asOfJobs(jobs, versions, asOf)
 	}
 	result := RestoreResult{Encrypted: encrypted, FailedFiles: map[string]string{}}
 	result.Files = len(jobs)
@@ -211,18 +220,20 @@ func prepareFolder(folder string) error {
 
 // restoreJob is one file to bring back: from src's path (a plain copy), or from a blob (an encrypted one).
 type restoreJob struct {
-	path    string // in the data folder
-	blob    string // in an encrypted copy, or ""
-	size    int64  // -1 when not known before
-	sha256  string // "" when not known before (a plain copy's sidecar names it after)
+	path    string    // in the data folder
+	from    string    // in a plain copy, when not path (a version in history/)
+	stamp   time.Time // when the copy replaced this version; zero for the current one
+	blob    string    // in an encrypted copy, or ""
+	size    int64     // -1 when not known before
+	sha256  string    // "" when not known before (a plain copy's sidecar names it after)
 	modTime time.Time
 }
 
 // rootRestored are the root files a plain copy brings back beside media/ and relabels/.
 var rootRestored = []string{"people.json", "settings.json", "cameras.json", "sound-folders.json"}
 
-func plainJobs(src Target) ([]restoreJob, error) {
-	var jobs []restoreJob
+func plainJobs(src Target) ([]restoreJob, []restoreJob, error) {
+	var jobs, versions []restoreJob
 	add := func(f File) error {
 		if !strings.HasPrefix(path.Base(f.Path), ".") {
 			jobs = append(jobs, restoreJob{path: f.Path, size: f.Size, modTime: f.ModTime})
@@ -231,23 +242,51 @@ func plainJobs(src Target) ([]restoreJob, error) {
 	}
 	for _, dir := range []string{"media", "relabels"} {
 		if err := src.Walk(dir, add); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	for _, name := range rootRestored {
 		if f, err := src.Stat(name); err == nil {
 			add(f)
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if len(jobs) == 0 {
-		return nil, errors.New("the copy holds no files (is it the copy's folder, with media/ in it?)")
+		return nil, nil, errors.New("the copy holds no files (is it the copy's folder, with media/ in it?)")
 	}
-	return jobs, nil
+	err := src.Walk(historyDir, func(f File) error {
+		if stamp, name, ok := ParseHistoryPath(f.Path); ok {
+			versions = append(versions, restoreJob{path: name, from: f.Path, stamp: stamp, size: f.Size, modTime: f.ModTime})
+		}
+		return nil
+	})
+	return jobs, versions, err
 }
 
-func encryptedJobs(src Target, key *KeyFile) ([]restoreJob, error) {
+// asOfJobs replaces each job by the version it had at asOf: the one the copy replaced soonest after it.
+func asOfJobs(jobs, versions []restoreJob, asOf time.Time) []restoreJob {
+	at := map[string]restoreJob{}
+	for _, v := range versions {
+		if !v.stamp.After(asOf) {
+			continue
+		}
+		key := strings.ToLower(v.path)
+		if kept, ok := at[key]; !ok || v.stamp.Before(kept.stamp) {
+			at[key] = v
+		}
+	}
+	out := make([]restoreJob, len(jobs))
+	for i, job := range jobs {
+		out[i] = job
+		if v, ok := at[strings.ToLower(job.path)]; ok {
+			out[i] = v
+		}
+	}
+	return out
+}
+
+func encryptedJobs(src Target, key *KeyFile) ([]restoreJob, []restoreJob, error) {
 	var newest manifest
 	found := false
 	var last error
@@ -267,16 +306,22 @@ func encryptedJobs(src Target, key *KeyFile) ([]restoreJob, error) {
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("the copy's manifest can't be read with this key file: %v", last)
+		return nil, nil, fmt.Errorf("the copy's manifest can't be read with this key: %v", last)
 	}
 	if newest.User != key.Key.User {
-		return nil, fmt.Errorf("the copy is %s's, the key file %s's", newest.User, key.Key.User)
+		return nil, nil, fmt.Errorf("the copy is %s's, the key %s's", newest.User, key.Key.User)
 	}
-	jobs := make([]restoreJob, 0, len(newest.Files))
+	var jobs, versions []restoreJob
 	for _, f := range newest.Files {
-		jobs = append(jobs, restoreJob{path: f.Path, blob: f.Name, size: f.Size, sha256: f.Sha256, modTime: f.ModTime})
+		job := restoreJob{path: f.Path, blob: f.Name, size: f.Size, sha256: f.Sha256, modTime: f.ModTime}
+		if stamp, name, ok := ParseHistoryPath(f.Path); ok {
+			job.path, job.stamp = name, stamp
+			versions = append(versions, job)
+			continue
+		}
+		jobs = append(jobs, job)
 	}
-	return jobs, nil
+	return jobs, versions, nil
 }
 
 // run brings one file back, trying it again after a failure; it reports whether the file was there already.
@@ -335,8 +380,11 @@ func (j restoreJob) plainOriginalOK(dest string) bool {
 // fetch writes the file to a temp file beside dest, checks it and renames it into place.
 func (j restoreJob) fetch(src Target, key *KeyFile, dest string) (int64, error) {
 	name := j.path
-	if j.blob != "" {
+	switch {
+	case j.blob != "":
 		name = j.blob
+	case j.from != "":
+		name = j.from
 	}
 	r, err := src.Open(name)
 	if err != nil {

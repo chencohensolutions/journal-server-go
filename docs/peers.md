@@ -126,6 +126,8 @@ A copy on a peer can be encrypted, so the friend can't read it; then the peer ne
 
 ```bash
 journal-server copy-key new hen --out E:\hen-copy.journalkey [--passphrase]   # once per user; refuses to overwrite
+journal-server copy-key new hen --from-passphrase                            # or: no key file, a passphrase
+journal-server copy-key export hen --out E:\hen-copy.journalkey             # a key file of a passphrase's key
 ```
 
 ```json
@@ -157,6 +159,14 @@ journal-server copy-key new hen --out E:\hen-copy.journalkey [--passphrase]   # 
   were sent. Not content, names, dates or places.
 - In the apps, `DataCopy.encrypted` is true.
 
+- **A key from a passphrase** (`--from-passphrase`, Oct 29, 2026): the age key and the naming key are derived from
+  the passphrase with Argon2id (256 MiB, 3 passes, 4 lanes) and a random 16-byte salt. The salt and the parameters
+  aren't secret: this server keeps them in its `<user>.json` and each encrypted copy carries them
+  (`copy-key.json` at its root, sent with the first full pass), so after losing everything the passphrase alone
+  restores. Whoever holds the copy can try passphrases against it, so a passphrase needs 24 characters, or 4 words
+  or more and 20 characters; six random words are best. A forgotten passphrase is a lost copy. `copy-key export`
+  checks the passphrase gives the stored key and writes a key file of it, for the age tool or as a spare.
+
 ## Restore
 
 ```bash
@@ -171,7 +181,10 @@ journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-res
   again goes on where it stopped; files already there with the right size and sha256 are skipped.
 - A plain copy comes back file by file (`media/`, `relabels/`, the root files). An encrypted copy (it has a sealed
   manifest) needs `--key`: the key file's naming key opens the manifest, and its key decrypts each file. A key file
-  sealed with a passphrase asks for it.
+  sealed with a passphrase asks for it. `--passphrase` instead gives the key from a passphrase.
+- `--as-of 2026-10-20` (or `"2026-10-20 15:00"`) brings back each sidecar and root file as it was at the end of that
+  day, local time: the version the copy kept in `history/` when it replaced it soonest after then
+  ([copies.md](copies.md), "Previous versions"). Files added since come back as they are; originals never change.
 - Each original is checked against its sha256 (the manifest's, or its sidecar's for a plain copy) before it takes its
   place. A file that fails is tried 3 times, then listed at the end; the command fails and can be run again.
 - Four files come back at once. The server needn't be running. Afterwards, point the user's `data_folder` at the
@@ -180,8 +193,8 @@ journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-res
   certificate still works) or ask the friend to `peer revoke` the old peer and invite the new server **under the same
   name**, then `peer add` it. Then `restore` with the key file. Only the friend's admin can give a new server the old
   one's files.
-- Copies keep no history: a sidecar damaged on the server before a pass ran is damaged in the copy too. Originals
-  are never overwritten in a copy.
+- Copies keep the versions they replace, so a sidecar damaged on the server comes back good with `--as-of` a day
+  before. Originals are never overwritten in a copy.
 
 ## Code
 
@@ -198,5 +211,5 @@ journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-res
 
 ## Not built yet
 
-Peers' certificates renewing, history of changed sidecars in copies, and serving phones from a peer while the owner's server is
+Peers' certificates renewing, pruning old versions in history/, and serving phones from a peer while the owner's server is
 off. See the plan.

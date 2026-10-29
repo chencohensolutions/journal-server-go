@@ -771,11 +771,45 @@ func (c *Copier) copySmall(name string) (int64, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
+	// The copy's version is kept in history/ before it is replaced, so a sidecar damaged on the server doesn't take
+	// the good one with it (restore --as-of brings back the version of a day).
+	if _, err := c.dest().Stat(name); err == nil {
+		if err := c.dest().Move(name, HistoryPath(c.now(), name)); err != nil {
+			return 0, false, fmt.Errorf("keeping the copy's version before replacing it: %w", err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return 0, false, err
+	}
 	sum := sha256.Sum256(data)
 	if err := c.dest().Put(name, bytes.NewReader(data), int64(len(data)), hex.EncodeToString(sum[:]), info.ModTime()); err != nil {
 		return 0, false, err
 	}
 	return int64(len(data)), true, nil
+}
+
+// historyDir holds the versions a copy replaced: history/<when it was replaced, UTC>/<its path>.
+const historyDir = "history"
+
+// historyStamp names a replacement's time in history/: "20261029T031500.123Z".
+const historyStamp = "20060102T150405.000Z"
+
+// HistoryPath is where the version of name replaced at t is kept.
+func HistoryPath(t time.Time, name string) string {
+	return historyDir + "/" + t.UTC().Format(historyStamp) + "/" + name
+}
+
+// ParseHistoryPath is the time a version was replaced and its path, for a path in history/.
+func ParseHistoryPath(p string) (time.Time, string, bool) {
+	rest, ok := strings.CutPrefix(p, historyDir+"/")
+	if !ok {
+		return time.Time{}, "", false
+	}
+	stamp, name, ok := strings.Cut(rest, "/")
+	if !ok {
+		return time.Time{}, "", false
+	}
+	t, err := time.Parse(historyStamp, stamp)
+	return t, name, err == nil
 }
 
 // Size is bytes for people: "1.4 GB".

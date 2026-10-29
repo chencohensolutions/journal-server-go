@@ -43,6 +43,11 @@ The copy folder itself is the record of what was copied; there is no other state
 - **Sidecars, people.json, settings.json.** One of these is copied when its size differs from the copy's, or its
   modified time and its bytes both differ. The copy gets the source's modified time, so the next pass can compare
   them without reading them. The time is only a hint that a file changed, never a photo's date.
+- **Previous versions.** Before one of these is replaced, the copy's version is moved to
+  `history/<when it was replaced, UTC>/<its path>` (`history/20261025T033000.000Z/media/2026/2026-10/IMG_1.jpg.json`),
+  so a sidecar damaged on the server doesn't take the good one with it. `restore --as-of <day>`
+  ([peers.md](peers.md), "Restore") brings each one back as it was that day. Versions are small and kept for good;
+  a compare never counts them.
 - **Nothing is deleted from a copy**, but for one thing. A file gone from the data folder stays in the copy. A JPEG
   the data folder keeps as JPEG XL ([media.md](media.md) "JPEG XL") leaves the copy too (the owner's choice, Oct 28,
   2026), and only when it really is the same file: once the copy has the JPEG XL, the copy's JPEG (found in the

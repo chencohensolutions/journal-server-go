@@ -71,10 +71,19 @@ func testTarget(t *testing.T, target Target) {
 	if f, _ := target.Stat("media/2026/2026-10/a.jpg"); !f.ModTime.Equal(later) {
 		t.Fatalf("touched: %v", f.ModTime)
 	}
-	if err := target.Remove("media/2026/2026-10/a.jpg"); err != nil {
+	if err := target.Move("media/2026/2026-10/a.jpg", "history/20261029T031500Z/media/2026/2026-10/a.jpg"); err != nil {
 		t.Fatal(err)
 	}
-	if err := target.Remove("media/2026/2026-10/a.jpg"); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := target.Stat("media/2026/2026-10/a.jpg"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("moved away: %v", err)
+	}
+	if got, err := readAll(target, "history/20261029T031500Z/media/2026/2026-10/a.jpg"); err != nil || string(got) != data {
+		t.Fatalf("moved: %q, %v", got, err)
+	}
+	if err := target.Remove("history/20261029T031500Z/media/2026/2026-10/a.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if err := target.Remove("history/20261029T031500Z/media/2026/2026-10/a.jpg"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("removing it again: %v", err)
 	}
 }

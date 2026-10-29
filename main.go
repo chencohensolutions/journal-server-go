@@ -42,8 +42,9 @@ const usage = `usage:
                                       the same from a passphrase: no key file, the passphrase alone reads them
   journal-server copy-key export <user> --out <file> [--passphrase]
                                       a key file of a key made from a passphrase
-  journal-server restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <file> | --passphrase]
-                                      bring a copy back into an empty folder; an encrypted one needs the key file
+  journal-server restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <file> | --passphrase] [--as-of <day>]
+                                      bring a copy back into an empty folder; an encrypted one needs the key file;
+                                      --as-of brings back each sidecar as it was that day
 `
 
 func main() {

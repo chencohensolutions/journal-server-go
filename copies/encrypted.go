@@ -406,6 +406,34 @@ func (e *Encrypted) Remove(rel string) error {
 	return nil
 }
 
+// Move moves the file's blob to the name of to, and its entry with it.
+func (e *Encrypted) Move(from, to string) error {
+	if isLocal(from) || isLocal(to) {
+		return Folder(e.dir).Move(from, to)
+	}
+	e.mu.Lock()
+	f, ok := e.files[strings.ToLower(from)]
+	_, taken := e.files[strings.ToLower(to)]
+	e.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("%s: %w", from, fs.ErrNotExist)
+	}
+	if taken {
+		return fmt.Errorf("%s is there already", to)
+	}
+	name := e.key.BlobName(to)
+	if err := e.Inner.Move(f.Name, name); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	delete(e.files, strings.ToLower(from))
+	f.Path, f.Name = to, name
+	e.files[strings.ToLower(to)] = f
+	e.dirty, e.unpushed = true, true
+	e.mu.Unlock()
+	return nil
+}
+
 // Files is the manifest's count of files.
 func (e *Encrypted) Files() int {
 	e.mu.Lock()

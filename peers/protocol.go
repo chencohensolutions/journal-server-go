@@ -19,6 +19,7 @@ import (
 //	PATCH  /peer/{user}/files/{path}          sets HeaderModified
 //	DELETE /peer/{user}/files/{path}
 //	GET    /peer/{user}/sha256/{path}         {sha256, size}, hashed here
+//	POST   /peer/{user}/move/{path}           moves the file to HeaderMoveTo (a previous version kept)
 //	HEAD   /peer/{user}/upload/{sha256}       HeaderOffset: how much of a resumed upload is here
 const (
 	// The whole file's sha256: a put is checked against it before the file takes its place.
@@ -27,6 +28,8 @@ const (
 	HeaderModified = "Journal-Modified"
 	// How many bytes of an upload the host has.
 	HeaderOffset = "Upload-Offset"
+	// Where a move puts the file: a path in the same space, where no file is.
+	HeaderMoveTo = "Journal-Move-To"
 )
 
 // Error codes in an error answer's JSON ({"error": code, "message": ...}).

@@ -36,6 +36,8 @@ type Target interface {
 	Touch(path string, modTime time.Time) error
 	// Remove deletes the file at path; a missing one is an error wrapping fs.ErrNotExist.
 	Remove(path string) error
+	// Move puts the file at from at to (a previous version kept in history/), replacing nothing.
+	Move(from, to string) error
 	// Free is how many bytes can still be written beside path.
 	Free(path string) (uint64, error)
 }
@@ -157,6 +159,16 @@ func (f Folder) Touch(path string, modTime time.Time) error {
 }
 
 func (f Folder) Remove(path string) error { return os.Remove(f.abs(path)) }
+
+func (f Folder) Move(from, to string) error {
+	if _, err := os.Stat(f.abs(to)); err == nil {
+		return fmt.Errorf("%s is there already", to)
+	}
+	if err := os.MkdirAll(filepath.Dir(f.abs(to)), 0o755); err != nil {
+		return err
+	}
+	return os.Rename(f.abs(from), f.abs(to))
+}
 
 // Free asks the disk of path's nearest folder that exists (path's own may not be made yet).
 func (f Folder) Free(path string) (uint64, error) {

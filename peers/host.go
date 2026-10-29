@@ -472,6 +472,34 @@ func ServeUpload(h *Host, p Peer, w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// ServeMove answers POST /peer/{user}/move/{path}: the file goes to HeaderMoveTo in the same space, where no file
+// may be. The space's used bytes don't change.
+func ServeMove(h *Host, p Peer, w http.ResponseWriter, r *http.Request) {
+	user := r.PathValue("user")
+	from, to := h.local(p, user, r.PathValue("path")), h.local(p, user, r.Header.Get(HeaderMoveTo))
+	if from == "" || to == "" {
+		http.Error(w, "bad path", http.StatusBadRequest)
+		return
+	}
+	if _, err := os.Stat(from); err != nil {
+		fileError(w, err)
+		return
+	}
+	if _, err := os.Stat(to); err == nil {
+		http.Error(w, "a file is there already", http.StatusConflict)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+		fileError(w, err)
+		return
+	}
+	if err := os.Rename(from, to); err != nil {
+		fileError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ServeSha256 answers GET /peer/{user}/sha256/{path}: the file's sha256 and size, hashed here so the peer needn't
 // download it.
 func ServeSha256(h *Host, p Peer, w http.ResponseWriter, r *http.Request) {
@@ -535,4 +563,5 @@ func (h *Host) Mount(mux *http.ServeMux) {
 	mux.Handle("/peer/{user}/files/{path...}", h.Handler(ServeFile))
 	mux.Handle("GET /peer/{user}/sha256/{path...}", h.Handler(ServeSha256))
 	mux.Handle("HEAD /peer/{user}/upload/{sha256}", h.Handler(ServeUpload))
+	mux.Handle("POST /peer/{user}/move/{path...}", h.Handler(ServeMove))
 }

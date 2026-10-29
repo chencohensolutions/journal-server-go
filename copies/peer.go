@@ -38,8 +38,8 @@ type Peer struct {
 
 	client *http.Client
 
-	mu        sync.Mutex
-	listed    map[string]listing // by group (listGroup)
+	mu      sync.Mutex
+	listed  map[string]listing // by group (listGroup)
 	space   *peers.Space
 	spaceAt time.Time
 }
@@ -442,6 +442,26 @@ func (p *Peer) Remove(rel string) error {
 	}
 	resp.Body.Close()
 	p.changed(rel, nil)
+	return nil
+}
+
+func (p *Peer) Move(from, to string) error {
+	req, err := p.request(http.MethodPost, p.url("move", from), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set(peers.HeaderMoveTo, to)
+	resp, err := p.do(req, http.StatusNoContent)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	f, statErr := p.Stat(from)
+	p.changed(from, nil)
+	if statErr == nil {
+		f.Path = to
+		p.changed(to, &f)
+	}
 	return nil
 }
 
