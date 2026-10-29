@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/copies"
+	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/peers"
 )
 
@@ -237,3 +241,120 @@ func TestAnEncryptedCopyOnAFriendsServer(t *testing.T) {
 type readerFunc func() string
 
 func (f readerFunc) Read(b []byte) (int, error) { return copy(b, f()), nil }
+
+// The owner's server is lost with everything on it but the key file (sealed with a passphrase). dana revokes the old
+// peer and invites the new server by the same name; the new server adds dana and restores hen's files.
+func TestAServerLostIsRestoredFromAFriend(t *testing.T) {
+	dana := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersFolder = t.TempDir()
+		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
+	})
+	fingerprint := peers.Fingerprint(dana.server.Certificate())
+	keyFile := filepath.Join(t.TempDir(), "hen.journalkey")
+
+	// Before: hen's server keeps an encrypted copy at dana's.
+	code, _, _ := dana.peers.Invite("hen-home", 1e9)
+	old := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
+		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
+	if err := peerAddCommand(old, []string{"dana", dana.server.URL, code + "." + fingerprint}); err != nil {
+		t.Fatal(err)
+	}
+	const passphrase = "correct horse battery staple"
+	answers := strings.NewReader(passphrase + "\n" + passphrase + "\n")
+	typed := readerFunc(func() string {
+		if answers.Len() > 0 {
+			line, _ := bufioLine(answers)
+			return line
+		}
+		return keyEnd(t, keyFile, passphrase) + "\n"
+	})
+	var out strings.Builder
+	if err := copyKeyCommand(old, []string{"new", "hen", "--out", keyFile, "--passphrase"}, typed, &out); err != nil {
+		t.Fatal(err, out.String())
+	}
+	hen := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersDir, c.CopyKeysDir = old.PeersDir, old.CopyKeysDir
+		c.Users[0].Copies = []auth.CopyConfig{{Peer: "dana", Encrypt: true}}
+	})
+	client := hen.enrolledClient(t)
+	hen.uploadPhoto(t, client, []byte("the first photo"), "IMG_1.jpg")
+	hen.uploadPhoto(t, client, []byte("the second photo"), "IMG_2.jpg")
+	runCopy(context.Background(), hen.copiers[0])
+
+	// After: a new server, with nothing of the old one. dana lets it in under the old name.
+	if _, err := dana.peers.Registry.Revoke("hen-home", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ = dana.peers.Invite("hen-home", 1e9)
+	fresh := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
+		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
+	if err := peerAddCommand(fresh, []string{"dana", dana.server.URL, code + "." + fingerprint}); err != nil {
+		t.Fatal(err)
+	}
+	to := filepath.Join(t.TempDir(), "hen")
+	out.Reset()
+	err := restoreCommand(fresh, []string{"hen", "--from", "dana", "--to", to, "--key", keyFile}, strings.NewReader(passphrase+"\n"), &out)
+	if err != nil {
+		t.Fatal(err, out.String())
+	}
+	sameFiles := 0
+	filepath.WalkDir(filepath.Join(hen.dataFolder, "media"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(hen.dataFolder, path)
+		want, _ := os.ReadFile(path)
+		got, err := os.ReadFile(filepath.Join(to, rel))
+		if err != nil || string(got) != string(want) {
+			t.Errorf("%s came back as %q, %v", rel, got, err)
+		} else {
+			sameFiles++
+		}
+		return nil
+	})
+	if sameFiles < 4 || !strings.Contains(out.String(), "Every original matched") {
+		t.Errorf("%d files back: %s", sameFiles, out.String())
+	}
+	// The restored folder opens as a data folder, with both photos.
+	cfg := auth.AppConfig{Users: []auth.UserConfig{{Username: "hen", DataFolder: to}}}.WithDefaults()
+	library, err := openLibrary(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u := library.Store("hen").Usage(media.View{}); u.Photos != 2 {
+		t.Errorf("the restored folder holds %+v", u)
+	}
+	// Without --to, nothing is restored anywhere.
+	if err := restoreCommand(fresh, []string{"hen", "--from", "dana", "--key", keyFile}, strings.NewReader(""), &out); err == nil {
+		t.Error("a restore without --to")
+	}
+}
+
+// keyEnd is the last 6 characters of the key in a key file sealed with passphrase.
+func keyEnd(t *testing.T, keyFile, passphrase string) string {
+	t.Helper()
+	data, err := os.ReadFile(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kf, err := copies.ReadKeyFile(data, func() (string, error) { return passphrase, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := fmt.Sprint(kf.Identity)
+	return s[len(s)-6:]
+}
+
+func bufioLine(r *strings.Reader) (string, error) {
+	var line []byte
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return string(line), err
+		}
+		line = append(line, b)
+		if b == '\n' {
+			return string(line), nil
+		}
+	}
+}

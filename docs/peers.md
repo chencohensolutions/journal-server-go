@@ -7,7 +7,7 @@ other's copy, with no cloud account and no fees. A swap is two peerings, one eac
 
 Peers are optional and off by default. A copy there is plain, which the friend's admin can read, so the peer must
 be marked trusted; or encrypted ("Encrypted copies" below), which nobody can read without the owner's key file.
-Restore is the next part of the plan
+Restore is below; encrypted accounts are later parts of the plan
 ([../../journal-client-kmp/docs/plans/swap-and-encryption.md](../../journal-client-kmp/docs/plans/swap-and-encryption.md)).
 
 ## Setting it up
@@ -157,13 +157,40 @@ journal-server copy-key new hen --out E:\hen-copy.journalkey [--passphrase]   # 
   were sent. Not content, names, dates or places.
 - In the apps, `DataCopy.encrypted` is true.
 
+## Restore
+
+```bash
+journal-server restore hen --from dana --to D:\Journal\hen-restored [--key E:\hen-copy.journalkey]
+journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-restored [--key …]
+```
+
+- `--from` reads the copy from the peer over the peer API; `--from-folder` from a folder that holds one: the
+  friend's `peers_folder/<peer>/<user>/` handed over on a disk, or a plain copy on another disk ([copies.md](copies.md)).
+- `--to` is always given and must be **empty**: a restore never fills a folder it wasn't pointed at, the user's
+  `data_folder` included. It marks the folder (`.journal-restore.json`) while it works, so the same command run
+  again goes on where it stopped; files already there with the right size and sha256 are skipped.
+- A plain copy comes back file by file (`media/`, `relabels/`, the root files). An encrypted copy (it has a sealed
+  manifest) needs `--key`: the key file's naming key opens the manifest, and its key decrypts each file. A key file
+  sealed with a passphrase asks for it.
+- Each original is checked against its sha256 (the manifest's, or its sidecar's for a plain copy) before it takes its
+  place. A file that fails is tried 3 times, then listed at the end; the command fails and can be run again.
+- Four files come back at once. The server needn't be running. Afterwards, point the user's `data_folder` at the
+  folder and start the server: the indexes and previews are made again, as when `.cache/` is missing.
+- **When the whole PC is lost**: install journal-server, and either restore `certs/` from a backup (the old peer
+  certificate still works) or ask the friend to `peer revoke` the old peer and invite the new server **under the same
+  name**, then `peer add` it. Then `restore` with the key file. Only the friend's admin can give a new server the old
+  one's files.
+- Copies keep no history: a sidecar damaged on the server before a pass ran is damaged in the copy too. Originals
+  are never overwritten in a copy.
+
 ## Code
 
 - `peers/`: the host side. `registry.go` (`peers.json`), `host.go` (invites, enrolling, the API and `Mount`),
   `protocol.go` (routes, headers, codes, `Fingerprint`).
 - `copies/peer.go`: `copies.Peer`, the target, and `PeerClient` (the pinned TLS client).
 - `copies/encrypted.go`: `copies.Encrypted`, the encrypted target over a `Peer`; `CopyKey`, blob names and the
-  sealed manifest. `copykey.go`: `copy-key new`.
+  sealed manifest. `copykey.go`: `copy-key new`. `copies/restore.go`: `Restore` and `ReadKeyFile`;
+  `restore.go`: the command.
 - `peer.go`: `peer add | invite | revoke | remove`, `peers`, loading a peer for config.json's copies, and
   `openPeerHost`.
 - `enroll.Issuer.IssuePeer` and `enroll.IsPeer`; `identify` in `middleware.go` refuses peer certificates.
@@ -171,5 +198,5 @@ journal-server copy-key new hen --out E:\hen-copy.journalkey [--passphrase]   # 
 
 ## Not built yet
 
-Restore, peers' certificates renewing, and serving phones from a peer while the owner's server is
+Peers' certificates renewing, history of changed sidecars in copies, and serving phones from a peer while the owner's server is
 off. See the plan.

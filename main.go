@@ -38,6 +38,8 @@ const usage = `usage:
   journal-server copy-key new <user> --out <file> [--passphrase]
                                       make the key that encrypts the user's copies on peers; only the key file
                                       written to <file> can read them
+  journal-server restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <file>]
+                                      bring a copy back into an empty folder; an encrypted one needs the key file
 `
 
 func main() {
@@ -66,7 +68,13 @@ func main() {
 	case "peer", "peers":
 		run = runPeerCommand
 	case "copy-key":
-		run = func(config auth.AppConfig, _ string, args []string) error { return copyKeyCommand(config, args, os.Stdin, os.Stdout) }
+		run = func(config auth.AppConfig, _ string, args []string) error {
+			return copyKeyCommand(config, args, os.Stdin, os.Stdout)
+		}
+	case "restore":
+		run = func(config auth.AppConfig, _ string, args []string) error {
+			return restoreCommand(config, args, os.Stdin, os.Stdout)
+		}
 	}
 	if err := run(config, os.Args[1], os.Args[2:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
