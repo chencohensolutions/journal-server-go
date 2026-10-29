@@ -5,8 +5,9 @@ A user's copy can be kept on a friend's journal server, a **peer**, as well as i
 server and its USB disk together. When the friend's server also keeps a copy here, the two **swap**: each keeps the
 other's copy, with no cloud account and no fees. A swap is two peerings, one each way.
 
-Peers are optional and off by default. Only plain copies are built so far, so the friend's admin can read them, and
-a peer must be marked trusted before one goes there. Encrypted copies and restore are the next parts of the plan
+Peers are optional and off by default. A copy there is plain, which the friend's admin can read, so the peer must
+be marked trusted; or encrypted ("Encrypted copies" below), which nobody can read without the owner's key file.
+Restore is the next part of the plan
 ([../../journal-client-kmp/docs/plans/swap-and-encryption.md](../../journal-client-kmp/docs/plans/swap-and-encryption.md)).
 
 ## Setting it up
@@ -42,7 +43,7 @@ and then, in config.json, a copy to the peer for each user it should keep, and a
   folders.
 - `bandwidth_kbps` (optional) caps how fast a copy sends, so a pass doesn't fill the home upload.
 - `--trusted` says the owner accepts that the host's admin can read the copy. Without it, the server refuses a plain
-  copy to the peer at start (encrypted copies aren't built yet). `encrypt: true` is refused for now.
+  copy to the peer at start; an encrypted one (`"encrypt": true`) goes to any peer.
 - The server refuses to start when a copy names a peer that isn't added.
 
 ```bash
@@ -119,11 +120,50 @@ screen. Only the target differs: `copies.Peer` instead of `copies.Folder` (`copi
   `startCopy`), `freeBytes` as what is left of the quota, and the problems `PEER_UNREACHABLE` and `QUOTA_FULL`.
   `serverInfo.peerCopies` says the server knows about them.
 
+## Encrypted copies
+
+A copy on a peer can be encrypted, so the friend can't read it; then the peer needn't be trusted.
+
+```bash
+journal-server copy-key new hen --out E:\hen-copy.journalkey [--passphrase]   # once per user; refuses to overwrite
+```
+
+```json
+{ "peer": "dana", "at": "02:00", "encrypt": true }
+```
+
+- `copy-key new` makes an **age X25519 key pair** and a random 32-byte **naming key**. The key file (the private key,
+  the naming key and the user, as age comments, so `age -d -i <key file>` opens any file) goes where the owner says,
+  and the owner types back the last 6 characters of its key to show it was saved; otherwise nothing is kept.
+  `--passphrase` seals the key file itself with age's passphrase mode (armored). This server keeps only the public
+  key and the naming key, in `copy_keys_dir/<user>.json` (default `certs/copy-keys/`). **Without the key file the
+  copy can't be read, by anyone.**
+- **Encrypted here, before sending.** Each file is encrypted with age to the public key into
+  `peers_dir/<peer>/copies/<user>/sending/<sha256>.age` on this server, checked against its sha256 on the way, then
+  sent. It stays there until the host has it, so a send cut off resumes with the same bytes; a pass needs free space
+  for the largest file it sends. Progress counts what is sent, not the encrypting.
+- **Names.** A file is kept at `blobs/<2 hex>/<HMAC-SHA256(naming key, lower-case path)>`, with the time it was
+  sent, so the friend sees neither names nor dates.
+- **The manifest** lists each file: its path, its blob, its size and sha256, its modified time and its encrypted
+  size. This server keeps it in `peers_dir/<peer>/copies/<user>/manifest.json` (with `.journal-copy.json`), and works
+  out what the copy lacks from it, with no request. It is gzipped and sealed (XChaCha20-Poly1305, a key from the
+  naming key) to the peer after each full pass, and at most hourly after realtime batches, as `manifest-a.sealed`
+  and `manifest-b.sealed` in turn; the newer is read. When this server's own is lost, it is read back from the peer.
+- **Checked against the peer.** A compare and a full pass start by listing the peer's blobs: a file whose blob is
+  gone, or isn't the size sent, leaves the manifest and is sent again.
+- A changed sidecar is sent again under the same name. A JPEG kept as JPEG XL leaves the copy when the manifest's
+  sha256s match, as for plain peers.
+- **What the friend sees**: how many files, their sizes (age adds a little; sizes aren't hidden) and when they
+  were sent. Not content, names, dates or places.
+- In the apps, `DataCopy.encrypted` is true.
+
 ## Code
 
 - `peers/`: the host side. `registry.go` (`peers.json`), `host.go` (invites, enrolling, the API and `Mount`),
   `protocol.go` (routes, headers, codes, `Fingerprint`).
 - `copies/peer.go`: `copies.Peer`, the target, and `PeerClient` (the pinned TLS client).
+- `copies/encrypted.go`: `copies.Encrypted`, the encrypted target over a `Peer`; `CopyKey`, blob names and the
+  sealed manifest. `copykey.go`: `copy-key new`.
 - `peer.go`: `peer add | invite | revoke | remove`, `peers`, loading a peer for config.json's copies, and
   `openPeerHost`.
 - `enroll.Issuer.IssuePeer` and `enroll.IsPeer`; `identify` in `middleware.go` refuses peer certificates.
@@ -131,5 +171,5 @@ screen. Only the target differs: `copies.Peer` instead of `copies.Folder` (`copi
 
 ## Not built yet
 
-Encrypted copies, restore, peers' certificates renewing, and serving phones from a peer while the owner's server is
+Restore, peers' certificates renewing, and serving phones from a peer while the owner's server is
 off. See the plan.

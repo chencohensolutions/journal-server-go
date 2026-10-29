@@ -33,7 +33,8 @@ type CopyConfig struct {
 	// Or a friend's server, as `journal-server peer add` named it (docs/peers.md); a plain copy needs the peer added
 	// with --trusted.
 	Peer string `json:"peer"`
-	// Encrypt the copy for the peer (not built yet: refused).
+	// Encrypt the copy, so the peer can't read it: with the user's copy key (journal-server copy-key new <user>),
+	// whose key file only the owner keeps. The peer needn't be trusted then.
 	Encrypt bool `json:"encrypt"`
 	// Most kilobits a second a copy to a peer may send, so it doesn't fill the home upload; 0 for no limit.
 	BandwidthKbps int `json:"bandwidth_kbps"`
@@ -63,6 +64,8 @@ type AppConfig struct {
 	PeersFolder string `json:"peers_folder"`
 	// Registry of the peers that keep copies here (default peers.json).
 	PeersFile string `json:"peers_file"`
+	// The users' copy keys for encrypted copies, the public half only (default certs/copy-keys).
+	CopyKeysDir string `json:"copy_keys_dir"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8081).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
@@ -137,6 +140,7 @@ const (
 	DefaultCopyAt         = "03:30"
 	DefaultPeersDir       = "certs/peers"
 	DefaultPeersFile      = "peers.json"
+	DefaultCopyKeysDir    = "certs/copy-keys"
 )
 
 // LoadConfig reads config.json (or another file) and fills in the defaults.
@@ -188,6 +192,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.PeersFile == "" {
 		c.PeersFile = DefaultPeersFile
+	}
+	if c.CopyKeysDir == "" {
+		c.CopyKeysDir = DefaultCopyKeysDir
 	}
 	if c.AdminAddr == "" {
 		c.AdminAddr = DefaultAdminAddr
@@ -262,9 +269,6 @@ func (u UserConfig) checkCopies() error {
 				return fmt.Errorf("two copies to peer %s: one per peer", cp.Peer)
 			}
 			peers[cp.Peer] = true
-			if cp.Encrypt {
-				return fmt.Errorf("copy to peer %s: encrypted copies aren't built yet", cp.Peer)
-			}
 			if u.DataFolder == "" {
 				return fmt.Errorf("copy to peer %s: the user has no data_folder", cp.Peer)
 			}

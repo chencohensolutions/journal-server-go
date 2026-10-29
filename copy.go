@@ -23,11 +23,10 @@ func newCopiers(config auth.AppConfig, library *media.Library) ([]*copies.Copier
 		for _, cc := range user.Copies {
 			var target copies.Target
 			if cc.Peer != "" {
-				p, err := peerTarget(config, user.Username, cc)
-				if err != nil {
+				var err error
+				if target, err = peerTarget(config, user.Username, cc); err != nil {
 					return nil, fmt.Errorf("user %s: %w", user.Username, err)
 				}
-				target = p
 			}
 			copiers = append(copiers, copies.NewTo(user.Username, store, cc, target, time.Now))
 		}

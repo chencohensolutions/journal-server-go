@@ -53,6 +53,7 @@ func (r *Resolver) dataCopy(c *copies.Copier) *model.DataCopy {
 	if c.PeerName() != "" {
 		result.Kind, missing = model.CopyKindPeer, model.CopyProblemPeerUnreachable
 	}
+	result.Encrypted = c.Encrypted()
 	result.SameDisk, _ = c.SameDisk()
 	running, last := c.Status()
 	if running != nil {

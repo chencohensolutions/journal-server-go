@@ -144,7 +144,6 @@ func TestCopiesToPeersAreChecked(t *testing.T) {
 	for _, bad := range [][]auth.CopyConfig{
 		{{Peer: "dana", Folder: "E:\\copy"}},
 		{{Peer: "dana"}, {Peer: "dana", At: "04:00"}},
-		{{Peer: "dana", Encrypt: true}},
 		{{Folder: t.TempDir(), Encrypt: true}},
 	} {
 		u := auth.UserConfig{Username: "hen", DataFolder: t.TempDir(), Copies: bad}
@@ -157,3 +156,84 @@ func TestCopiesToPeersAreChecked(t *testing.T) {
 		}
 	}
 }
+
+// An encrypted copy goes to a peer that isn't trusted: copy-key new makes the key (the owner types back the end of
+// the key file), and the phone sees the copy as encrypted.
+func TestAnEncryptedCopyOnAFriendsServer(t *testing.T) {
+	dana := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersFolder = t.TempDir()
+		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
+	})
+	code, _, err := dana.peers.Invite("hen-home", 1e9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	henConfig := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
+		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
+	if err := peerAddCommand(henConfig, []string{"dana", dana.server.URL, code + "." + peers.Fingerprint(dana.server.Certificate())}); err != nil {
+		t.Fatal(err)
+	}
+
+	keyFile := filepath.Join(t.TempDir(), "hen.journalkey")
+	var out strings.Builder
+	if err := copyKeyCommand(henConfig, []string{"new", "hen", "--out", keyFile}, strings.NewReader("wrong!\n"), &out); err == nil {
+		t.Fatal("made with the wrong end typed")
+	}
+	if _, err := os.Stat(keyFile); err == nil {
+		t.Fatal("the key file stayed after the wrong end was typed")
+	}
+	// The end is only known once the file is written: type it from a reader that reads the file when asked.
+	typed := readerFunc(func() string {
+		data, _ := os.ReadFile(keyFile)
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		last := lines[len(lines)-1]
+		return last[len(last)-6:] + "\n"
+	})
+	if err := copyKeyCommand(henConfig, []string{"new", "hen", "--out", keyFile}, typed, &out); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyKeyCommand(henConfig, []string{"new", "hen", "--out", keyFile + "2"}, typed, &out); err == nil {
+		t.Fatal("a second copy key was made")
+	}
+	data, _ := os.ReadFile(keyFile)
+	if !strings.Contains(string(data), "AGE-SECRET-KEY-1") || !strings.Contains(string(data), "# journal-naming-key: ") {
+		t.Fatalf("the key file: %s", data)
+	}
+	stored, _ := os.ReadFile(copyKeyFile(henConfig, "hen"))
+	if strings.Contains(string(stored), "AGE-SECRET-KEY") {
+		t.Fatal("the server kept the private key")
+	}
+
+	// Plain to an untrusted peer is refused; encrypted goes.
+	hen := newTestEnv(t, func(c *auth.AppConfig) {
+		c.PeersDir, c.CopyKeysDir = henConfig.PeersDir, henConfig.CopyKeysDir
+		c.Users[0].Copies = []auth.CopyConfig{{Peer: "dana", Encrypt: true}}
+	})
+	if _, err := newCopiers(func() auth.AppConfig {
+		c := hen.config
+		c.Users = []auth.UserConfig{{Username: "hen", DataFolder: hen.dataFolder, Copies: []auth.CopyConfig{{Peer: "dana"}}}}
+		return c
+	}(), hen.library); err == nil || !strings.Contains(err.Error(), "trusted") {
+		t.Errorf("a plain copy to an untrusted peer: %v", err)
+	}
+	client := hen.enrolledClient(t)
+	hen.uploadPhoto(t, client, []byte("a photo dana mustn't see"), "IMG_1.jpg")
+	runCopy(context.Background(), hen.copiers[0])
+	filepath.WalkDir(dana.config.PeersFolder, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if data, _ := os.ReadFile(path); strings.Contains(string(data), "mustn't") || strings.Contains(path, "IMG_1") {
+				t.Errorf("dana can read %s", path)
+			}
+		}
+		return nil
+	})
+	resp := hen.graphql(t, client, `{ copies { kind encrypted copied missing } }`, nil)
+	if !strings.Contains(string(resp.Data["copies"]), `"encrypted":true`) || !strings.Contains(string(resp.Data["copies"]), `"copied":1`) {
+		t.Errorf("the phone's view: %s %+v", resp.Data["copies"], resp.Errors)
+	}
+}
+
+// readerFunc gives next's line on each read.
+type readerFunc func() string
+
+func (f readerFunc) Read(b []byte) (int, error) { return copy(b, f()), nil }

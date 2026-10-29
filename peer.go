@@ -68,18 +68,26 @@ func loadPeer(config auth.AppConfig, name string) (peerInfo, tls.Certificate, er
 	return info, cert, nil
 }
 
-// peerTarget is the copy of user's data folder on the peer cc names. A plain copy goes only to a trusted peer.
-func peerTarget(config auth.AppConfig, user string, cc auth.CopyConfig) (*copies.Peer, error) {
+// peerTarget is the copy of user's data folder on the peer cc names: encrypted with the user's copy key when cc says
+// so, else plain, which goes only to a trusted peer.
+func peerTarget(config auth.AppConfig, user string, cc auth.CopyConfig) (copies.Target, error) {
 	info, cert, err := loadPeer(config, cc.Peer)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Trusted {
-		return nil, fmt.Errorf("peer %s isn't trusted, and encrypted copies aren't built yet: add it again with --trusted to keep a plain copy there", cc.Peer)
+	if !info.Trusted && !cc.Encrypt {
+		return nil, fmt.Errorf("peer %s isn't trusted: set encrypt on the copy (journal-server copy-key new %s), or add the peer again with --trusted to keep a plain copy there", cc.Peer, user)
 	}
 	p := copies.NewPeer(info.Name, info.URL, user, cert, info.Fingerprint)
 	p.BytesPerSecond = int64(cc.BandwidthKbps) * 1000 / 8
-	return p, nil
+	if !cc.Encrypt {
+		return p, nil
+	}
+	key, err := loadCopyKey(config, user)
+	if err != nil {
+		return nil, err
+	}
+	return copies.OpenEncrypted(p, key, filepath.Join(peerDir(config, cc.Peer), "copies", user))
 }
 
 // runPeerCommand runs peer invite | add | revoke | remove, and peers.

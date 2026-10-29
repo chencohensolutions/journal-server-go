@@ -111,10 +111,19 @@ func NewTo(user string, store *media.Store, config auth.CopyConfig, target Targe
 
 // PeerName is the peer the copy is on, or "" for a copy in a folder.
 func (c *Copier) PeerName() string {
-	if p, ok := c.dest().(*Peer); ok {
-		return p.Name
+	switch t := c.dest().(type) {
+	case *Peer:
+		return t.Name
+	case *Encrypted:
+		return t.Inner.Name
 	}
 	return ""
+}
+
+// Encrypted reports whether the copy is encrypted (on a peer, with the user's copy key).
+func (c *Copier) Encrypted() bool {
+	_, ok := c.dest().(*Encrypted)
+	return ok
 }
 
 // FreeBytes is how much the copy can still take: the free space on its disk, or what is left of a peer's quota.
@@ -247,6 +256,7 @@ func (c *Copier) CompareNow(ctx context.Context) Compare {
 	c.compared = &cmp
 	c.mu.Unlock()
 	if err == nil {
+		c.flush(false) // a compare may find files gone from an encrypted copy
 		c.save()
 	}
 	// Comparing until it is saved, so nothing sees the compare over while its file is being written.
@@ -303,6 +313,9 @@ func (c *Copier) Run(ctx context.Context) Pass {
 	c.mu.Unlock()
 	pass.Err = c.Ready()
 	if pass.Err == nil {
+		pass.Err = c.verify()
+	}
+	if pass.Err == nil {
 		items := c.items()
 		var needed map[string]bool
 		if needed, pass.Err = c.plan(ctx, items); pass.Err == nil {
@@ -317,8 +330,36 @@ func (c *Copier) Run(ctx context.Context) Pass {
 	c.running, c.stop, c.stopped = nil, nil, false
 	c.last = &pass
 	c.mu.Unlock()
+	c.flush(true)
 	c.save()
 	return pass
+}
+
+// verifier is a target that checks its own record against the copy (an encrypted copy's manifest against the peer).
+type verifier interface{ Verify() error }
+
+func (c *Copier) verify() error {
+	if v, ok := c.dest().(verifier); ok {
+		return c.outOfReach(v.Verify())
+	}
+	return nil
+}
+
+// flusher is a target that keeps a record of its own (an encrypted copy's manifest), saved after a pass or batch:
+// full after a full pass.
+type flusher interface{ Flush(full bool) error }
+
+func (c *Copier) flush(full bool) {
+	if f, ok := c.dest().(flusher); ok {
+		if err := f.Flush(full); err != nil {
+			log.Printf("copy %s → %s: saving what the copy holds: %v", c.User, c.Folder, err)
+		}
+	}
+}
+
+// progressPutter is a target that counts a put's progress itself (an encrypted copy encrypts first, then sends).
+type progressPutter interface {
+	PutProgress(path string, r io.Reader, size int64, sum string, modTime time.Time, progress io.Writer) error
 }
 
 // Stop ends the full pass going now, in the middle of the original in hand (its temp file is removed, so the copy
@@ -365,6 +406,9 @@ func (c *Copier) Check(ctx context.Context, paths bool) (Report, error) {
 	items := c.items()
 	report := Report{Total: len(items)}
 	if err := c.Ready(); err != nil {
+		return report, err
+	}
+	if err := c.verify(); err != nil {
 		return report, err
 	}
 	known := map[string]bool{}
@@ -465,6 +509,7 @@ func (c *Copier) RunRealtime(ctx context.Context) {
 		if err == nil {
 			err = c.copy(ctx, items, nil, root, &pass)
 		}
+		c.flush(false)
 		c.passMu.Unlock()
 		if pass.Files > 0 || pass.Dropped > 0 {
 			c.mu.Lock()
@@ -617,7 +662,11 @@ func (c *Copier) copyOriginal(ctx context.Context, item media.Item, written func
 	for try := 0; ; try++ {
 		var sent int64
 		count := func(n int64) { sent += n; written(n) }
-		err = c.dest().Put(item.Path, io.TeeReader(src, progress{ctx, count}), info.Size(), item.Sidecar.Sha256, info.ModTime())
+		if putter, ok := c.dest().(progressPutter); ok {
+			err = putter.PutProgress(item.Path, src, info.Size(), item.Sidecar.Sha256, info.ModTime(), progress{ctx, count})
+		} else {
+			err = c.dest().Put(item.Path, io.TeeReader(src, progress{ctx, count}), info.Size(), item.Sidecar.Sha256, info.ModTime())
+		}
 		if !errors.Is(err, ErrUnreachable) || errors.Is(err, errRefused) || try >= len(RetryAfter) || ctx.Err() != nil {
 			break
 		}
@@ -684,11 +733,23 @@ func (c *Copier) smallNeeded(name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	b, err := readAll(c.dest(), name)
-	if err != nil {
-		return false, err
+	var same bool
+	if hasher, ok := c.dest().(remoteHasher); ok {
+		// A peer hashes its own file (an encrypted copy knows it from its manifest): nothing is downloaded.
+		sum := sha256.Sum256(a)
+		got, size, err := hasher.Sha256(name)
+		if err != nil {
+			return false, err
+		}
+		same = got == hex.EncodeToString(sum[:]) && size == int64(len(a))
+	} else {
+		b, err := readAll(c.dest(), name)
+		if err != nil {
+			return false, err
+		}
+		same = bytes.Equal(a, b)
 	}
-	if bytes.Equal(a, b) {
+	if same {
 		c.dest().Touch(name, src.ModTime()) // compared by time next time
 		return false, nil
 	}

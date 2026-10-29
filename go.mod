@@ -3,16 +3,20 @@ module github.com/journal/server-go
 go 1.26.3
 
 require (
+	filippo.io/age v1.3.2
 	github.com/99designs/gqlgen v0.17.90
 	github.com/ebitengine/purego v0.11.2
 	github.com/eliben/go-sentencepiece v0.7.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/vektah/gqlparser/v2 v2.5.33
+	golang.org/x/crypto v0.55.0
 	golang.org/x/image v0.47.0
 	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 )
 
 require (
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect

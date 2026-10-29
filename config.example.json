@@ -10,7 +10,7 @@
       "data_folder": "journal/alice",
       "copies": [
         { "folder": "E:/Journal copy/alice", "realtime": true, "at": "03:30" },
-        { "peer": "dana", "at": "02:00", "bandwidth_kbps": 20000 }
+        { "peer": "dana", "at": "02:00", "bandwidth_kbps": 20000, "encrypt": true }
       ]
     }
   ]

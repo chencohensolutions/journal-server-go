@@ -35,6 +35,9 @@ const usage = `usage:
   journal-server peers                the servers our copies are on, and those whose copies are here
   journal-server peer revoke <name>   refuse a server that keeps copies here; its files stay
   journal-server peer remove <name>   stop using a server for copies (take it out of config.json first)
+  journal-server copy-key new <user> --out <file> [--passphrase]
+                                      make the key that encrypts the user's copies on peers; only the key file
+                                      written to <file> can read them
 `
 
 func main() {
@@ -59,8 +62,11 @@ func main() {
 		return
 	}
 	run := runAdminCommand
-	if os.Args[1] == "peer" || os.Args[1] == "peers" {
+	switch os.Args[1] {
+	case "peer", "peers":
 		run = runPeerCommand
+	case "copy-key":
+		run = func(config auth.AppConfig, _ string, args []string) error { return copyKeyCommand(config, args, os.Stdin, os.Stdout) }
 	}
 	if err := run(config, os.Args[1], os.Args[2:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
