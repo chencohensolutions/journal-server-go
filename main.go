@@ -1,17 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/version"
 )
 
 const configPath = "config.json"
 
 const usage = `usage:
   journal-server                      run the server
+  journal-server version              the version (version/VERSION) and build
   journal-server enroll-code <user>   create a one-time enrollment code
   journal-server devices [user]       list enrolled devices
   journal-server revoke <serial>      revoke an enrolled device
@@ -27,16 +30,42 @@ const usage = `usage:
   journal-server copy [user]          start a full pass of the user's copies now (config.json "copies")
   journal-server copy report [user] [--list]
                                       how each copy is doing, and what it lacks now
+  journal-server setup ...            make a server folder: config, certificates, downloads (docs/install.md;
+                                      journal-server setup --help)
+  journal-server service install|uninstall|start|stop
+                                      the Windows service that starts the server at boot (as administrator)
 `
 
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "version" || os.Args[1] == "--version") {
+		fmt.Println("journal-server", version.String())
+		return
+	}
+	// These two run before there is a config.json (setup makes it).
+	if len(os.Args) >= 2 && (os.Args[1] == "setup" || os.Args[1] == "service") {
+		run := runSetup
+		if os.Args[1] == "service" {
+			run = runServiceCommand
+		}
+		if err := run(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if runAsService() {
+		return
+	}
+	if _, err := auth.UseInstallFolder(configPath); err != nil {
+		log.Fatal(err)
+	}
 	config, err := auth.LoadConfig(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	if len(os.Args) < 2 {
-		serve(config)
+		serve(context.Background(), config, exitStopped)
 		return
 	}
 	if os.Args[1] == "index" {

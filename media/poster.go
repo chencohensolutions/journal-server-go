@@ -26,10 +26,11 @@ const posterAtMillis = 1000
 
 var ErrPostersUnavailable = errors.New("ffmpeg is not installed")
 
-// FindFFmpeg returns the ffmpeg and ffprobe programs: the configured path, the PATH, or Homebrew's
-// folders (a server started from an IDE often runs without Homebrew in its PATH).
+// FindFFmpeg returns the ffmpeg and ffprobe programs: the configured path, ffmpeg/bin (where journal-server setup
+// puts them on Windows), the PATH, or Homebrew's folders (a server started from an IDE often runs without Homebrew
+// in its PATH).
 func FindFFmpeg(configured string) (ffmpeg, ffprobe string, err error) {
-	for _, candidate := range []string{configured, "ffmpeg", "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"} {
+	for _, candidate := range []string{configured, filepath.Join("ffmpeg", "bin", "ffmpeg"), "ffmpeg", "/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"} {
 		if candidate == "" {
 			continue
 		}

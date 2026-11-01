@@ -53,6 +53,11 @@ func LoadIssuer(certPath, keyPath string, now func() time.Time) (*Issuer, error)
 	return &Issuer{caCert: caCert, caKey: caKey, now: now}, nil
 }
 
+// CA is the issuer's CA certificate and its private key.
+func (i *Issuer) CA() (*x509.Certificate, crypto.Signer) {
+	return i.caCert, i.caKey
+}
+
 func NewIssuer(caCert *x509.Certificate, caKey crypto.Signer, now func() time.Time) *Issuer {
 	return &Issuer{caCert: caCert, caKey: caKey, now: now}
 }

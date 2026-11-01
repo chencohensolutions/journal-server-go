@@ -559,7 +559,7 @@ type SearchHit struct {
 type ServerInfo struct {
 	// The API's version: raised when a change needs newer apps.
 	API int `json:"api"`
-	// The server's build: its commit and time, or dev.
+	// The server's version and build: "1.4.2 (3f2a9c1 2026-10-23)", or just the version when built without git.
 	Version string `json:"version"`
 	// Text search (searchMedia) is on.
 	Search bool `json:"search"`

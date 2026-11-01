@@ -159,4 +159,5 @@ go test ./...                 # preview and poster tests skip without libvips/ff
 
 ```bash
 go build -o bin/server .
+scripts/release.sh            # the Windows installer, which downloads the libraries and models (docs/install.md)
 ```

@@ -6,6 +6,7 @@ require (
 	github.com/99designs/gqlgen v0.17.90
 	github.com/ebitengine/purego v0.11.2
 	github.com/eliben/go-sentencepiece v0.7.0
+	github.com/klauspost/compress v1.18.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/vektah/gqlparser/v2 v2.5.33
 	golang.org/x/image v0.47.0

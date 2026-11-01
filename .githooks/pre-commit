@@ -1,0 +1,15 @@
+#!/bin/sh
+# Raises the patch number in version/VERSION when a commit changes Go code (not only tests) or go.mod/go.sum, unless
+# the commit already changes VERSION (scripts/bump-version.sh minor|major). Turned on per clone with
+#   git config core.hooksPath .githooks
+# SKIP_VERSION_BUMP=1 git commit ... leaves the version as it is (for example when amending).
+set -eu
+[ "${SKIP_VERSION_BUMP:-}" = 1 ] && exit 0
+root=$(git rev-parse --show-toplevel)
+code=$(git diff --cached --name-only --diff-filter=ACMRD | grep -E '(\.go|^go\.mod|^go\.sum)$' | grep -v '_test\.go$' || true)
+[ -z "$code" ] && exit 0
+# VERSION already changed in this commit: keep what was chosen.
+if git rev-parse --verify -q HEAD >/dev/null && ! git diff --cached --quiet HEAD -- version/VERSION; then
+    exit 0
+fi
+"$root/scripts/bump-version.sh" patch

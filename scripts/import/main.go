@@ -48,6 +48,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/version"
 )
 
 // What is imported, by extension.
@@ -178,6 +179,7 @@ func main() {
 	batchGB := flag.Float64("batch-gb", 20, "with --cloud, about how much is downloaded at a time")
 	rclonePath := flag.String("rclone", "", "with --cloud, the rclone program (found on the PATH or where winget links it when empty)")
 	configPath := flag.String("config", "config.json", "the server's config file")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--move-other] <folder>...")
 		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> --cloud gdrive,onedrive --temp <folder> [--dry-run]")
@@ -187,12 +189,29 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("journal-import", version.String())
+		return
+	}
 	if *user == "" || *imported == "" || (flag.NArg() == 0) != (*review || *recheck || *cloud != "") || *jobs < 1 ||
 		(*cloud != "") != (*temp != "") || *batchGB <= 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
 
+	// Installed as journal-import, it may run from any folder: the folders given are taken from here before it
+	// changes to the folder of its config.json (auth.UseInstallFolder).
+	args := flag.Args()
+	for i := range args {
+		args[i] = absolute(args[i])
+	}
+	for _, p := range []*string{imported, notImported, temp} {
+		if *p != "" {
+			*p = absolute(*p)
+		}
+	}
+	_, err := auth.UseInstallFolder(*configPath)
+	check(err)
 	config, err := auth.LoadConfig(*configPath)
 	check(err)
 	dataFolder, err := config.DataFolderOf(*user)
@@ -236,8 +255,8 @@ func main() {
 		im.notImportedRun = filepath.Join(im.notImported, started)
 	}
 	roots := make([]string, flag.NArg())
-	for i, root := range flag.Args() {
-		roots[i] = absolute(root)
+	for i, root := range args {
+		roots[i] = root
 		if im.excluded(roots[i]) {
 			log.Fatalf("%s is inside the data folder, the imported folder or the not-imported folder", root)
 		}

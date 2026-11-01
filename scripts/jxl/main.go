@@ -39,6 +39,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/media"
+	"github.com/journal/server-go/version"
 )
 
 func main() {
@@ -51,16 +52,24 @@ func main() {
 	until := flag.String("until", "", "stop at this local time (HH:MM), finishing the files in hand")
 	retry := flag.Bool("retry", false, "try again the JPEGs earlier runs could not keep")
 	configPath := flag.String("config", "config.json", "the server's config file")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/jxl --user <name> [--dry-run | --report] [--until HH:MM] [--limit n]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("journal-jxl", version.String())
+		return
+	}
 	if *user == "" || flag.NArg() != 0 || *jobs < 1 || *sample < 1 {
 		flag.Usage()
 		os.Exit(2)
 	}
 
+	// Installed as journal-jxl, it may run from any folder (auth.UseInstallFolder).
+	_, err := auth.UseInstallFolder(*configPath)
+	check(err)
 	config, err := auth.LoadConfig(*configPath)
 	check(err)
 	dataFolder, err := config.DataFolderOf(*user)
