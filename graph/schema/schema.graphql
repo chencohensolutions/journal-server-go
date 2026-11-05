@@ -22,7 +22,7 @@ type ServerInfo {
   api: Int!
   "A device can renew its certificate (renewCertificate) before it expires."
   renewCertificates: Boolean!
-  "The server's build: its commit and time, or dev."
+  "The server's version and build: \"1.4.2 (3f2a9c1 2026-10-23)\", or just the version when built without git."
   version: String!
   "Text search (searchMedia) is on."
   search: Boolean!

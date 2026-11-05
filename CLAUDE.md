@@ -30,6 +30,11 @@ the upload and sync design agreed with the owner. The docs here describe what is
   view of its copies (public `copies`, `startCopy`, from each copy's last compare).
 - [docs/peers.md](docs/peers.md): copies on a friend's server (a peer): `peer invite` / `peer add`, the peer
   certificate (OU `journal-peer`, reaches only `/peer/`), the host's peer API (package `peers`) and `copies.Peer`.
+- [docs/install.md](docs/install.md): the Windows installer (`installer/journal-server.iss`, `scripts/release.sh`),
+  `journal-server setup` (config, certificates through package `certs`, downloads through package `bundle`;
+  `--move-from` only reads the old server), the JournalServer service and firewall rule (`service_windows.go`),
+  `journal-import.exe` / `journal-jxl.exe` beside the server, why a new server imports the apps' CA, and versions
+  (`version/VERSION`, raised by the pre-commit hook and `scripts/bump-version.sh`).
 
 Not built yet: stories and notes in the change feed, the story trash. Certificates renew in their last 30 days
 (`renewCertificate` for devices, `POST /peer/renew` for peers; docs/authentication.md, docs/peers.md).
@@ -54,6 +59,9 @@ go tool gqlgen generate                    # after editing graph/schema/*.graphq
 go tool gqlgen generate --config gqlgen.admin.yml   # after editing graph/admin/schema/*.graphql
 go run ./scripts/bundle-onnx [--model large] [--precision q8]   # ONNX Runtime + every index's model into onnxruntime/, models/ (gitignored)
 go run ./scripts/bundle-vips               # portable libvips for Windows into vips/ (gitignored)
+go run . setup --dir <folder> ...          # make a server folder: config, certs, downloads (docs/install.md); writes only in --dir
+scripts/release.sh                         # Windows programs + installer into dist/ (Inno Setup in Docker: colima start first)
+scripts/bump-version.sh minor|major        # version/VERSION; patch goes up by itself (git config core.hooksPath .githooks, once per clone)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run . copy [user] | copy report [user] [--list]   # start the copies' full pass now; what each copy lacks
@@ -148,7 +156,7 @@ server writes. Package `copies` never writes into the data folder: it reads it a
 A dry run opens the folder with `media.OpenStoreReadOnly` (no folders made, `.cache/index.json` not saved, every turn
 refused), so it writes nothing at all beside the running server.
 
-**External tools are found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and `vips/bin` first), or
+**External tools are found at start.** `media.FindVips` / `FindFFmpeg` look on the PATH (and `vips/bin`, `ffmpeg/bin` first), or
 at `vips` / `ffmpeg` in `config.json`; libvips's library is then loaded from beside `vips` (on Windows its folder is
 searched first for DLLs, so another libvips on the PATH is never mixed in). Without them the server still runs and
 the affected endpoints answer 503. No Python: the owner asked to avoid it (Oct 23, 2026). ONNX Runtime (package `onnx`, loaded once by `loadRuntime` in `library.go` and shared):

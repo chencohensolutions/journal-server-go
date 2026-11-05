@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -27,6 +26,7 @@ import (
 	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/peers"
+	"github.com/journal/server-go/version"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -41,7 +41,9 @@ const (
 // link; the most allowed is just under 4 MB.
 const h2ReceiveWindow = 3 << 20
 
-func serve(config auth.AppConfig) {
+// serve runs the server until ctx ends, Ctrl+C or a stop from the system, then calls stopped (exitStopped by
+// default) once the reader has finished the file in hand and the index caches are saved.
+func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
 		log.Fatalf("failed to create TLS config: %v", err)
@@ -64,7 +66,7 @@ func serve(config auth.AppConfig) {
 		refreshIndexes = ix.refresh
 	}
 	readerDone := make(chan struct{})
-	running, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	running, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	var daily *dailyRuns
 	if ix.daily {
 		daily = newDailyRuns(running, config, ix.refresh)
@@ -96,7 +98,7 @@ func serve(config auth.AppConfig) {
 	default:
 		close(readerDone)
 	}
-	go stopOnSignal(running, stop, readerDone, library)
+	go stopOnSignal(running, stop, readerDone, library, stopped)
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
@@ -119,8 +121,8 @@ func serve(config auth.AppConfig) {
 // stopOnSignal waits for Ctrl+C (or a stop from the system), lets the reader (or a daily run of journal-server
 // index) finish the file in hand, saves the
 // index caches the server's writes made stale, so the next start doesn't read the library's sidecars again, and
-// exits. A second Ctrl+C exits at once.
-func stopOnSignal(running context.Context, stop func(), readerDone <-chan struct{}, library *media.Library) {
+// calls stopped. A second Ctrl+C exits at once.
+func stopOnSignal(running context.Context, stop func(), readerDone <-chan struct{}, library *media.Library, stopped func()) {
 	<-running.Done()
 	stop() // a second Ctrl+C now ends the process the usual way
 	log.Printf("Stopping: finishing the file being read, then saving the index caches (Ctrl+C again to stop now)")
@@ -130,42 +132,14 @@ func stopOnSignal(running context.Context, stop func(), readerDone <-chan struct
 	}
 	library.RefreshIndexCachesIfChanged()
 	log.Printf("Stopped")
-	os.Exit(0)
+	stopped()
 }
 
-// serverVersion is the build's commit and time from the Go build info ("3f2a9c1 2026-10-23", "-dirty" with
-// uncommitted changes), or "dev" when built without version control (go run from a copy, for example).
-func serverVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "dev"
-	}
-	var revision, at string
-	dirty := false
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			revision = s.Value
-		case "vcs.time":
-			at = s.Value
-		case "vcs.modified":
-			dirty = s.Value == "true"
-		}
-	}
-	if revision == "" {
-		return "dev"
-	}
-	if len(revision) > 7 {
-		revision = revision[:7]
-	}
-	if len(at) >= 10 {
-		revision += " " + at[:10]
-	}
-	if dirty {
-		revision += " dirty"
-	}
-	return revision
-}
+// exitStopped ends the process once the server has stopped, when it runs from a console.
+func exitStopped() { os.Exit(0) }
+
+// serverVersion is serverInfo.version: version/VERSION and the build's commit ("1.4.2 (3f2a9c1 2026-10-23)").
+func serverVersion() string { return version.String() }
 
 // createTLSConfig loads the server certificate and trusts the client CA for client certificates.
 func createTLSConfig(config auth.AppConfig) (*tls.Config, error) {
