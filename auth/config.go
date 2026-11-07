@@ -44,6 +44,9 @@ type CopyConfig struct {
 	Realtime bool `json:"realtime"`
 }
 
+// DiscoveryOn says whether the server uses the DHT: on unless config.json sets "discovery": false.
+func (c AppConfig) DiscoveryOn() bool { return c.Discovery == nil || *c.Discovery }
+
 type AppConfig struct {
 	TLSCert  string `json:"tls_cert"`
 	TLSKey   string `json:"tls_key"`
@@ -54,6 +57,9 @@ type AppConfig struct {
 	PublicURL string `json:"public_url"`
 	// Port devices connect to (default 56398); a test server beside the real one uses another.
 	Port string `json:"port"`
+	// Publish this server's addresses in the BitTorrent DHT, and look peers up there when the addresses they had
+	// stop answering (docs/peers.md, "Finding the host"). On unless set to false.
+	Discovery *bool `json:"discovery"`
 	// Registry of enrolled devices (default devices.json).
 	DevicesFile string `json:"devices_file"`
 	// The peers this server keeps copies on: a folder per peer with its certificate and address, made by

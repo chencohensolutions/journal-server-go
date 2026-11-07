@@ -82,7 +82,7 @@ func (h *testHost) enroll(t *testing.T, name string, quota int64) tls.Certificat
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	csr, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
 	body, _ := json.Marshal(peers.EnrollRequest{Code: code, CSR: csr})
-	resp, err := PeerClient(tls.Certificate{}, h.fingerprint).Post(h.server.URL+"/peer/enroll", "application/json", bytes.NewReader(body))
+	resp, err := PeerClient(tls.Certificate{}, h.fingerprint, nil).Post(h.server.URL+"/peer/enroll", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestAPeerCertificateReachesOnlyItsOwnSpace(t *testing.T) {
 		t.Error("another peer read hen-home's file")
 	}
 	// No certificate, or a device's, is refused.
-	resp, err := PeerClient(tls.Certificate{}, h.fingerprint).Get(h.server.URL + "/peer/space")
+	resp, err := PeerClient(tls.Certificate{}, h.fingerprint, nil).Get(h.server.URL + "/peer/space")
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("no certificate: %v %v", resp, err)
 	}

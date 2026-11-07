@@ -40,6 +40,7 @@ type Peer struct {
 
 	client *http.Client
 	cert   *certHolder
+	dialer *dialer
 
 	mu      sync.Mutex
 	listed  map[string]listing // by group (listGroup)
@@ -63,9 +64,14 @@ const spaceFor = time.Minute
 func NewPeer(name, url, user string, cert tls.Certificate, fingerprint string) *Peer {
 	holder := &certHolder{}
 	holder.Store(&cert)
-	return &Peer{Name: name, URL: strings.TrimSuffix(url, "/"), User: user, client: peerClient(holder, fingerprint),
-		cert: holder, listed: map[string]listing{}}
+	d := &dialer{net: net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}}
+	return &Peer{Name: name, URL: strings.TrimSuffix(url, "/"), User: user, client: peerClient(holder, fingerprint, d),
+		cert: holder, dialer: d, listed: map[string]listing{}}
 }
+
+// SetAddressBook lets the host be reached at the addresses book knows, not only at URL's (a home line whose IP
+// changes). Connections already open stay.
+func (p *Peer) SetAddressBook(book AddressBook) { p.dialer.book.Store(&book) }
 
 // certHolder is the certificate a peer client shows, swapped when it is renewed.
 type certHolder struct {
@@ -100,14 +106,19 @@ func (p *Peer) Renew(csr []byte) ([]byte, error) {
 	return renewed.Certificate, nil
 }
 
-// PeerClient is an HTTPS client that shows cert and accepts only the server key fingerprint names.
-func PeerClient(cert tls.Certificate, fingerprint string) *http.Client {
+// PeerClient is an HTTPS client that shows cert and accepts only the server key fingerprint names; it dials the
+// addresses book knows when book isn't nil.
+func PeerClient(cert tls.Certificate, fingerprint string, book AddressBook) *http.Client {
 	holder := &certHolder{}
 	holder.Store(&cert)
-	return peerClient(holder, fingerprint)
+	d := &dialer{net: net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}}
+	if book != nil {
+		d.book.Store(&book)
+	}
+	return peerClient(holder, fingerprint, d)
 }
 
-func peerClient(cert *certHolder, fingerprint string) *http.Client {
+func peerClient(cert *certHolder, fingerprint string, d *dialer) *http.Client {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		// The host's certificate is signed by its own authority, which this server doesn't know: the pinned key is
@@ -127,7 +138,7 @@ func peerClient(cert *certHolder, fingerprint string) *http.Client {
 		return cert.Load(), nil // an empty one shows none (peer add)
 	}
 	return &http.Client{Transport: &http.Transport{
-		DialContext:     (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		DialContext:     d.DialContext,
 		TLSClientConfig: tlsConfig, ForceAttemptHTTP2: true, ResponseHeaderTimeout: time.Minute,
 		IdleConnTimeout: 2 * time.Minute, TLSHandshakeTimeout: 30 * time.Second,
 	}}

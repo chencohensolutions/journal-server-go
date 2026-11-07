@@ -82,6 +82,15 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if d, err := openDiscovery(config); err != nil {
+		log.Printf("Discovery is off: %v", err)
+	} else {
+		if host != nil {
+			host.Discovery = d.forPeers
+		}
+		go d.publisher.Run(running)
+		go askPeerAddressesEvery(running, config, d)
+	}
 	go serveAdmin(config, enrollment, refreshIndexes, copiers, func(c *copies.Copier) { runCopy(running, c) }, host)
 	switch {
 	case ix.daily:

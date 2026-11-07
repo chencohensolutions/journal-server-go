@@ -22,6 +22,7 @@ import (
 //	GET    /peer/{user}/sha256/{path}         {sha256, size}, hashed here
 //	POST   /peer/{user}/move/{path}           moves the file to HeaderMoveTo (a previous version kept)
 //	HEAD   /peer/{user}/upload/{sha256}       HeaderOffset: how much of a resumed upload is here
+//	GET    /peer/addresses                    Discovery: where the host is now, its DHT key, the peer's IP
 const (
 	// The whole file's sha256: a put is checked against it before the file takes its place.
 	HeaderSha256 = "Journal-Sha256"
@@ -52,11 +53,24 @@ type EnrollRequest struct {
 	CSR  []byte `json:"csr"` // PKCS#10, DER
 }
 
-// Enrolled is the host's answer: the name the invite gave the peer, its quota and its certificate (DER).
+// Enrolled is the host's answer: the name the invite gave the peer, its quota and its certificate (DER), and how
+// to find the host when its address changes.
 type Enrolled struct {
-	Name        string `json:"name"`
-	Quota       int64  `json:"quota"`
-	Certificate []byte `json:"certificate"`
+	Name        string     `json:"name"`
+	Quota       int64      `json:"quota"`
+	Certificate []byte     `json:"certificate"`
+	Discovery   *Discovery `json:"discovery,omitempty"`
+}
+
+// Discovery is how a peer finds the host when the address it has stops answering (docs/peers.md, "Finding the
+// host"): where the host is now, and the DHT key it publishes its addresses under.
+type Discovery struct {
+	// "https://host:port", the most likely first.
+	Addresses []string `json:"addresses"`
+	// The host's ed25519 key in the DHT, hex; "" when the host doesn't publish there ("discovery": false).
+	Key string `json:"key,omitempty"`
+	// The address the peer's request came from: its public IP, as the host sees it.
+	Seen string `json:"seen,omitempty"`
 }
 
 // Space is how much a peer may still store.

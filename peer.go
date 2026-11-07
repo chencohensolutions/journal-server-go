@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/copies"
+	"github.com/journal/server-go/discovery"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/peers"
 )
@@ -45,6 +47,12 @@ type peerInfo struct {
 	Quota     int64     `json:"quota"`
 	AddedAt   time.Time `json:"added_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Where the host was reached and where it said it is, host:port, the one that last worked first; URL's is
+	// tried too. Kept up by the server (discover.go).
+	Addresses []string `json:"addresses,omitempty"`
+	// The host's key in the DHT (hex), which it publishes its addresses under; from the host when it was added or
+	// first asked (GET /peer/addresses).
+	DiscoveryKey string `json:"discovery_key,omitempty"`
 }
 
 func peerDir(config auth.AppConfig, name string) string { return filepath.Join(config.PeersDir, name) }
@@ -80,7 +88,7 @@ func peerTarget(config auth.AppConfig, user string, cc auth.CopyConfig) (copies.
 	if !info.Trusted && !cc.Encrypt {
 		return nil, fmt.Errorf("peer %s isn't trusted: set encrypt on the copy (journal-server copy-key new %s), or add the peer again with --trusted to keep a plain copy there", cc.Peer, user)
 	}
-	p := copies.NewPeer(info.Name, info.URL, user, cert, info.Fingerprint)
+	p := peerFor(config, info, user, cert)
 	p.BytesPerSecond = int64(cc.BandwidthKbps) * 1000 / 8
 	if !cc.Encrypt {
 		return p, nil
@@ -149,7 +157,15 @@ func peerInviteCommand(config auth.AppConfig, args []string) error {
 	invite := data.CreatePeerInvite
 	address := config.PublicURL
 	if address == "" {
-		address = "https://<this server's address>:" + config.Port
+		// No host name: this server's public address now. Once added, the peer follows it when it changes.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ip, err := discovery.PublicIPv4(ctx, discovery.STUNServers)
+		cancel()
+		if err == nil {
+			address = discovery.URLOf(ip, config.Port)
+		} else {
+			address = "https://<this server's address>:" + config.Port
+		}
 	}
 	fmt.Printf("Invite for peer %q, up to %s\n\n", name, copies.Size(quota))
 	fmt.Printf("  On the other server, run:\n\n    journal-server peer add <a name for this server> %s %s.%s [--trusted]\n\n",
@@ -195,9 +211,10 @@ func peerAddCommand(config auth.AppConfig, args []string) error {
 	if !strings.HasPrefix(address, "https://") {
 		return fmt.Errorf("the host's address starts with https://, not %q", address)
 	}
-	code, fingerprint, ok := strings.Cut(invite, ".")
-	if !ok || len(fingerprint) != 64 {
-		return errors.New("the code is the whole of what peer invite printed: the code, a dot and the server's fingerprint")
+	code, id, ok := strings.Cut(invite, ".")
+	fingerprint, err := discovery.ParseID(id)
+	if !ok || err != nil {
+		return fmt.Errorf("the code is the whole of what peer invite printed: the code, a dot and the server's fingerprint or id (%v)", err)
 	}
 	dir := peerDir(config, name)
 	if _, err := os.Stat(dir); err == nil {
@@ -213,7 +230,7 @@ func peerAddCommand(config auth.AppConfig, args []string) error {
 		return err
 	}
 	body, _ := json.Marshal(peers.EnrollRequest{Code: strings.ToUpper(strings.TrimSpace(code)), CSR: csr})
-	client := copies.PeerClient(tls.Certificate{}, strings.ToLower(fingerprint))
+	client := copies.PeerClient(tls.Certificate{}, fingerprint, nil)
 	client.Timeout = time.Minute
 	resp, err := client.Post(address+"/peer/enroll", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -238,8 +255,19 @@ func peerAddCommand(config auth.AppConfig, args []string) error {
 	if err != nil {
 		return err
 	}
-	info := peerInfo{V: 1, Name: name, URL: address, Fingerprint: strings.ToLower(fingerprint), Trusted: trusted,
+	info := peerInfo{V: 1, Name: name, URL: address, Fingerprint: fingerprint, Trusted: trusted,
 		HostName: enrolled.Name, Quota: enrolled.Quota, AddedAt: time.Now().UTC(), ExpiresAt: cert.NotAfter.UTC()}
+	if host, ok := strings.CutPrefix(address, "https://"); ok {
+		info.Addresses = []string{strings.TrimSuffix(host, "/")}
+	}
+	if d := enrolled.Discovery; d != nil {
+		for _, a := range discovery.HostPorts(d.Addresses) {
+			if !slices.Contains(info.Addresses, a) && len(info.Addresses) < maxAddresses {
+				info.Addresses = append(info.Addresses, a)
+			}
+		}
+		info.DiscoveryKey = d.Key
+	}
 	infoJSON, _ := json.MarshalIndent(info, "", "  ")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -467,7 +495,7 @@ func renewPeer(config auth.AppConfig, info peerInfo, cert tls.Certificate) (tls.
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	der, err := copies.NewPeer(info.Name, info.URL, "", cert, info.Fingerprint).Renew(csr)
+	der, err := peerFor(config, info, "", cert).Renew(csr)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
@@ -499,9 +527,6 @@ func renewPeer(config auth.AppConfig, info peerInfo, cert tls.Certificate) (tls.
 			return tls.Certificate{}, err
 		}
 	}
-	info.ExpiresAt = parsed.NotAfter.UTC()
-	if data, err := json.MarshalIndent(info, "", "  "); err == nil {
-		os.WriteFile(filepath.Join(dir, "peer.json"), data, 0o644)
-	}
+	updatePeerInfo(config, info.Name, func(i *peerInfo) { i.ExpiresAt = parsed.NotAfter.UTC() })
 	return tls.X509KeyPair(certPEM, keyPEM)
 }

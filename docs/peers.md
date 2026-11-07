@@ -23,7 +23,8 @@ journal-server peer invite --name hen-home --quota 2TB   # the server must be ru
 ```
 
 It prints a one-time code, valid 10 minutes, followed by a dot and the host's **fingerprint** (the sha256 of its
-server certificate's key). On the owner's server:
+server certificate's key), and the host's address: `public_url` when set, else its public IP now (asked of a STUN
+server), so a host with no host name can be invited too. On the owner's server:
 
 ```bash
 journal-server peer add dana https://dana.example:56398 K7QM-4XPD.9f86d08188… --trusted
@@ -57,6 +58,8 @@ can still read the files at the host.
 
 ## Peering
 
+- `peer add` takes the host's fingerprint or its **server id** (`journal-server id`: the same sha256 written as
+  Syncthing writes device ids, base32 in 8 groups of 7 with check letters, so a typo is found).
 - `peer add` enrolls this server with the host the way a device enrolls: it makes an EC P-256 key, sends a
   certificate request with the code to `POST /peer/enroll`, and gets a client certificate signed by the host's client
   CA. The certificate has `CN=<the invite's name>` and `OU=journal-peer` (`enroll.PeerUnit`), and lasts as long as a
@@ -79,6 +82,40 @@ can still read the files at the host.
   the new one by the same name. The new peer then has the old one's files, so a restore can read them. Only the
   host's admin can do this.
 
+## Finding the host (discovery)
+
+Since Nov 7, 2026, a peer whose home IP changes, or that has no host name, is followed by its id, as Syncthing finds
+devices: the address in `peer add` is only the first guess. Every connection still checks the host's key against
+the fingerprint, so an address can't make another server pass for the host; a wrong one just fails. Nothing is
+relayed: the host must be reachable at one of its addresses (a port forwarded on its router, or IPv6).
+
+- **Where a server is.** Each server works out its addresses every 5 minutes (`discovery.Own`): `public_url`, its
+  public IPv4 address at `port` (from a STUN server, `discovery.STUNServers`, or as a peer saw it), its global IPv6
+  addresses, then its LAN addresses.
+- **Peers tell each other.** `GET /peer/addresses` (with the peer certificate) answers `peers.Discovery`: the host's
+  addresses, its DHT key, and the IP the request came from (so a server learns its own public IP). `POST
+  /peer/enroll` answers the same in `discovery`. The owner's server asks each peer at start and every 30 minutes
+  (`askPeerAddresses` in `discover.go`).
+- **The DHT.** Each server publishes its addresses in the BitTorrent DHT (BEP 44 mutable items) at start, every 45
+  minutes and within 5 minutes of a change (`discovery.Publisher`). The record is kept under an ed25519 key made
+  from the server's TLS key (HKDF of it, so no new file; it changes only with the key and the id), signed with it,
+  and sealed (XChaCha20-Poly1305, a key made from the fingerprint) so the DHT's nodes and crawlers can't read the
+  addresses: only who knows the server can. At most 1000 bytes; the last addresses are left out if more don't fit.
+  The server joins the DHT passively: it answers no other node, and sends a few UDP packets per publish or lookup.
+- **Dialing.** `copies.Peer` dials by the peer's address book (`copies.AddressBook`, `peerBook` in `discover.go`):
+  every known address, the one that last worked first, the next started 400 ms after the one before, and the first
+  connection made is kept. When none answers, the peer is looked up in the DHT (at most every 2 minutes) and the
+  addresses found are dialed. The address that worked goes first in `peer.json`'s `addresses` (beside `url`, which
+  stays as typed), with `discovery_key`, the host's DHT key.
+- `"discovery": false` in config.json publishes nothing and looks nothing up; peers still tell each other their
+  addresses.
+- `journal-server id` prints this server's id, fingerprint and DHT key. `journal-server discovery` checks it from
+  this network: it prints the addresses it found, publishes them, looks them up again, and looks each peer up.
+
+What it doesn't do: relay through a third machine (behind carrier-grade NAT the host is found but can't be reached),
+open the router's port (UPnP, NAT-PMP), or help phones yet (the apps' plan is
+[discovery.md](../../journal-client-kmp/docs/plans/discovery.md)).
+
 ## The peer API
 
 Over mTLS with the peer certificate. The host keeps each peer's files in `peers_folder/<peer>/<user>/`, in the data
@@ -87,7 +124,8 @@ phones. Defined in `peers/protocol.go`:
 
 | Route | |
 |---|---|
-| `POST /peer/enroll` | `{code, csr}` → `{name, quota, certificate}`; anonymous, rate limited |
+| `POST /peer/enroll` | `{code, csr}` → `{name, quota, certificate, discovery}`; anonymous, rate limited |
+| `GET /peer/addresses` | `{addresses, key, seen}`: where the host is, its DHT key, the caller's IP |
 | `GET /peer/space` | `{quota, used, free}`: free is the quota left, or the host's free disk space less 1 GB if smaller |
 | `GET /peer/{user}/list?prefix=media/2026/&recursive=1` | the files under a folder, one JSON line each (path, size, modified); dot names left out |
 | `HEAD`, `GET /peer/{user}/files/{path}` | the file, with `Range`; `Journal-Modified` is its time to the nanosecond |
@@ -210,6 +248,9 @@ journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-res
   `restore.go`: the command.
 - `peer.go`: `peer add | invite | revoke | remove`, `peers`, loading a peer for config.json's copies, and
   `openPeerHost`.
+- `discovery/`: server ids (`id.go`), the DHT record and keys (`record.go`), the DHT node (`node.go`, on
+  github.com/anacrolix/dht), STUN (`stun.go`), this server's addresses (`own.go`) and the publisher.
+  `discover.go`: the peers' address books, asking peers, `id` and `discovery`. `copies/addresses.go`: the dialer.
 - `enroll.Issuer.IssuePeer` and `enroll.IsPeer`; `identify` in `middleware.go` refuses peer certificates.
 - The admin schema's `peers`, `createPeerInvite` and `revokePeer`.
 
