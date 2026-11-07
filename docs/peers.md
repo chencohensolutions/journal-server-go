@@ -112,9 +112,12 @@ relayed: the host must be reachable at one of its addresses (a port forwarded on
 - `journal-server id` prints this server's id, fingerprint and DHT key. `journal-server discovery` checks it from
   this network: it prints the addresses it found, publishes them, looks them up again, and looks each peer up.
 
+- **Phones** read the same through `serverInfo.discovery` (public schema, `graph/schema/discovery.graphql`): the
+  fingerprint and id to pin, the DHT key, and the addresses (the apps' side:
+  [discovery.md](../../journal-client-kmp/docs/plans/discovery.md)).
+
 What it doesn't do: relay through a third machine (behind carrier-grade NAT the host is found but can't be reached),
-open the router's port (UPnP, NAT-PMP), or help phones yet (the apps' plan is
-[discovery.md](../../journal-client-kmp/docs/plans/discovery.md)).
+or open the router's port (UPnP, NAT-PMP).
 
 ## The peer API
 

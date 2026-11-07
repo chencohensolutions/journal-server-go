@@ -85,6 +85,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	if d, err := openDiscovery(config); err != nil {
 		log.Printf("Discovery is off: %v", err)
 	} else {
+		thisServer.Store(d)
 		if host != nil {
 			host.Discovery = d.forPeers
 		}
@@ -246,7 +247,8 @@ func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previe
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Enrollment: enrollment, Library: library, Search: ix.search, Faces: ix.faces,
 			TextInPhotos: ix.ocr, SimilarPhotos: ix.similar, AestheticScores: ix.aesthetic, NudityScan: ix.nudity != nil,
-			Previews: previews, Version: serverVersion(), Local: local, IndexRuns: ix.runs, Copies: copyRuns},
+			Previews: previews, Version: serverVersion(), Local: local, IndexRuns: ix.runs, Copies: copyRuns,
+			Discovery: forPhones},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})

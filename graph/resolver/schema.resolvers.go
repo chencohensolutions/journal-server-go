@@ -91,7 +91,12 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 	if store, err := r.store(ctx); err == nil {
 		keepsJXL = store.JXL != nil
 	}
+	var found *model.ServerDiscovery
+	if r.Discovery != nil {
+		found = r.Discovery()
+	}
 	return &model.ServerInfo{
+		Discovery:         found,
 		API:               APIVersion,
 		Version:           r.Version,
 		Search:            r.Search != nil,
