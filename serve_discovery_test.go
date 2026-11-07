@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -157,4 +158,35 @@ func danaInvite(t *testing.T, env *testEnv) string {
 		t.Fatal(err)
 	}
 	return invite.CreatePeerInvite.Code
+}
+
+// A phone learns who the server is and where, to find it when its address changes.
+func TestPhonesAreToldWhereTheServerIs(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.enrolledClient(t)
+	query := `{ serverInfo { discovery { fingerprint id key addresses } } }`
+	if resp := env.graphql(t, client, query, nil); string(resp.Data["serverInfo"]) != `{"discovery":null}` {
+		t.Fatalf("before discovery is open: %s %+v", resp.Data["serverInfo"], resp.Errors)
+	}
+	fingerprint := peers.Fingerprint(env.server.Certificate())
+	key, _ := discovery.KeyFor(env.server.TLS.Certificates[0].PrivateKey)
+	thisServer.Store(&serverDiscovery{fingerprint: fingerprint, key: key,
+		publisher: &discovery.Publisher{PublicURL: "https://journal.example:56398", Port: "56398"}})
+	t.Cleanup(func() { thisServer.Store(nil) })
+	resp := env.graphql(t, client, query, nil)
+	var got struct {
+		Discovery struct {
+			Fingerprint, ID, Key string
+			Addresses            []string
+		}
+	}
+	if err := json.Unmarshal(resp.Data["serverInfo"], &got); err != nil {
+		t.Fatal(err, resp.Errors)
+	}
+	d := got.Discovery
+	if d.Fingerprint != fingerprint || d.ID != discovery.FormatID(fingerprint) ||
+		d.Key != hex.EncodeToString(key.Public().(ed25519.PublicKey)) ||
+		len(d.Addresses) == 0 || d.Addresses[0] != "https://journal.example:56398" {
+		t.Fatalf("serverInfo.discovery: %+v", d)
+	}
 }

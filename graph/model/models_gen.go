@@ -559,6 +559,21 @@ type SearchHit struct {
 	Moment int `json:"moment"`
 }
 
+// Who this server is and where it is now. An app pins the fingerprint (checking the server's key instead of the host
+// name, so any address works), keeps the addresses to try when the one it uses stops answering, and looks the server up
+// in the BitTorrent DHT under key when none answers. The DHT record is a BEP 44 mutable item under key with salt
+// "journal-server/v1", whose value is the sealed record (journal-server-go discovery/record.go).
+type ServerDiscovery struct {
+	// The sha256 of the server certificate's public key (SubjectPublicKeyInfo), 64 hex digits.
+	Fingerprint string `json:"fingerprint"`
+	// The same as a server id, as people type it: base32 in 8 groups of 7 with check letters (MFZWI3D-BONSGYC-…).
+	ID string `json:"id"`
+	// The server's ed25519 key in the DHT, 64 hex digits; null when it doesn't publish there (discovery is off).
+	Key *string `json:"key,omitempty"`
+	// Where the server can be reached now, https://host:port, the most likely first (public, IPv6, then LAN).
+	Addresses []string `json:"addresses"`
+}
+
 type ServerInfo struct {
 	// The API's version: raised when a change needs newer apps.
 	API int `json:"api"`
@@ -598,6 +613,8 @@ type ServerInfo struct {
 	Copies bool `json:"copies"`
 	// Copies can be on a friend's server too: DataCopy has kind and encrypted, and the peers' problems.
 	PeerCopies bool `json:"peerCopies"`
+	// How to find this server when its address changes; null when the server can't read its own key.
+	Discovery *ServerDiscovery `json:"discovery,omitempty"`
 	// A phone can start, follow and pause the reading of its user's files (indexing).
 	Indexing bool `json:"indexing"`
 	// Phones may keep indexes and search them themselves (localIndexes).

@@ -1,0 +1,23 @@
+# Finding the server when its address changes (docs/peers.md, "Finding the host").
+
+extend type ServerInfo {
+  "How to find this server when its address changes; null when the server can't read its own key."
+  discovery: ServerDiscovery
+}
+
+"""
+Who this server is and where it is now. An app pins the fingerprint (checking the server's key instead of the host
+name, so any address works), keeps the addresses to try when the one it uses stops answering, and looks the server up
+in the BitTorrent DHT under key when none answers. The DHT record is a BEP 44 mutable item under key with salt
+"journal-server/v1", whose value is the sealed record (journal-server-go discovery/record.go).
+"""
+type ServerDiscovery {
+  "The sha256 of the server certificate's public key (SubjectPublicKeyInfo), 64 hex digits."
+  fingerprint: String!
+  "The same as a server id, as people type it: base32 in 8 groups of 7 with check letters (MFZWI3D-BONSGYC-…)."
+  id: String!
+  "The server's ed25519 key in the DHT, 64 hex digits; null when it doesn't publish there (discovery is off)."
+  key: String
+  "Where the server can be reached now, https://host:port, the most likely first (public, IPv6, then LAN)."
+  addresses: [String!]!
+}

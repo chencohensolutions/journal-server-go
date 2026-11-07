@@ -4,6 +4,7 @@ import (
 	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
+	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/localindex"
 	"github.com/journal/server-go/media"
 	"github.com/journal/server-go/ocr"
@@ -40,6 +41,8 @@ type Resolver struct {
 	IndexRuns IndexRunner
 	// Each user's copies of their data folder on other disks (copies); nil on a server that keeps none.
 	Copies CopyRunner
+	// Who this server is and where, for serverInfo.discovery; nil when unknown.
+	Discovery func() *model.ServerDiscovery
 }
 
 // APIVersion is serverInfo.api: raised when a change needs newer apps.

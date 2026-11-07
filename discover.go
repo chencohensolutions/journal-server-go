@@ -17,11 +17,13 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/copies"
 	"github.com/journal/server-go/discovery"
+	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/peers"
 )
 
@@ -60,6 +62,24 @@ func openDiscovery(config auth.AppConfig) (*serverDiscovery, error) {
 		d.publisher.Node, d.publisher.Key = dhtNode, d.key
 	}
 	return d, nil
+}
+
+// thisServer is the running server's discovery, for phones (serverInfo.discovery).
+var thisServer atomic.Pointer[serverDiscovery]
+
+// forPhones is serverInfo.discovery: who this server is and where, or nil before it is known.
+func forPhones() *model.ServerDiscovery {
+	d := thisServer.Load()
+	if d == nil {
+		return nil
+	}
+	found := d.forPeers()
+	out := &model.ServerDiscovery{Fingerprint: d.fingerprint, ID: discovery.FormatID(d.fingerprint),
+		Addresses: found.Addresses}
+	if found.Key != "" {
+		out.Key = &found.Key
+	}
+	return out
 }
 
 // forPeers is what GET /peer/addresses and an enrolling peer get: where this server is, and its DHT key.
