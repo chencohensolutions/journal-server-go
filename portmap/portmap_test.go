@@ -17,6 +17,7 @@ type fakeGateway struct {
 
 	mu       sync.Mutex
 	refuse   bool
+	taken    map[uint16]bool // outside ports another machine holds
 	maps     int
 	unmapped []uint16
 }
@@ -26,7 +27,7 @@ func (g *fakeGateway) Kind() string { return g.kind }
 func (g *fakeGateway) Map(_ context.Context, internal, external uint16, _ time.Duration, _ string) (uint16, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.refuse {
+	if g.refuse || g.taken[external] {
 		return 0, errors.New("refused")
 	}
 	g.maps++
@@ -162,5 +163,20 @@ func TestPublic(t *testing.T) {
 	var none *Mapping
 	if none.URL() != "" {
 		t.Error("a nil mapping has a URL")
+	}
+}
+
+func TestTakesTheNextPortWhenAnotherMachineHasIt(t *testing.T) {
+	shortTimes(t)
+	router := &fakeGateway{kind: "UPnP", ip: net.IPv4(203, 0, 113, 7), taken: map[uint16]bool{56398: true, 56399: true}}
+	m := &Mapper{Port: 56398, Find: func(context.Context) []Gateway { return []Gateway{router} }}
+	run(t, m)
+	waitFor(t, "a mapping", func() bool { return m.Current() != nil })
+	if c := m.Current(); c.ExternalPort != 56400 || c.URL() != "https://203.0.113.7:56400" {
+		t.Fatalf("mapping: %+v", c)
+	}
+	waitFor(t, "a renewal", func() bool { n, _ := router.counts(); return n >= 2 })
+	if c := m.Current(); c == nil || c.ExternalPort != 56400 {
+		t.Fatalf("after renewing: %+v", c)
 	}
 }

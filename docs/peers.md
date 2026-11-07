@@ -125,7 +125,8 @@ What it doesn't do: relay through a third machine (behind carrier-grade NAT the 
 
 Since Nov 7, 2026, the server asks the home router to forward its `port` to this machine (package `portmap`), so
 nobody has to forward it by hand. At start it looks for routers with UPnP IGD (SSDP; WANIPConnection 2 and 1,
-WANPPPConnection) and NAT-PMP on the default gateway at once, and maps TCP `port` on the first that agrees, for an
+WANPPPConnection) and NAT-PMP on the default gateway at once, and maps TCP `port` on the first that agrees (when
+another machine holds that outside port, the next four are asked for, and the one granted is published), for an
 hour (a router that takes only permanent mappings gets one). It renews at half the lease, looks for a router again
 every 10 minutes while it has none (UPnP turned on, a router restarted), and removes the mapping when the server
 stops, before the process ends.

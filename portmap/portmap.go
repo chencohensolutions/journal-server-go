@@ -52,6 +52,8 @@ var (
 	Lease = time.Hour
 	// RetryEvery is how often a server without a mapping asks again (a router restarted, UPnP turned on).
 	RetryEvery = 10 * time.Minute
+	// otherPorts is how many outside ports after the server's own are asked for when that one is taken.
+	otherPorts = uint16(4)
 )
 
 // Current is the mapping as last granted, or nil.
@@ -150,6 +152,13 @@ func (m *Mapper) mapOn(ctx context.Context, g Gateway) (*Mapping, error) {
 		external = c.ExternalPort
 	}
 	got, err := g.Map(ask, m.Port, external, Lease, m.Description)
+	if err != nil && m.Current() == nil {
+		// Another machine may hold the outside port already (UPnP error 718, ConflictInMappingEntry): a second
+		// server at home, say. Ask for the next few; the port granted is the one published.
+		for next := uint16(1); next <= otherPorts && err != nil && ask.Err() == nil && external+next > external; next++ {
+			got, err = g.Map(ask, m.Port, external+next, Lease, m.Description)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
