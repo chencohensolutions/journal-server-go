@@ -34,7 +34,8 @@ dist/
 .env.local
 
 # Local certificates
-certs/
+/certs/*
+!/certs/*.go
 
 # Server state (admin API token, enrolled device registry)
 admin.token
