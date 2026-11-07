@@ -8,10 +8,11 @@ import (
 )
 
 // Own is where this server can be reached, the most likely first: publicURL (config.json's public_url) when set,
+// mapped (the router's outside address and port, when the router forwards one to this machine: package portmap),
 // the public IPv4 address (STUN, or seen by a peer) at port, then each global IPv6 address, then the LAN addresses
 // (for phones at home and servers on the same network). A public IPv4 address works only when the router forwards
 // port to this machine; an IPv6 one needs only the firewall rule.
-func Own(publicURL, port string, publicIPv4 net.IP) []string {
+func Own(publicURL, mapped, port string, publicIPv4 net.IP) []string {
 	var out []string
 	add := func(url string) {
 		if url != "" && !slices.Contains(out, url) {
@@ -19,6 +20,7 @@ func Own(publicURL, port string, publicIPv4 net.IP) []string {
 		}
 	}
 	add(strings.TrimSuffix(publicURL, "/"))
+	add(mapped)
 	if publicIPv4 != nil {
 		add(URLOf(publicIPv4, port))
 	}

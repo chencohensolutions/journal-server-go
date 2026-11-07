@@ -21,6 +21,9 @@ type Publisher struct {
 	Port        string
 	// Asked for the public IPv4 address; nil asks no one (tests).
 	STUN []string
+	// The router's outside address forwarded to this server ("https://ip:port"), or ""; nil when the server doesn't
+	// map its port (portmap.Mapper).
+	Mapped func() string
 
 	mu      sync.Mutex
 	seen    net.IP   // the public address a peer last saw us come from
@@ -52,7 +55,14 @@ func (p *Publisher) Addresses(ctx context.Context) []string {
 		ip = p.seen
 		p.mu.Unlock()
 	}
-	return Own(p.PublicURL, p.Port, ip)
+	return Own(p.PublicURL, p.mapped(), p.Port, ip)
+}
+
+func (p *Publisher) mapped() string {
+	if p.Mapped == nil {
+		return ""
+	}
+	return p.Mapped()
 }
 
 // Current is where this server can be reached, as last worked out (without asking STUN before the first time).
@@ -61,7 +71,7 @@ func (p *Publisher) Current() []string {
 	current, seen := p.current, p.seen
 	p.mu.Unlock()
 	if current == nil {
-		return Own(p.PublicURL, p.Port, seen)
+		return Own(p.PublicURL, p.mapped(), p.Port, seen)
 	}
 	return current
 }

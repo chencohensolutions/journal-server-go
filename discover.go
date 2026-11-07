@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,6 +26,7 @@ import (
 	"github.com/journal/server-go/discovery"
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/peers"
+	"github.com/journal/server-go/portmap"
 )
 
 // Finding servers whose address changes (docs/peers.md, "Finding the host"). This server publishes where it is in
@@ -62,6 +64,49 @@ func openDiscovery(config auth.AppConfig) (*serverDiscovery, error) {
 		d.publisher.Node, d.publisher.Key = dhtNode, d.key
 	}
 	return d, nil
+}
+
+// mapPort asks the router to forward the server's port to this machine while it runs (package portmap), unless
+// config.json sets "port_mapping": false, and gives the outside address to d's publisher. done is closed once the
+// mapping is removed after running ends (at once when there is none).
+func mapPort(running context.Context, config auth.AppConfig, d *serverDiscovery, done chan<- struct{}) {
+	port, err := strconv.ParseUint(config.Port, 10, 16)
+	if !config.PortMappingOn() || err != nil {
+		close(done)
+		return
+	}
+	m := &portmap.Mapper{Port: uint16(port), Description: "Journal server"}
+	d.publisher.Mapped = func() string { return m.Current().URL() }
+	go func() { m.Run(running); close(done) }()
+}
+
+// printRouters lists the routers that map ports and their outside addresses, for `journal-server discovery`. It only
+// asks: mapping the port from here would take over the running server's mapping and remove it on exit.
+func printRouters(ctx context.Context, config auth.AppConfig) {
+	if !config.PortMappingOn() {
+		fmt.Printf("Port mapping is off in config.json (\"port_mapping\": false)\n\n")
+		return
+	}
+	ask, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	gws := portmap.Find(ask)
+	if len(gws) == 0 {
+		fmt.Printf("No router here maps ports (UPnP and NAT-PMP off, or none answers): forward port %s by hand, or use IPv6\n\n", config.Port)
+		return
+	}
+	fmt.Printf("Routers that map ports (the running server asks them to forward port %s):\n", config.Port)
+	for _, g := range gws {
+		ip, err := g.ExternalIP(ask)
+		switch {
+		case err != nil:
+			fmt.Printf("  %s: outside address unknown: %v\n", g.Kind(), err)
+		case !portmap.Public(ip):
+			fmt.Printf("  %s: outside address %s isn't public (carrier-grade NAT, or another router in front): the internet can't reach this server through it\n", g.Kind(), ip)
+		default:
+			fmt.Printf("  %s: outside address %s\n", g.Kind(), ip)
+		}
+	}
+	fmt.Println()
 }
 
 // thisServer is the running server's discovery, for phones (serverInfo.discovery).
@@ -350,6 +395,7 @@ func discoveryCommand(config auth.AppConfig) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	fmt.Printf("Server id %s\n\n", discovery.FormatID(d.fingerprint))
+	printRouters(ctx, config)
 	addresses := d.publisher.Addresses(ctx)
 	fmt.Printf("This server's addresses:\n")
 	for _, a := range addresses {
