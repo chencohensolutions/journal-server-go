@@ -223,6 +223,14 @@ type ComplexityRoot struct {
 		Stopped    func(childComplexity int) int
 	}
 
+	KeptSwap struct {
+		AddedAt   func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Quota     func(childComplexity int) int
+		RevokedAt func(childComplexity int) int
+		Used      func(childComplexity int) int
+	}
+
 	LocalIndex struct {
 		Bytes  func(childComplexity int) int
 		Dim    func(childComplexity int) int
@@ -285,8 +293,11 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
+		AcceptSwapOffer      func(childComplexity int, id string, passphrase *string, plain *bool) int
+		DeclineSwapOffer     func(childComplexity int, id string) int
 		EnrollDevice         func(childComplexity int, input model.EnrollDeviceInput) int
 		ForgetPerson         func(childComplexity int, id string) int
+		JoinSwap             func(childComplexity int, link string, name string, passphrase *string, plain *bool, offerQuota *int64) int
 		MarkFaces            func(childComplexity int, person string, yes []string, no []string) int
 		MergePeople          func(childComplexity int, into string, from []string) int
 		MoveFace             func(childComplexity int, face string, to *string) int
@@ -294,7 +305,9 @@ type ComplexityRoot struct {
 		NamePerson           func(childComplexity int, id string, name string) int
 		PauseIndexing        func(childComplexity int) int
 		PrepareSearch        func(childComplexity int) int
+		RemoveSwap           func(childComplexity int, name string) int
 		RenewCertificate     func(childComplexity int, csr string, keyProtection model.KeyProtection) int
+		RevokeSwap           func(childComplexity int, name string, deleteFiles *bool) int
 		SetCall              func(childComplexity int, sha256 string, call model.CallInput) int
 		SetCamera            func(childComplexity int, make string, model string, mine bool) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
@@ -304,6 +317,15 @@ type ComplexityRoot struct {
 		StartIndexing        func(childComplexity int) int
 		StartUpload          func(childComplexity int, input model.StartUploadInput) int
 		StopCopy             func(childComplexity int, folder string) int
+		SwapInvite           func(childComplexity int, name string, quota int64) int
+	}
+
+	MySwap struct {
+		AddedAt   func(childComplexity int) int
+		Copy      func(childComplexity int) int
+		Encrypted func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Quota     func(childComplexity int) int
 	}
 
 	NotFound struct {
@@ -353,6 +375,7 @@ type ComplexityRoot struct {
 		SimilarMedia      func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
 		SoundFolders      func(childComplexity int) int
 		StorageUsage      func(childComplexity int) int
+		Swaps             func(childComplexity int) int
 	}
 
 	SearchHit struct {
@@ -389,6 +412,7 @@ type ComplexityRoot struct {
 		Search            func(childComplexity int) int
 		Similar           func(childComplexity int) int
 		SoundFolders      func(childComplexity int) int
+		Swap              func(childComplexity int) int
 		TextInPhotos      func(childComplexity int) int
 		Version           func(childComplexity int) int
 	}
@@ -415,6 +439,42 @@ type ComplexityRoot struct {
 		Photos     func(childComplexity int) int
 		VideoBytes func(childComplexity int) int
 		Videos     func(childComplexity int) int
+	}
+
+	SwapInfo struct {
+		Available func(childComplexity int) int
+		CopyKey   func(childComplexity int) int
+		FreeSpace func(childComplexity int) int
+	}
+
+	SwapInvite struct {
+		Code      func(childComplexity int) int
+		ExpiresAt func(childComplexity int) int
+		Link      func(childComplexity int) int
+	}
+
+	SwapJoined struct {
+		Offered func(childComplexity int) int
+		Swap    func(childComplexity int) int
+	}
+
+	SwapOffer struct {
+		ExpiresAt func(childComplexity int) int
+		From      func(childComplexity int) int
+		ID        func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Quota     func(childComplexity int) int
+	}
+
+	SwapRefused struct {
+		Message func(childComplexity int) int
+		Reason  func(childComplexity int) int
+	}
+
+	Swaps struct {
+		Kept   func(childComplexity int) int
+		Mine   func(childComplexity int) int
+		Offers func(childComplexity int) int
 	}
 
 	TextLine struct {
@@ -460,6 +520,12 @@ type MutationResolver interface {
 	ForgetPerson(ctx context.Context, id string) (bool, error)
 	PrepareSearch(ctx context.Context) (model.SearchModelState, error)
 	SetSoundFolder(ctx context.Context, id string, as model.SoundFolderMark) ([]*model.SoundFolder, error)
+	SwapInvite(ctx context.Context, name string, quota int64) (*model.SwapInvite, error)
+	JoinSwap(ctx context.Context, link string, name string, passphrase *string, plain *bool, offerQuota *int64) (model.JoinSwapResult, error)
+	AcceptSwapOffer(ctx context.Context, id string, passphrase *string, plain *bool) (model.JoinSwapResult, error)
+	DeclineSwapOffer(ctx context.Context, id string) (bool, error)
+	RemoveSwap(ctx context.Context, name string) (bool, error)
+	RevokeSwap(ctx context.Context, name string, deleteFiles *bool) (bool, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -481,6 +547,7 @@ type QueryResolver interface {
 	Duplicates(ctx context.Context, limit *int, offset *int, includePrivate *bool) ([]*model.DuplicateGroup, error)
 	FolderNames(ctx context.Context) ([]*model.FolderName, error)
 	SoundFolders(ctx context.Context) ([]*model.SoundFolder, error)
+	Swaps(ctx context.Context) (*model.Swaps, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -1210,6 +1277,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.IndexingRun.Stopped(childComplexity), true
 
+	case "KeptSwap.addedAt":
+		if e.ComplexityRoot.KeptSwap.AddedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KeptSwap.AddedAt(childComplexity), true
+	case "KeptSwap.name":
+		if e.ComplexityRoot.KeptSwap.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KeptSwap.Name(childComplexity), true
+	case "KeptSwap.quota":
+		if e.ComplexityRoot.KeptSwap.Quota == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KeptSwap.Quota(childComplexity), true
+	case "KeptSwap.revokedAt":
+		if e.ComplexityRoot.KeptSwap.RevokedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KeptSwap.RevokedAt(childComplexity), true
+	case "KeptSwap.used":
+		if e.ComplexityRoot.KeptSwap.Used == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KeptSwap.Used(childComplexity), true
+
 	case "LocalIndex.bytes":
 		if e.ComplexityRoot.LocalIndex.Bytes == nil {
 			break
@@ -1491,6 +1589,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ModelFile.URL(childComplexity), true
 
+	case "Mutation.acceptSwapOffer":
+		if e.ComplexityRoot.Mutation.AcceptSwapOffer == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_acceptSwapOffer_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.AcceptSwapOffer(childComplexity, args["id"].(string), args["passphrase"].(*string), args["plain"].(*bool)), true
+	case "Mutation.declineSwapOffer":
+		if e.ComplexityRoot.Mutation.DeclineSwapOffer == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_declineSwapOffer_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.DeclineSwapOffer(childComplexity, args["id"].(string)), true
 	case "Mutation.enrollDevice":
 		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
 			break
@@ -1513,6 +1633,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ForgetPerson(childComplexity, args["id"].(string)), true
+	case "Mutation.joinSwap":
+		if e.ComplexityRoot.Mutation.JoinSwap == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_joinSwap_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.JoinSwap(childComplexity, args["link"].(string), args["name"].(string), args["passphrase"].(*string), args["plain"].(*bool), args["offerQuota"].(*int64)), true
 	case "Mutation.markFaces":
 		if e.ComplexityRoot.Mutation.MarkFaces == nil {
 			break
@@ -1580,6 +1711,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.PrepareSearch(childComplexity), true
+	case "Mutation.removeSwap":
+		if e.ComplexityRoot.Mutation.RemoveSwap == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_removeSwap_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RemoveSwap(childComplexity, args["name"].(string)), true
 	case "Mutation.renewCertificate":
 		if e.ComplexityRoot.Mutation.RenewCertificate == nil {
 			break
@@ -1591,6 +1733,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RenewCertificate(childComplexity, args["csr"].(string), args["keyProtection"].(model.KeyProtection)), true
+	case "Mutation.revokeSwap":
+		if e.ComplexityRoot.Mutation.RevokeSwap == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_revokeSwap_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RevokeSwap(childComplexity, args["name"].(string), args["deleteFiles"].(*bool)), true
 	case "Mutation.setCall":
 		if e.ComplexityRoot.Mutation.SetCall == nil {
 			break
@@ -1685,6 +1838,48 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.StopCopy(childComplexity, args["folder"].(string)), true
+	case "Mutation.swapInvite":
+		if e.ComplexityRoot.Mutation.SwapInvite == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_swapInvite_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SwapInvite(childComplexity, args["name"].(string), args["quota"].(int64)), true
+
+	case "MySwap.addedAt":
+		if e.ComplexityRoot.MySwap.AddedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MySwap.AddedAt(childComplexity), true
+	case "MySwap.copy":
+		if e.ComplexityRoot.MySwap.Copy == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MySwap.Copy(childComplexity), true
+	case "MySwap.encrypted":
+		if e.ComplexityRoot.MySwap.Encrypted == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MySwap.Encrypted(childComplexity), true
+	case "MySwap.name":
+		if e.ComplexityRoot.MySwap.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MySwap.Name(childComplexity), true
+	case "MySwap.quota":
+		if e.ComplexityRoot.MySwap.Quota == nil {
+			break
+		}
+
+		return e.ComplexityRoot.MySwap.Quota(childComplexity), true
 
 	case "NotFound.id":
 		if e.ComplexityRoot.NotFound.ID == nil {
@@ -1945,6 +2140,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.StorageUsage(childComplexity), true
+	case "Query.swaps":
+		if e.ComplexityRoot.Query.Swaps == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Swaps(childComplexity), true
 
 	case "SearchHit.media":
 		if e.ComplexityRoot.SearchHit.Media == nil {
@@ -2110,6 +2311,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.SoundFolders(childComplexity), true
+	case "ServerInfo.swap":
+		if e.ComplexityRoot.ServerInfo.Swap == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Swap(childComplexity), true
 	case "ServerInfo.textInPhotos":
 		if e.ComplexityRoot.ServerInfo.TextInPhotos == nil {
 			break
@@ -2215,6 +2422,120 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.StorageUsage.Videos(childComplexity), true
+
+	case "SwapInfo.available":
+		if e.ComplexityRoot.SwapInfo.Available == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapInfo.Available(childComplexity), true
+	case "SwapInfo.copyKey":
+		if e.ComplexityRoot.SwapInfo.CopyKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapInfo.CopyKey(childComplexity), true
+	case "SwapInfo.freeSpace":
+		if e.ComplexityRoot.SwapInfo.FreeSpace == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapInfo.FreeSpace(childComplexity), true
+
+	case "SwapInvite.code":
+		if e.ComplexityRoot.SwapInvite.Code == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapInvite.Code(childComplexity), true
+	case "SwapInvite.expiresAt":
+		if e.ComplexityRoot.SwapInvite.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapInvite.ExpiresAt(childComplexity), true
+	case "SwapInvite.link":
+		if e.ComplexityRoot.SwapInvite.Link == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapInvite.Link(childComplexity), true
+
+	case "SwapJoined.offered":
+		if e.ComplexityRoot.SwapJoined.Offered == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapJoined.Offered(childComplexity), true
+	case "SwapJoined.swap":
+		if e.ComplexityRoot.SwapJoined.Swap == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapJoined.Swap(childComplexity), true
+
+	case "SwapOffer.expiresAt":
+		if e.ComplexityRoot.SwapOffer.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapOffer.ExpiresAt(childComplexity), true
+	case "SwapOffer.from":
+		if e.ComplexityRoot.SwapOffer.From == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapOffer.From(childComplexity), true
+	case "SwapOffer.id":
+		if e.ComplexityRoot.SwapOffer.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapOffer.ID(childComplexity), true
+	case "SwapOffer.name":
+		if e.ComplexityRoot.SwapOffer.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapOffer.Name(childComplexity), true
+	case "SwapOffer.quota":
+		if e.ComplexityRoot.SwapOffer.Quota == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapOffer.Quota(childComplexity), true
+
+	case "SwapRefused.message":
+		if e.ComplexityRoot.SwapRefused.Message == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapRefused.Message(childComplexity), true
+	case "SwapRefused.reason":
+		if e.ComplexityRoot.SwapRefused.Reason == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SwapRefused.Reason(childComplexity), true
+
+	case "Swaps.kept":
+		if e.ComplexityRoot.Swaps.Kept == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Swaps.Kept(childComplexity), true
+	case "Swaps.mine":
+		if e.ComplexityRoot.Swaps.Mine == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Swaps.Mine(childComplexity), true
+	case "Swaps.offers":
+		if e.ComplexityRoot.Swaps.Offers == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Swaps.Offers(childComplexity), true
 
 	case "TextLine.box":
 		if e.ComplexityRoot.TextLine.Box == nil {
@@ -3526,6 +3847,156 @@ extend type Mutation {
   setSoundFolder(id: String!, as: SoundFolderMark!): [SoundFolder!]!
 }
 `, BuiltIn: false},
+	{Name: "../schema/swaps.graphql", Input: `# --- Swaps set up from the phones (docs/peers.md, "Swaps from the phones") --------------------------------------
+# A user keeps their copy on a friend's journal server, and keeps the friend's copy on theirs, without the command
+# line. Each user sets up their own: a phone sees and changes only its own user's swaps, never another user's
+# friends, copies or invites. Whoever runs the server decides only whether it keeps friends' copies (peers_folder).
+
+extend type Query {
+  "The caller's swaps: their copy at each friend's, each friend's copy kept here for them, and swaps offered back."
+  swaps: Swaps!
+}
+
+extend type Mutation {
+  """
+  Makes an invite for a friend's server to keep its user's copy here, up to quota bytes (at most serverInfo.swap
+  freeSpace), named name among the caller's friends. Its code works once, for 10 minutes. The app shows the link as
+  a QR code and to share.
+  """
+  swapInvite(name: String!, quota: Int64!): SwapInvite!
+  """
+  Keeps the caller's copy at the server that made link (a friend's swapInvite), named name here. The copy is encrypted
+  with the caller's copy key, made from passphrase when they have none yet (it must be strong: 24 characters, or 4
+  words and 20), and checked against it when they have one from a passphrase; plain: true keeps a plain copy, which
+  the friend can read, instead. With offerQuota, the friend is offered a copy here in return, up to that many bytes:
+  their phone shows it in swaps.offers. The first pass starts at once; then daily.
+  """
+  joinSwap(link: String!, name: String!, passphrase: String, plain: Boolean, offerQuota: Int64): JoinSwapResult!
+  "Accepts a swap offered back (swaps.offers): the caller's copy goes to that friend's server, as joinSwap does."
+  acceptSwapOffer(id: ID!, passphrase: String, plain: Boolean): JoinSwapResult!
+  "Declines a swap offered back; the copy kept for that friend here stays."
+  declineSwapOffer(id: ID!): Boolean!
+  """
+  Stops keeping the caller's copy at the friend named: no more passes go there, and this server forgets the friend's
+  server. The files already there stay until the friend removes them.
+  """
+  removeSwap(name: String!): Boolean!
+  """
+  Stops keeping the copy of the caller's friend named here: their server is refused from now on. With deleteFiles,
+  its files are deleted too, to free the space.
+  """
+  revokeSwap(name: String!, deleteFiles: Boolean): Boolean!
+}
+
+extend type ServerInfo {
+  "What this server offers for swaps."
+  swap: SwapInfo!
+}
+
+type SwapInfo {
+  "This server keeps friends' copies (its admin set peers_folder): swapInvite works. Joining a friend's always does."
+  available: Boolean!
+  "Free bytes on the disk friends' copies go to, the most a friend may be offered; null when not available."
+  freeSpace: Int64
+  "The caller's copy key, which encrypts their copies on friends' servers."
+  copyKey: CopyKeyKind!
+}
+
+enum CopyKeyKind {
+  "None yet: joinSwap makes one from the passphrase given."
+  NONE
+  "Made from a passphrase: joinSwap needs the same passphrase again."
+  PASSPHRASE
+  "In a key file made at the server (copy-key new): joinSwap needs no passphrase."
+  KEY_FILE
+}
+
+type SwapInvite {
+  "journal://swap?code=…&id=…&key=…&address=…&from=…, for the friend's app (QR code or link)."
+  link: String!
+  code: String!
+  expiresAt: Time!
+}
+
+union JoinSwapResult = SwapJoined | SwapRefused
+
+type SwapJoined {
+  swap: MySwap!
+  "A copy here was offered back to the friend (offerQuota)."
+  offered: Boolean!
+}
+
+type SwapRefused {
+  reason: SwapRefusal!
+  message: String!
+}
+
+enum SwapRefusal {
+  "Not a swap link."
+  INVALID_LINK
+  "The friend's server refused the code: wrong, used or expired (they make a new one), or too many tries."
+  CODE_REFUSED
+  "The friend's server couldn't be reached at any of its addresses, nor found in the DHT."
+  UNREACHABLE
+  "The link is this server's own."
+  OWN_SERVER
+  "The caller has a friend or a copy of that name already."
+  NAME_TAKEN
+  "An encrypted copy needs the passphrase (copyKey NONE or PASSPHRASE)."
+  NEEDS_PASSPHRASE
+  "Too weak for a new copy key: 24 characters, or 4 words and 20. Six random words are best."
+  WEAK_PASSPHRASE
+  "It isn't the passphrase of the caller's copy key."
+  WRONG_PASSPHRASE
+  "offerQuota is more than this server's free space, or this server keeps no friends' copies."
+  NO_SPACE
+  "The offer isn't there any more (expired after 10 minutes, or answered)."
+  OFFER_GONE
+}
+
+type Swaps {
+  "The caller's copy at friends' servers."
+  mine: [MySwap!]!
+  "The caller's friends whose copies this server keeps."
+  kept: [KeptSwap!]!
+  "Swaps friends offered back when they joined one of the caller's invites, for 10 minutes."
+  offers: [SwapOffer!]!
+}
+
+type MySwap {
+  "The friend's server, as the caller named it; names the copy in copies (folder), startCopy and removeSwap."
+  name: String!
+  "Bytes the friend keeps for the caller."
+  quota: Int64!
+  addedAt: Time!
+  "The copy is encrypted: the friend can't read it."
+  encrypted: Boolean!
+  "How the copy is doing; null when it can't be opened (the log says why)."
+  copy: DataCopy
+}
+
+type KeptSwap {
+  "As the caller named the friend in swapInvite."
+  name: String!
+  quota: Int64!
+  "Bytes the friend's files take here now."
+  used: Int64!
+  addedAt: Time!
+  "When revokeSwap refused the friend's server; its files stay until deleted."
+  revokedAt: Time
+}
+
+type SwapOffer {
+  id: ID!
+  "The friend's user on their server."
+  from: String!
+  "The caller's friend, as named in swapInvite: the name acceptSwapOffer keeps for their server."
+  name: String!
+  "Bytes the friend keeps for the caller."
+  quota: Int64!
+  expiresAt: Time!
+}
+`, BuiltIn: false},
 	{Name: "../schema/text.graphql", Input: `# --- Text in photos -----------------------------------------------------------
 # Read by OCR on the server (Hebrew and English: PaddleOCR finetuned for Hebrew); searchMedia finds photos by it.
 # See docs/indexes.md.
@@ -3884,6 +4355,22 @@ func (ec *executionContext) childFields_IndexingRun(ctx context.Context, field g
 	return nil, fmt.Errorf("no field named %q was found under type IndexingRun", field.Name)
 }
 
+func (ec *executionContext) childFields_KeptSwap(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_KeptSwap_name(ctx, field)
+	case "quota":
+		return ec.fieldContext_KeptSwap_quota(ctx, field)
+	case "used":
+		return ec.fieldContext_KeptSwap_used(ctx, field)
+	case "addedAt":
+		return ec.fieldContext_KeptSwap_addedAt(ctx, field)
+	case "revokedAt":
+		return ec.fieldContext_KeptSwap_revokedAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type KeptSwap", field.Name)
+}
+
 func (ec *executionContext) childFields_LocalIndex(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "name":
@@ -3996,6 +4483,22 @@ func (ec *executionContext) childFields_ModelFile(ctx context.Context, field gra
 		return ec.fieldContext_ModelFile_url(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ModelFile", field.Name)
+}
+
+func (ec *executionContext) childFields_MySwap(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "name":
+		return ec.fieldContext_MySwap_name(ctx, field)
+	case "quota":
+		return ec.fieldContext_MySwap_quota(ctx, field)
+	case "addedAt":
+		return ec.fieldContext_MySwap_addedAt(ctx, field)
+	case "encrypted":
+		return ec.fieldContext_MySwap_encrypted(ctx, field)
+	case "copy":
+		return ec.fieldContext_MySwap_copy(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type MySwap", field.Name)
 }
 
 func (ec *executionContext) childFields_NudityHiding(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -4114,6 +4617,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_localIndexes(ctx, field)
 	case "soundFolders":
 		return ec.fieldContext_ServerInfo_soundFolders(ctx, field)
+	case "swap":
+		return ec.fieldContext_ServerInfo_swap(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -4164,6 +4669,58 @@ func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field 
 		return ec.fieldContext_StorageUsage_bytes(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type StorageUsage", field.Name)
+}
+
+func (ec *executionContext) childFields_SwapInfo(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "available":
+		return ec.fieldContext_SwapInfo_available(ctx, field)
+	case "freeSpace":
+		return ec.fieldContext_SwapInfo_freeSpace(ctx, field)
+	case "copyKey":
+		return ec.fieldContext_SwapInfo_copyKey(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SwapInfo", field.Name)
+}
+
+func (ec *executionContext) childFields_SwapInvite(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "link":
+		return ec.fieldContext_SwapInvite_link(ctx, field)
+	case "code":
+		return ec.fieldContext_SwapInvite_code(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_SwapInvite_expiresAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SwapInvite", field.Name)
+}
+
+func (ec *executionContext) childFields_SwapOffer(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_SwapOffer_id(ctx, field)
+	case "from":
+		return ec.fieldContext_SwapOffer_from(ctx, field)
+	case "name":
+		return ec.fieldContext_SwapOffer_name(ctx, field)
+	case "quota":
+		return ec.fieldContext_SwapOffer_quota(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_SwapOffer_expiresAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SwapOffer", field.Name)
+}
+
+func (ec *executionContext) childFields_Swaps(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "mine":
+		return ec.fieldContext_Swaps_mine(ctx, field)
+	case "kept":
+		return ec.fieldContext_Swaps_kept(ctx, field)
+	case "offers":
+		return ec.fieldContext_Swaps_offers(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Swaps", field.Name)
 }
 
 func (ec *executionContext) childFields_TextLine(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -4294,6 +4851,50 @@ func (ec *executionContext) childFields___Type(ctx context.Context, field graphq
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Mutation_acceptSwapOffer_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "passphrase",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["passphrase"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "plain",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plain"] = arg2
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_declineSwapOffer_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_enrollDevice_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -4319,6 +4920,52 @@ func (ec *executionContext) field_Mutation_forgetPerson_args(ctx context.Context
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_joinSwap_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "link",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["link"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "passphrase",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["passphrase"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "plain",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["plain"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "offerQuota",
+		func(ctx context.Context, v any) (*int64, error) {
+			return ec.unmarshalOInt642ᚖint64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offerQuota"] = arg4
 	return args, nil
 }
 
@@ -4440,6 +5087,20 @@ func (ec *executionContext) field_Mutation_namePerson_args(ctx context.Context, 
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_removeSwap_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_renewCertificate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -4459,6 +5120,28 @@ func (ec *executionContext) field_Mutation_renewCertificate_args(ctx context.Con
 		return nil, err
 	}
 	args["keyProtection"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_revokeSwap_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "deleteFiles",
+		func(ctx context.Context, v any) (*bool, error) {
+			return ec.unmarshalOBoolean2ᚖbool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["deleteFiles"] = arg1
 	return args, nil
 }
 
@@ -4611,6 +5294,28 @@ func (ec *executionContext) field_Mutation_stopCopy_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["folder"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_swapInvite_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "quota",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNInt642int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["quota"] = arg1
 	return args, nil
 }
 
@@ -7776,6 +8481,121 @@ func (ec *executionContext) fieldContext_IndexingRun_error(_ context.Context, fi
 	return graphql.NewScalarFieldContext("IndexingRun", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _KeptSwap_name(ctx context.Context, field graphql.CollectedField, obj *model.KeptSwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KeptSwap_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KeptSwap_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KeptSwap", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _KeptSwap_quota(ctx context.Context, field graphql.CollectedField, obj *model.KeptSwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KeptSwap_quota(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Quota, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KeptSwap_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KeptSwap", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _KeptSwap_used(ctx context.Context, field graphql.CollectedField, obj *model.KeptSwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KeptSwap_used(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Used, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KeptSwap_used(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KeptSwap", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _KeptSwap_addedAt(ctx context.Context, field graphql.CollectedField, obj *model.KeptSwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KeptSwap_addedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AddedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KeptSwap_addedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KeptSwap", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _KeptSwap_revokedAt(ctx context.Context, field graphql.CollectedField, obj *model.KeptSwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KeptSwap_revokedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RevokedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_KeptSwap_revokedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KeptSwap", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
 func (ec *executionContext) _LocalIndex_name(ctx context.Context, field graphql.CollectedField, obj *model.LocalIndex) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -9719,6 +10539,394 @@ func (ec *executionContext) fieldContext_Mutation_setSoundFolder(ctx context.Con
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_swapInvite(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_swapInvite(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SwapInvite(ctx, fc.Args["name"].(string), fc.Args["quota"].(int64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.SwapInvite) graphql.Marshaler {
+			return ec.marshalNSwapInvite2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapInvite(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_swapInvite(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SwapInvite(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_swapInvite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_joinSwap(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_joinSwap(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().JoinSwap(ctx, fc.Args["link"].(string), fc.Args["name"].(string), fc.Args["passphrase"].(*string), fc.Args["plain"].(*bool), fc.Args["offerQuota"].(*int64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.JoinSwapResult) graphql.Marshaler {
+			return ec.marshalNJoinSwapResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐJoinSwapResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_joinSwap(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type JoinSwapResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_joinSwap_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_acceptSwapOffer(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_acceptSwapOffer(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().AcceptSwapOffer(ctx, fc.Args["id"].(string), fc.Args["passphrase"].(*string), fc.Args["plain"].(*bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.JoinSwapResult) graphql.Marshaler {
+			return ec.marshalNJoinSwapResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐJoinSwapResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_acceptSwapOffer(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type JoinSwapResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_acceptSwapOffer_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_declineSwapOffer(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_declineSwapOffer(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().DeclineSwapOffer(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_declineSwapOffer(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_declineSwapOffer_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_removeSwap(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_removeSwap(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RemoveSwap(ctx, fc.Args["name"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_removeSwap(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_removeSwap_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_revokeSwap(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_revokeSwap(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RevokeSwap(ctx, fc.Args["name"].(string), fc.Args["deleteFiles"].(*bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_revokeSwap(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_revokeSwap_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _MySwap_name(ctx context.Context, field graphql.CollectedField, obj *model.MySwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MySwap_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MySwap_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MySwap", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _MySwap_quota(ctx context.Context, field graphql.CollectedField, obj *model.MySwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MySwap_quota(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Quota, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MySwap_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MySwap", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _MySwap_addedAt(ctx context.Context, field graphql.CollectedField, obj *model.MySwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MySwap_addedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AddedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MySwap_addedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MySwap", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _MySwap_encrypted(ctx context.Context, field graphql.CollectedField, obj *model.MySwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MySwap_encrypted(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Encrypted, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_MySwap_encrypted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("MySwap", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _MySwap_copy(ctx context.Context, field graphql.CollectedField, obj *model.MySwap) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_MySwap_copy(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Copy, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.DataCopy) graphql.Marshaler {
+			return ec.marshalODataCopy2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDataCopy(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_MySwap_copy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "MySwap",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_DataCopy(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _NotFound_id(ctx context.Context, field graphql.CollectedField, obj *model.NotFound) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10823,6 +12031,38 @@ func (ec *executionContext) fieldContext_Query_soundFolders(_ context.Context, f
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_swaps(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_swaps(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Swaps(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Swaps) graphql.Marshaler {
+			return ec.marshalNSwaps2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwaps(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_swaps(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Swaps(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -11584,6 +12824,38 @@ func (ec *executionContext) fieldContext_ServerInfo_soundFolders(_ context.Conte
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_swap(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_swap(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Swap, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.SwapInfo) graphql.Marshaler {
+			return ec.marshalNSwapInfo2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapInfo(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_swap(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ServerInfo",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SwapInfo(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _SimilarHit_media(ctx context.Context, field graphql.CollectedField, obj *model.SimilarHit) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -11936,6 +13208,456 @@ func (ec *executionContext) _StorageUsage_bytes(ctx context.Context, field graph
 }
 func (ec *executionContext) fieldContext_StorageUsage_bytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("StorageUsage", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _SwapInfo_available(ctx context.Context, field graphql.CollectedField, obj *model.SwapInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapInfo_available(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Available, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapInfo_available(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _SwapInfo_freeSpace(ctx context.Context, field graphql.CollectedField, obj *model.SwapInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapInfo_freeSpace(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FreeSpace, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int64) graphql.Marshaler {
+			return ec.marshalOInt642ᚖint64(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_SwapInfo_freeSpace(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapInfo", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _SwapInfo_copyKey(ctx context.Context, field graphql.CollectedField, obj *model.SwapInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapInfo_copyKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CopyKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.CopyKeyKind) graphql.Marshaler {
+			return ec.marshalNCopyKeyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKeyKind(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapInfo_copyKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapInfo", field, false, false, errors.New("field of type CopyKeyKind does not have child fields"))
+}
+
+func (ec *executionContext) _SwapInvite_link(ctx context.Context, field graphql.CollectedField, obj *model.SwapInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapInvite_link(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Link, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapInvite_link(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapInvite", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SwapInvite_code(ctx context.Context, field graphql.CollectedField, obj *model.SwapInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapInvite_code(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Code, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapInvite_code(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapInvite", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SwapInvite_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.SwapInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapInvite_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapInvite_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapInvite", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _SwapJoined_swap(ctx context.Context, field graphql.CollectedField, obj *model.SwapJoined) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapJoined_swap(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Swap, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.MySwap) graphql.Marshaler {
+			return ec.marshalNMySwap2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMySwap(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapJoined_swap(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SwapJoined",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MySwap(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SwapJoined_offered(ctx context.Context, field graphql.CollectedField, obj *model.SwapJoined) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapJoined_offered(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Offered, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapJoined_offered(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapJoined", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _SwapOffer_id(ctx context.Context, field graphql.CollectedField, obj *model.SwapOffer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapOffer_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNID2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapOffer_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapOffer", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _SwapOffer_from(ctx context.Context, field graphql.CollectedField, obj *model.SwapOffer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapOffer_from(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.From, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapOffer_from(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapOffer", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SwapOffer_name(ctx context.Context, field graphql.CollectedField, obj *model.SwapOffer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapOffer_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapOffer_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapOffer", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SwapOffer_quota(ctx context.Context, field graphql.CollectedField, obj *model.SwapOffer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapOffer_quota(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Quota, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNInt642int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapOffer_quota(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapOffer", field, false, false, errors.New("field of type Int64 does not have child fields"))
+}
+
+func (ec *executionContext) _SwapOffer_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.SwapOffer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapOffer_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapOffer_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapOffer", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _SwapRefused_reason(ctx context.Context, field graphql.CollectedField, obj *model.SwapRefused) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapRefused_reason(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Reason, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.SwapRefusal) graphql.Marshaler {
+			return ec.marshalNSwapRefusal2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapRefusal(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapRefused_reason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapRefused", field, false, false, errors.New("field of type SwapRefusal does not have child fields"))
+}
+
+func (ec *executionContext) _SwapRefused_message(ctx context.Context, field graphql.CollectedField, obj *model.SwapRefused) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SwapRefused_message(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Message, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SwapRefused_message(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SwapRefused", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Swaps_mine(ctx context.Context, field graphql.CollectedField, obj *model.Swaps) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Swaps_mine(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Mine, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.MySwap) graphql.Marshaler {
+			return ec.marshalNMySwap2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMySwapᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Swaps_mine(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Swaps",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_MySwap(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Swaps_kept(ctx context.Context, field graphql.CollectedField, obj *model.Swaps) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Swaps_kept(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Kept, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.KeptSwap) graphql.Marshaler {
+			return ec.marshalNKeptSwap2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeptSwapᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Swaps_kept(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Swaps",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_KeptSwap(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Swaps_offers(ctx context.Context, field graphql.CollectedField, obj *model.Swaps) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Swaps_offers(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Offers, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.SwapOffer) graphql.Marshaler {
+			return ec.marshalNSwapOffer2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapOfferᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Swaps_offers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Swaps",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SwapOffer(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _TextLine_text(ctx context.Context, field graphql.CollectedField, obj *model.TextLine) (ret graphql.Marshaler) {
@@ -13790,6 +15512,33 @@ func (ec *executionContext) _FaceResult(ctx context.Context, sel ast.SelectionSe
 	}
 }
 
+func (ec *executionContext) _JoinSwapResult(ctx context.Context, sel ast.SelectionSet, obj model.JoinSwapResult) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.SwapRefused:
+		return ec._SwapRefused(ctx, sel, &obj)
+	case *model.SwapRefused:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._SwapRefused(ctx, sel, obj)
+	case model.SwapJoined:
+		return ec._SwapJoined(ctx, sel, &obj)
+	case *model.SwapJoined:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._SwapJoined(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of JoinSwapResult must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
 func (ec *executionContext) _PersonResult(ctx context.Context, sel ast.SelectionSet, obj model.PersonResult) graphql.Marshaler {
 	switch obj := (obj).(type) {
 	case nil:
@@ -15161,6 +16910,62 @@ func (ec *executionContext) _IndexingRun(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var keptSwapImplementors = []string{"KeptSwap"}
+
+func (ec *executionContext) _KeptSwap(ctx context.Context, sel ast.SelectionSet, obj *model.KeptSwap) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, keptSwapImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("KeptSwap")
+		case "name":
+			out.Values[i] = ec._KeptSwap_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "quota":
+			out.Values[i] = ec._KeptSwap_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "used":
+			out.Values[i] = ec._KeptSwap_used(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "addedAt":
+			out.Values[i] = ec._KeptSwap_addedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokedAt":
+			out.Values[i] = ec._KeptSwap_revokedAt(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var localIndexImplementors = []string{"LocalIndex"}
 
 func (ec *executionContext) _LocalIndex(ctx context.Context, sel ast.SelectionSet, obj *model.LocalIndex) graphql.Marshaler {
@@ -15755,6 +17560,104 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "swapInvite":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_swapInvite(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "joinSwap":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_joinSwap(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "acceptSwapOffer":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_acceptSwapOffer(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "declineSwapOffer":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_declineSwapOffer(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "removeSwap":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_removeSwap(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revokeSwap":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_revokeSwap(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mySwapImplementors = []string{"MySwap"}
+
+func (ec *executionContext) _MySwap(ctx context.Context, sel ast.SelectionSet, obj *model.MySwap) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mySwapImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("MySwap")
+		case "name":
+			out.Values[i] = ec._MySwap_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "quota":
+			out.Values[i] = ec._MySwap_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "addedAt":
+			out.Values[i] = ec._MySwap_addedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "encrypted":
+			out.Values[i] = ec._MySwap_encrypted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "copy":
+			out.Values[i] = ec._MySwap_copy(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -16420,6 +18323,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "swaps":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_swaps(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -16669,6 +18594,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "swap":
+			out.Values[i] = ec._ServerInfo_swap(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -16843,6 +18773,297 @@ func (ec *executionContext) _StorageUsage(ctx context.Context, sel ast.Selection
 			}
 		case "bytes":
 			out.Values[i] = ec._StorageUsage_bytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var swapInfoImplementors = []string{"SwapInfo"}
+
+func (ec *executionContext) _SwapInfo(ctx context.Context, sel ast.SelectionSet, obj *model.SwapInfo) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, swapInfoImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SwapInfo")
+		case "available":
+			out.Values[i] = ec._SwapInfo_available(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "freeSpace":
+			out.Values[i] = ec._SwapInfo_freeSpace(ctx, field, obj)
+		case "copyKey":
+			out.Values[i] = ec._SwapInfo_copyKey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var swapInviteImplementors = []string{"SwapInvite"}
+
+func (ec *executionContext) _SwapInvite(ctx context.Context, sel ast.SelectionSet, obj *model.SwapInvite) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, swapInviteImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SwapInvite")
+		case "link":
+			out.Values[i] = ec._SwapInvite_link(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "code":
+			out.Values[i] = ec._SwapInvite_code(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._SwapInvite_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var swapJoinedImplementors = []string{"SwapJoined", "JoinSwapResult"}
+
+func (ec *executionContext) _SwapJoined(ctx context.Context, sel ast.SelectionSet, obj *model.SwapJoined) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, swapJoinedImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SwapJoined")
+		case "swap":
+			out.Values[i] = ec._SwapJoined_swap(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "offered":
+			out.Values[i] = ec._SwapJoined_offered(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var swapOfferImplementors = []string{"SwapOffer"}
+
+func (ec *executionContext) _SwapOffer(ctx context.Context, sel ast.SelectionSet, obj *model.SwapOffer) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, swapOfferImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SwapOffer")
+		case "id":
+			out.Values[i] = ec._SwapOffer_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "from":
+			out.Values[i] = ec._SwapOffer_from(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._SwapOffer_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "quota":
+			out.Values[i] = ec._SwapOffer_quota(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._SwapOffer_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var swapRefusedImplementors = []string{"SwapRefused", "JoinSwapResult"}
+
+func (ec *executionContext) _SwapRefused(ctx context.Context, sel ast.SelectionSet, obj *model.SwapRefused) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, swapRefusedImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SwapRefused")
+		case "reason":
+			out.Values[i] = ec._SwapRefused_reason(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "message":
+			out.Values[i] = ec._SwapRefused_message(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var swapsImplementors = []string{"Swaps"}
+
+func (ec *executionContext) _Swaps(ctx context.Context, sel ast.SelectionSet, obj *model.Swaps) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, swapsImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Swaps")
+		case "mine":
+			out.Values[i] = ec._Swaps_mine(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "kept":
+			out.Values[i] = ec._Swaps_kept(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "offers":
+			out.Values[i] = ec._Swaps_offers(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -17479,6 +19700,16 @@ func (ec *executionContext) marshalNCollection2ᚖgithubᚗcomᚋjournalᚋserve
 	return ec._Collection(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNCopyKeyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKeyKind(ctx context.Context, v any) (model.CopyKeyKind, error) {
+	var res model.CopyKeyKind
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNCopyKeyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKeyKind(ctx context.Context, sel ast.SelectionSet, v model.CopyKeyKind) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) unmarshalNCopyKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐCopyKind(ctx context.Context, v any) (model.CopyKind, error) {
 	var res model.CopyKind
 	err := res.UnmarshalGQL(v)
@@ -17861,6 +20092,42 @@ func (ec *executionContext) marshalNInt642int64(ctx context.Context, sel ast.Sel
 	return res
 }
 
+func (ec *executionContext) marshalNJoinSwapResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐJoinSwapResult(ctx context.Context, sel ast.SelectionSet, v model.JoinSwapResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._JoinSwapResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNKeptSwap2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeptSwapᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.KeptSwap) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNKeptSwap2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeptSwap(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNKeptSwap2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeptSwap(ctx context.Context, sel ast.SelectionSet, v *model.KeptSwap) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._KeptSwap(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNKeyProtection2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx context.Context, v any) (model.KeyProtection, error) {
 	var res model.KeyProtection
 	err := res.UnmarshalGQL(v)
@@ -17971,6 +20238,32 @@ func (ec *executionContext) marshalNModelFile2ᚖgithubᚗcomᚋjournalᚋserver
 		return graphql.Null
 	}
 	return ec._ModelFile(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNMySwap2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMySwapᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.MySwap) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMySwap2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMySwap(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNMySwap2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMySwap(ctx context.Context, sel ast.SelectionSet, v *model.MySwap) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._MySwap(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNNudityHiding2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHiding(ctx context.Context, sel ast.SelectionSet, v *model.NudityHiding) graphql.Marshaler {
@@ -18266,6 +20559,80 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 	return ret
 }
 
+func (ec *executionContext) marshalNSwapInfo2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapInfo(ctx context.Context, sel ast.SelectionSet, v *model.SwapInfo) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SwapInfo(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSwapInvite2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapInvite(ctx context.Context, sel ast.SelectionSet, v model.SwapInvite) graphql.Marshaler {
+	return ec._SwapInvite(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSwapInvite2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapInvite(ctx context.Context, sel ast.SelectionSet, v *model.SwapInvite) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SwapInvite(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSwapOffer2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapOfferᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.SwapOffer) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNSwapOffer2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapOffer(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNSwapOffer2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapOffer(ctx context.Context, sel ast.SelectionSet, v *model.SwapOffer) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SwapOffer(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNSwapRefusal2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapRefusal(ctx context.Context, v any) (model.SwapRefusal, error) {
+	var res model.SwapRefusal
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNSwapRefusal2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwapRefusal(ctx context.Context, sel ast.SelectionSet, v model.SwapRefusal) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNSwaps2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwaps(ctx context.Context, sel ast.SelectionSet, v model.Swaps) graphql.Marshaler {
+	return ec._Swaps(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSwaps2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSwaps(ctx context.Context, sel ast.SelectionSet, v *model.Swaps) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Swaps(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNTextLine2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐTextLineᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.TextLine) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -18547,6 +20914,13 @@ func (ec *executionContext) marshalOCopyProgress2ᚖgithubᚗcomᚋjournalᚋser
 		return graphql.Null
 	}
 	return ec._CopyProgress(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalODataCopy2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐDataCopy(ctx context.Context, sel ast.SelectionSet, v *model.DataCopy) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._DataCopy(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOEncodedFrom2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐEncodedFrom(ctx context.Context, sel ast.SelectionSet, v *model.EncodedFrom) graphql.Marshaler {

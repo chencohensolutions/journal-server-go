@@ -51,6 +51,8 @@ type PeerInvite {
 
 type HostedPeer {
   name: String!
+  "The user who invited it from their phone (a swap), whose friend it is; null for one invited here (peer invite)."
+  owner: String
   serial: String!
   quota: Float!
   "Bytes its files take here now."

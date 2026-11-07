@@ -22,6 +22,10 @@ type FaceResult interface {
 	IsFaceResult()
 }
 
+type JoinSwapResult interface {
+	IsJoinSwapResult()
+}
+
 type PersonResult interface {
 	IsPersonResult()
 }
@@ -375,6 +379,17 @@ type IndexingRun struct {
 	Error *string `json:"error,omitempty"`
 }
 
+type KeptSwap struct {
+	// As the caller named the friend in swapInvite.
+	Name  string `json:"name"`
+	Quota int64  `json:"quota"`
+	// Bytes the friend's files take here now.
+	Used    int64     `json:"used"`
+	AddedAt time.Time `json:"addedAt"`
+	// When revokeSwap refused the friend's server; its files stay until deleted.
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+}
+
 type LocalIndex struct {
 	// search (text search, SigLIP 2), faces, ocr (text in photos), similar (similar photos and duplicates, DINOv2), aesthetic.
 	Name string `json:"name"`
@@ -484,6 +499,18 @@ type ModelFile struct {
 }
 
 type Mutation struct {
+}
+
+type MySwap struct {
+	// The friend's server, as the caller named it; names the copy in copies (folder), startCopy and removeSwap.
+	Name string `json:"name"`
+	// Bytes the friend keeps for the caller.
+	Quota   int64     `json:"quota"`
+	AddedAt time.Time `json:"addedAt"`
+	// The copy is encrypted: the friend can't read it.
+	Encrypted bool `json:"encrypted"`
+	// How the copy is doing; null when it can't be opened (the log says why).
+	Copy *DataCopy `json:"copy,omitempty"`
 }
 
 // A person, group or face that is not there (any more): the app's list is older than the server's. Load it again.
@@ -621,6 +648,8 @@ type ServerInfo struct {
 	LocalIndexes bool `json:"localIndexes"`
 	// Folder kinds' ids are in lower case, named by folderNames; sound recordings can be call or recording, and soundFolders and setSoundFolder are there.
 	SoundFolders bool `json:"soundFolders"`
+	// What this server offers for swaps.
+	Swap *SwapInfo `json:"swap"`
 }
 
 type SimilarHit struct {
@@ -689,6 +718,57 @@ type StorageUsage struct {
 	AudioBytes int64 `json:"audioBytes"`
 	// photoBytes + videoBytes + audioBytes.
 	Bytes int64 `json:"bytes"`
+}
+
+type SwapInfo struct {
+	// This server keeps friends' copies (its admin set peers_folder): swapInvite works. Joining a friend's always does.
+	Available bool `json:"available"`
+	// Free bytes on the disk friends' copies go to, the most a friend may be offered; null when not available.
+	FreeSpace *int64 `json:"freeSpace,omitempty"`
+	// The caller's copy key, which encrypts their copies on friends' servers.
+	CopyKey CopyKeyKind `json:"copyKey"`
+}
+
+type SwapInvite struct {
+	// journal://swap?code=…&id=…&key=…&address=…&from=…, for the friend's app (QR code or link).
+	Link      string    `json:"link"`
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type SwapJoined struct {
+	Swap *MySwap `json:"swap"`
+	// A copy here was offered back to the friend (offerQuota).
+	Offered bool `json:"offered"`
+}
+
+func (SwapJoined) IsJoinSwapResult() {}
+
+type SwapOffer struct {
+	ID string `json:"id"`
+	// The friend's user on their server.
+	From string `json:"from"`
+	// The caller's friend, as named in swapInvite: the name acceptSwapOffer keeps for their server.
+	Name string `json:"name"`
+	// Bytes the friend keeps for the caller.
+	Quota     int64     `json:"quota"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type SwapRefused struct {
+	Reason  SwapRefusal `json:"reason"`
+	Message string      `json:"message"`
+}
+
+func (SwapRefused) IsJoinSwapResult() {}
+
+type Swaps struct {
+	// The caller's copy at friends' servers.
+	Mine []*MySwap `json:"mine"`
+	// The caller's friends whose copies this server keeps.
+	Kept []*KeptSwap `json:"kept"`
+	// Swaps friends offered back when they joined one of the caller's invites, for 10 minutes.
+	Offers []*SwapOffer `json:"offers"`
 }
 
 type TextLine struct {
@@ -766,6 +846,66 @@ func (e *ChangeKind) UnmarshalJSON(b []byte) error {
 }
 
 func (e ChangeKind) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type CopyKeyKind string
+
+const (
+	// None yet: joinSwap makes one from the passphrase given.
+	CopyKeyKindNone CopyKeyKind = "NONE"
+	// Made from a passphrase: joinSwap needs the same passphrase again.
+	CopyKeyKindPassphrase CopyKeyKind = "PASSPHRASE"
+	// In a key file made at the server (copy-key new): joinSwap needs no passphrase.
+	CopyKeyKindKeyFile CopyKeyKind = "KEY_FILE"
+)
+
+var AllCopyKeyKind = []CopyKeyKind{
+	CopyKeyKindNone,
+	CopyKeyKindPassphrase,
+	CopyKeyKindKeyFile,
+}
+
+func (e CopyKeyKind) IsValid() bool {
+	switch e {
+	case CopyKeyKindNone, CopyKeyKindPassphrase, CopyKeyKindKeyFile:
+		return true
+	}
+	return false
+}
+
+func (e CopyKeyKind) String() string {
+	return string(e)
+}
+
+func (e *CopyKeyKind) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = CopyKeyKind(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid CopyKeyKind", str)
+	}
+	return nil
+}
+
+func (e CopyKeyKind) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *CopyKeyKind) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e CopyKeyKind) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
@@ -1260,6 +1400,87 @@ func (e *SoundFolderMark) UnmarshalJSON(b []byte) error {
 }
 
 func (e SoundFolderMark) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type SwapRefusal string
+
+const (
+	// Not a swap link.
+	SwapRefusalInvalidLink SwapRefusal = "INVALID_LINK"
+	// The friend's server refused the code: wrong, used or expired (they make a new one), or too many tries.
+	SwapRefusalCodeRefused SwapRefusal = "CODE_REFUSED"
+	// The friend's server couldn't be reached at any of its addresses, nor found in the DHT.
+	SwapRefusalUnreachable SwapRefusal = "UNREACHABLE"
+	// The link is this server's own.
+	SwapRefusalOwnServer SwapRefusal = "OWN_SERVER"
+	// The caller has a friend or a copy of that name already.
+	SwapRefusalNameTaken SwapRefusal = "NAME_TAKEN"
+	// An encrypted copy needs the passphrase (copyKey NONE or PASSPHRASE).
+	SwapRefusalNeedsPassphrase SwapRefusal = "NEEDS_PASSPHRASE"
+	// Too weak for a new copy key: 24 characters, or 4 words and 20. Six random words are best.
+	SwapRefusalWeakPassphrase SwapRefusal = "WEAK_PASSPHRASE"
+	// It isn't the passphrase of the caller's copy key.
+	SwapRefusalWrongPassphrase SwapRefusal = "WRONG_PASSPHRASE"
+	// offerQuota is more than this server's free space, or this server keeps no friends' copies.
+	SwapRefusalNoSpace SwapRefusal = "NO_SPACE"
+	// The offer isn't there any more (expired after 10 minutes, or answered).
+	SwapRefusalOfferGone SwapRefusal = "OFFER_GONE"
+)
+
+var AllSwapRefusal = []SwapRefusal{
+	SwapRefusalInvalidLink,
+	SwapRefusalCodeRefused,
+	SwapRefusalUnreachable,
+	SwapRefusalOwnServer,
+	SwapRefusalNameTaken,
+	SwapRefusalNeedsPassphrase,
+	SwapRefusalWeakPassphrase,
+	SwapRefusalWrongPassphrase,
+	SwapRefusalNoSpace,
+	SwapRefusalOfferGone,
+}
+
+func (e SwapRefusal) IsValid() bool {
+	switch e {
+	case SwapRefusalInvalidLink, SwapRefusalCodeRefused, SwapRefusalUnreachable, SwapRefusalOwnServer, SwapRefusalNameTaken, SwapRefusalNeedsPassphrase, SwapRefusalWeakPassphrase, SwapRefusalWrongPassphrase, SwapRefusalNoSpace, SwapRefusalOfferGone:
+		return true
+	}
+	return false
+}
+
+func (e SwapRefusal) String() string {
+	return string(e)
+}
+
+func (e *SwapRefusal) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SwapRefusal(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SwapRefusal", str)
+	}
+	return nil
+}
+
+func (e SwapRefusal) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SwapRefusal) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SwapRefusal) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

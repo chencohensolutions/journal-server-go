@@ -32,7 +32,8 @@ import (
 )
 
 // A peer this server keeps copies on is a folder in peers_dir (certs/peers/<name>/): key.pem and cert.pem (the
-// client certificate the host signed) and peer.json. See docs/peers.md.
+// client certificate the host signed) and peer.json. See docs/peers.md. A peer a user added from their phone (a swap,
+// swap.go) is that user's: certs/peers/<user>/<name>/, used only for that user's copy, which its peer.json describes.
 
 type peerInfo struct {
 	V    int    `json:"v"`
@@ -53,16 +54,65 @@ type peerInfo struct {
 	// The host's key in the DHT (hex), which it publishes its addresses under; from the host when it was added or
 	// first asked (GET /peer/addresses).
 	DiscoveryKey string `json:"discovery_key,omitempty"`
+	// The user whose peer it is, added from their phone (joinSwap); "" for one added with peer add, the server's.
+	User string `json:"user,omitempty"`
+	// That user's copy there; config.json's copies name only the server's peers.
+	Copy *swapCopy `json:"copy,omitempty"`
 }
 
-func peerDir(config auth.AppConfig, name string) string { return filepath.Join(config.PeersDir, name) }
+// swapCopy is a user's copy on their own peer.
+type swapCopy struct {
+	Encrypt bool   `json:"encrypt"`
+	At      string `json:"at"`
+}
 
-// loadPeer reads a peer added with peer add.
-func loadPeer(config auth.AppConfig, name string) (peerInfo, tls.Certificate, error) {
-	dir := peerDir(config, name)
+// key is the peer's folder in peers_dir: its name, or <user>/<name> for a user's own.
+func (i peerInfo) key() string { return peerKey(i.User, i.Name) }
+
+func peerKey(user, name string) string {
+	if user != "" {
+		return filepath.Join(user, name)
+	}
+	return name
+}
+
+// peerDir is the folder of the peer with that key (peerInfo.key) in peers_dir.
+func peerDir(config auth.AppConfig, key string) string { return filepath.Join(config.PeersDir, key) }
+
+// peerKeys are the peers added here: the server's (peer add) and each user's (swaps), as their keys.
+func peerKeys(config auth.AppConfig) []string {
+	var keys []string
+	isPeer := func(dir string) bool {
+		_, err := os.Stat(filepath.Join(dir, "peer.json"))
+		return err == nil
+	}
+	entries, _ := os.ReadDir(config.PeersDir)
+	for _, e := range entries {
+		if e.IsDir() && !strings.Contains(e.Name(), ".removed-") && isPeer(peerDir(config, e.Name())) {
+			keys = append(keys, e.Name())
+		}
+	}
+	for _, user := range config.Users {
+		if slices.Contains(keys, user.Username) {
+			continue // a peer added before the user was (peer add refuses users' names)
+		}
+		mine, _ := os.ReadDir(filepath.Join(config.PeersDir, user.Username))
+		for _, e := range mine {
+			key := peerKey(user.Username, e.Name())
+			if e.IsDir() && !strings.Contains(e.Name(), ".removed-") && isPeer(peerDir(config, key)) {
+				keys = append(keys, key)
+			}
+		}
+	}
+	return keys
+}
+
+// loadPeer reads the peer with that key (peerInfo.key): one added with peer add, or a user's.
+func loadPeer(config auth.AppConfig, key string) (peerInfo, tls.Certificate, error) {
+	dir := peerDir(config, key)
 	data, err := os.ReadFile(filepath.Join(dir, "peer.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return peerInfo{}, tls.Certificate{}, fmt.Errorf("no peer %q: add it with journal-server peer add", name)
+		return peerInfo{}, tls.Certificate{}, fmt.Errorf("no peer %q: add it with journal-server peer add", key)
 	}
 	if err != nil {
 		return peerInfo{}, tls.Certificate{}, err
@@ -73,7 +123,7 @@ func loadPeer(config auth.AppConfig, name string) (peerInfo, tls.Certificate, er
 	}
 	cert, err := tls.LoadX509KeyPair(filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem"))
 	if err != nil {
-		return peerInfo{}, tls.Certificate{}, fmt.Errorf("peer %s: %w", name, err)
+		return peerInfo{}, tls.Certificate{}, fmt.Errorf("peer %s: %w", key, err)
 	}
 	return info, cert, nil
 }
@@ -208,6 +258,9 @@ func peerAddCommand(config auth.AppConfig, args []string) error {
 	if !peers.ValidName(name) {
 		return fmt.Errorf("%q can't name a peer: letters, digits and dashes", name)
 	}
+	if config.FindUser(name) != nil {
+		return fmt.Errorf("%q is a user's name, which names the folder of their own peers: choose another", name)
+	}
 	if !strings.HasPrefix(address, "https://") {
 		return fmt.Errorf("the host's address starts with https://, not %q", address)
 	}
@@ -220,71 +273,11 @@ func peerAddCommand(config auth.AppConfig, args []string) error {
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("peer %s is added already (%s); peer remove it first", name, dir)
 	}
-
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	host, _ := strings.CutPrefix(address, "https://")
+	info, enrolled, err := enrollPeer(config, peerEnrollment{Name: name, Addresses: []string{host}, Code: code,
+		Fingerprint: fingerprint, Trusted: trusted})
 	if err != nil {
 		return err
-	}
-	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: name}}, key)
-	if err != nil {
-		return err
-	}
-	body, _ := json.Marshal(peers.EnrollRequest{Code: strings.ToUpper(strings.TrimSpace(code)), CSR: csr})
-	client := copies.PeerClient(tls.Certificate{}, fingerprint, nil)
-	client.Timeout = time.Minute
-	resp, err := client.Post(address+"/peer/enroll", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("reaching %s: %w", address, err)
-	}
-	defer resp.Body.Close()
-	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode != http.StatusOK {
-		var refusal struct{ Error, Message string }
-		json.Unmarshal(answer, &refusal)
-		return fmt.Errorf("the host refused: %s %s", refusal.Error, refusal.Message)
-	}
-	var enrolled peers.Enrolled
-	if err := json.Unmarshal(answer, &enrolled); err != nil {
-		return fmt.Errorf("the host's answer: %w", err)
-	}
-	cert, err := x509.ParseCertificate(enrolled.Certificate)
-	if err != nil || !enroll.IsPeer(cert) {
-		return fmt.Errorf("the host's certificate isn't a peer's: %v", err)
-	}
-	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		return err
-	}
-	info := peerInfo{V: 1, Name: name, URL: address, Fingerprint: fingerprint, Trusted: trusted,
-		HostName: enrolled.Name, Quota: enrolled.Quota, AddedAt: time.Now().UTC(), ExpiresAt: cert.NotAfter.UTC()}
-	if host, ok := strings.CutPrefix(address, "https://"); ok {
-		info.Addresses = []string{strings.TrimSuffix(host, "/")}
-	}
-	if d := enrolled.Discovery; d != nil {
-		for _, a := range discovery.HostPorts(d.Addresses) {
-			if !slices.Contains(info.Addresses, a) && len(info.Addresses) < maxAddresses {
-				info.Addresses = append(info.Addresses, a)
-			}
-		}
-		info.DiscoveryKey = d.Key
-	}
-	infoJSON, _ := json.MarshalIndent(info, "", "  ")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	files := []struct {
-		name string
-		data []byte
-		mode os.FileMode
-	}{
-		{"key.pem", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600},
-		{"cert.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: enrolled.Certificate}), 0o644},
-		{"peer.json", infoJSON, 0o644},
-	}
-	for _, f := range files {
-		if err := os.WriteFile(filepath.Join(dir, f.name), f.data, f.mode); err != nil {
-			return err
-		}
 	}
 	fmt.Printf("Peer %s added: %s knows this server as %q and keeps up to %s for it.\n\n", name, address,
 		enrolled.Name, copies.Size(enrolled.Quota))
@@ -296,7 +289,128 @@ func peerAddCommand(config auth.AppConfig, args []string) error {
 	fmt.Printf("To keep a user's copy there, add to the user's \"copies\" in config.json and restart the server:\n\n")
 	fmt.Printf("    { \"peer\": %q, \"at\": \"02:00\" }\n\n", name)
 	fmt.Printf("Keep a backup of %s: without it, restoring from %s needs a new invite.\n", dir, name)
+	_ = info
 	return nil
+}
+
+// peerEnrollment is what enrolling with a host takes: an invite (its code and the host's fingerprint), where the
+// host may be, and what this server keeps about it.
+type peerEnrollment struct {
+	Name string // the peer's name here
+	User string // the user whose peer it is (a swap), or "" for the server's
+	// host:port, the most likely first; and the host's DHT key (hex), to look it up when none answers.
+	Addresses    []string
+	DiscoveryKey string
+	Code         string
+	Fingerprint  string
+	Trusted      bool
+	Copy         *swapCopy
+	// The swap offered back to the host's user (one scan, both ways).
+	Offer *peers.Offer
+}
+
+// errHostRefused is a host that answered and refused the enrollment; errHostUnreachable one that couldn't be reached.
+var (
+	errHostRefused     = errors.New("the host refused")
+	errHostUnreachable = errors.New("the host couldn't be reached")
+)
+
+// enrollPeer enrolls this server with the host as a device enrolls, and keeps what it got in its folder in
+// peers_dir. The server needn't be running.
+func enrollPeer(config auth.AppConfig, e peerEnrollment) (peerInfo, peers.Enrolled, error) {
+	info := peerInfo{V: 1, Name: e.Name, User: e.User, Fingerprint: e.Fingerprint, Trusted: e.Trusted, Copy: e.Copy,
+		DiscoveryKey: e.DiscoveryKey}
+	for _, a := range e.Addresses {
+		if a != "" && !slices.Contains(info.Addresses, a) && len(info.Addresses) < maxAddresses {
+			info.Addresses = append(info.Addresses, a)
+		}
+	}
+	if len(info.Addresses) == 0 && e.DiscoveryKey == "" {
+		return peerInfo{}, peers.Enrolled{}, fmt.Errorf("%w: no address for it, and no DHT key", errHostUnreachable)
+	}
+	info.URL = "https://" + firstOr(info.Addresses, "journal-host.invalid:56398")
+	dir := peerDir(config, info.key())
+	if _, err := os.Stat(dir); err == nil {
+		return peerInfo{}, peers.Enrolled{}, fmt.Errorf("peer %s is added already (%s)", e.Name, dir)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return peerInfo{}, peers.Enrolled{}, err
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: e.Name}}, key)
+	if err != nil {
+		return peerInfo{}, peers.Enrolled{}, err
+	}
+	body, _ := json.Marshal(peers.EnrollRequest{Code: strings.ToUpper(strings.TrimSpace(e.Code)), CSR: csr, Offer: e.Offer})
+	// Dialed by every address the invite gave, then the DHT: a book of its own until the peer is kept.
+	book := &peerBook{config: config, name: e.Name, fingerprint: e.Fingerprint, key: e.DiscoveryKey,
+		addrs: slices.Clone(info.Addresses), unsaved: true}
+	client := copies.PeerClient(tls.Certificate{}, e.Fingerprint, book)
+	client.Timeout = time.Minute
+	resp, err := client.Post(info.URL+"/peer/enroll", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return peerInfo{}, peers.Enrolled{}, fmt.Errorf("%w: %v", errHostUnreachable, err)
+	}
+	defer resp.Body.Close()
+	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		var refusal struct{ Error, Message string }
+		json.Unmarshal(answer, &refusal)
+		return peerInfo{}, peers.Enrolled{}, fmt.Errorf("%w: %s %s", errHostRefused, refusal.Error, refusal.Message)
+	}
+	var enrolled peers.Enrolled
+	if err := json.Unmarshal(answer, &enrolled); err != nil {
+		return peerInfo{}, peers.Enrolled{}, fmt.Errorf("the host's answer: %w", err)
+	}
+	cert, err := x509.ParseCertificate(enrolled.Certificate)
+	if err != nil || !enroll.IsPeer(cert) {
+		return peerInfo{}, peers.Enrolled{}, fmt.Errorf("the host's certificate isn't a peer's: %v", err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return peerInfo{}, peers.Enrolled{}, err
+	}
+	info.HostName, info.Quota = enrolled.Name, enrolled.Quota
+	info.AddedAt, info.ExpiresAt = time.Now().UTC(), cert.NotAfter.UTC()
+	info.Addresses = book.Addresses() // the one that answered first
+	if d := enrolled.Discovery; d != nil {
+		for _, a := range discovery.HostPorts(d.Addresses) {
+			if !slices.Contains(info.Addresses, a) && len(info.Addresses) < maxAddresses {
+				info.Addresses = append(info.Addresses, a)
+			}
+		}
+		if d.Key != "" {
+			info.DiscoveryKey = d.Key
+		}
+	}
+	infoJSON, _ := json.MarshalIndent(info, "", "  ")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return peerInfo{}, peers.Enrolled{}, err
+	}
+	files := []struct {
+		name string
+		data []byte
+		mode os.FileMode
+	}{
+		{"key.pem", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600},
+		{"cert.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: enrolled.Certificate}), 0o644},
+		{"peer.json", infoJSON, 0o644}, // last: a folder without it isn't a peer (peerKeys)
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(dir, f.name), f.data, f.mode); err != nil {
+			os.RemoveAll(dir)
+			return peerInfo{}, peers.Enrolled{}, err
+		}
+	}
+	return info, enrolled, nil
+}
+
+func firstOr(list []string, otherwise string) string {
+	if len(list) > 0 {
+		return list[0]
+	}
+	return otherwise
 }
 
 // peerRevokeCommand stops a peer that keeps copies here: its certificate is refused, its files stay.
@@ -340,17 +454,13 @@ func peerRemoveCommand(config auth.AppConfig, name string) error {
 
 // peersCommand lists both directions: the peers this server keeps copies on, and those that keep copies here.
 func peersCommand(config auth.AppConfig) error {
-	entries, _ := os.ReadDir(config.PeersDir)
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "Our copies are kept on:")
 	found := false
-	for _, e := range entries {
-		if !e.IsDir() || strings.Contains(e.Name(), ".removed-") {
-			continue
-		}
-		info, _, err := loadPeer(config, e.Name())
+	for _, key := range peerKeys(config) {
+		info, _, err := loadPeer(config, key)
 		if err != nil {
-			fmt.Fprintf(tw, "  %s\t%v\n", e.Name(), err)
+			fmt.Fprintf(tw, "  %s\t%v\n", key, err)
 			continue
 		}
 		found = true
@@ -361,13 +471,15 @@ func peersCommand(config auth.AppConfig) error {
 		var users []string
 		for _, user := range config.Users {
 			for _, cc := range user.Copies {
-				if cc.Peer == info.Name {
+				if cc.Peer == info.Name && info.User == "" {
 					users = append(users, user.Username)
 				}
 			}
 		}
 		usedBy := "none in config.json"
-		if len(users) > 0 {
+		if info.User != "" {
+			usedBy = info.User + "'s own (a swap from the phone)"
+		} else if len(users) > 0 {
 			usedBy = strings.Join(users, ", ")
 		}
 		fmt.Fprintf(tw, "  %s\t%s\t%s\tquota %s\tcopies: %s\tcertificate until %s\n", info.Name, info.URL, trust,
@@ -380,13 +492,14 @@ func peersCommand(config auth.AppConfig) error {
 	var data struct {
 		Peers []struct {
 			Name      string     `json:"name"`
+			Owner     *string    `json:"owner"`
 			Quota     float64    `json:"quota"`
 			Used      float64    `json:"used"`
 			AddedAt   time.Time  `json:"addedAt"`
 			RevokedAt *time.Time `json:"revokedAt"`
 		} `json:"peers"`
 	}
-	switch err := adminQuery(config, `{ peers { name quota used addedAt revokedAt } }`, nil, &data); {
+	switch err := adminQuery(config, `{ peers { name owner quota used addedAt revokedAt } }`, nil, &data); {
 	case err != nil:
 		fmt.Fprintf(tw, "  (the server isn't running: %v)\n", err)
 	case config.PeersFolder == "":
@@ -399,7 +512,11 @@ func peersCommand(config auth.AppConfig) error {
 		if p.RevokedAt != nil {
 			state = "revoked " + p.RevokedAt.Local().Format("2006-01-02")
 		}
-		fmt.Fprintf(tw, "  %s\t%s of %s\t%s\n", p.Name, copies.Size(int64(p.Used)), copies.Size(int64(p.Quota)), state)
+		name := p.Name
+		if p.Owner != nil {
+			name = *p.Owner + "'s friend " + p.Name
+		}
+		fmt.Fprintf(tw, "  %s\t%s of %s\t%s\n", name, copies.Size(int64(p.Used)), copies.Size(int64(p.Quota)), state)
 	}
 	return tw.Flush()
 }
@@ -437,14 +554,19 @@ func openPeerHost(config auth.AppConfig, issuer *enroll.Issuer) (*peers.Host, er
 	if err != nil {
 		return nil, err
 	}
-	return peers.NewHost(config.PeersFolder, registry, issuer, time.Now), nil
+	host := peers.NewHost(config.PeersFolder, registry, issuer, time.Now)
+	host.Users = map[string]bool{}
+	for _, u := range config.Users {
+		host.Users[u.Username] = true
+	}
+	return host, nil
 }
 
 // renewPeersDaily renews this server's peer certificates that expire within enroll.RenewBefore: now, and daily
 // until ctx ends. The copies to a peer switch to the new certificate at once.
-func renewPeersDaily(ctx context.Context, config auth.AppConfig, copiers []*copies.Copier) {
+func renewPeersDaily(ctx context.Context, config auth.AppConfig, copiers func() []*copies.Copier) {
 	for {
-		renewPeers(config, copiers, time.Now())
+		renewPeers(config, copiers(), time.Now())
 		select {
 		case <-ctx.Done():
 			return
@@ -459,17 +581,13 @@ func renewPeers(config auth.AppConfig, copiers []*copies.Copier, now time.Time) 
 	for _, c := range copiers {
 		switch t := c.Target.(type) {
 		case *copies.Peer:
-			live[t.Name] = append(live[t.Name], t)
+			live[t.Key] = append(live[t.Key], t)
 		case *copies.Encrypted:
-			live[t.Inner.Name] = append(live[t.Inner.Name], t.Inner)
+			live[t.Inner.Key] = append(live[t.Inner.Key], t.Inner)
 		}
 	}
-	entries, _ := os.ReadDir(config.PeersDir)
-	for _, e := range entries {
-		if !e.IsDir() || strings.Contains(e.Name(), ".removed-") {
-			continue
-		}
-		info, cert, err := loadPeer(config, e.Name())
+	for _, key := range peerKeys(config) {
+		info, cert, err := loadPeer(config, key)
 		if err != nil || info.ExpiresAt.Sub(now) > enroll.RenewBefore {
 			continue
 		}
@@ -478,7 +596,7 @@ func renewPeers(config auth.AppConfig, copiers []*copies.Copier, now time.Time) 
 			log.Printf("Peer %s: renewing the certificate (until %s): %v", info.Name, info.ExpiresAt.Format("2006-01-02"), err)
 			continue
 		}
-		for _, p := range live[info.Name] {
+		for _, p := range live[info.key()] {
 			p.SetCertificate(renewed)
 		}
 		log.Printf("Peer %s: certificate renewed", info.Name)
@@ -507,7 +625,7 @@ func renewPeer(config auth.AppConfig, info peerInfo, cert tls.Certificate) (tls.
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	dir := peerDir(config, info.Name)
+	dir := peerDir(config, info.key())
 	// The old pair is kept until the new is in place, so a stop between the two renames leaves a pair that works.
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
@@ -527,6 +645,6 @@ func renewPeer(config auth.AppConfig, info peerInfo, cert tls.Certificate) (tls.
 			return tls.Certificate{}, err
 		}
 	}
-	updatePeerInfo(config, info.Name, func(i *peerInfo) { i.ExpiresAt = parsed.NotAfter.UTC() })
+	updatePeerInfo(config, info.key(), func(i *peerInfo) { i.ExpiresAt = parsed.NotAfter.UTC() })
 	return tls.X509KeyPair(certPEM, keyPEM)
 }

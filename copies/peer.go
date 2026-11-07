@@ -32,7 +32,9 @@ var ErrQuotaFull = errors.New("the peer's quota is full")
 // User's space there. It lists each year of the copy once and keeps the listing, kept up as it puts and removes, so
 // a pass doesn't ask the host about every file: only this server writes there.
 type Peer struct {
-	Name string // as `journal-server peer add` named it
+	Name string // as `journal-server peer add` named it, or the user who joined a swap
+	// Its folder in peers_dir, relative: Name, or <user>/<name> for a user's own peer (a swap).
+	Key  string
 	URL  string // the host, "https://dana.example:56398"
 	User string
 	// Most bytes a second to send, 0 for no limit.
@@ -65,7 +67,7 @@ func NewPeer(name, url, user string, cert tls.Certificate, fingerprint string) *
 	holder := &certHolder{}
 	holder.Store(&cert)
 	d := &dialer{net: net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}}
-	return &Peer{Name: name, URL: strings.TrimSuffix(url, "/"), User: user, client: peerClient(holder, fingerprint, d),
+	return &Peer{Name: name, Key: name, URL: strings.TrimSuffix(url, "/"), User: user, client: peerClient(holder, fingerprint, d),
 		cert: holder, dialer: d, listed: map[string]listing{}}
 }
 

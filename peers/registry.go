@@ -18,7 +18,11 @@ import (
 // Peer is a server that keeps copies here.
 type Peer struct {
 	// Named by the invite; also its certificate's CN and its folder under peers_folder.
-	Name   string `json:"name"`
+	Name string `json:"name"`
+	// The user of this server whose invite let it in, from their phone (swapInvite): its files are kept in
+	// peers_folder/<owner>/<name>/, only that user sees or revokes it, and its certificate names the owner too.
+	// "" for a peer invited at the command line (peer invite), the server's.
+	Owner  string `json:"owner,omitempty"`
 	Serial string `json:"serial"`
 	// Most bytes its files may take here.
 	Quota     int64      `json:"quota"`
@@ -77,12 +81,15 @@ func (r *Registry) List() []Peer {
 	return list
 }
 
-// Active is the peer of that name whose certificate isn't revoked.
-func (r *Registry) Active(name string) (Peer, bool) {
+// Active is the server's peer of that name (peer invite's) whose certificate isn't revoked.
+func (r *Registry) Active(name string) (Peer, bool) { return r.ActiveOf("", name) }
+
+// ActiveOf is owner's peer of that name whose certificate isn't revoked ("" for the server's).
+func (r *Registry) ActiveOf(owner, name string) (Peer, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, p := range r.peers {
-		if p.Name == name && p.RevokedAt == nil {
+		if p.Owner == owner && p.Name == name && p.RevokedAt == nil {
 			return p, true
 		}
 	}
@@ -102,12 +109,23 @@ func (r *Registry) BySerial(serial string) (Peer, bool) {
 	return Peer{}, false
 }
 
-// renewed gives the active peer named a new certificate; the old one stays usable until the new is used.
-func (r *Registry) renewed(name, serial string, expires time.Time) error {
+// Of is owner's peers, revoked ones too, by name and then oldest first.
+func (r *Registry) Of(owner string) []Peer {
+	var mine []Peer
+	for _, p := range r.List() {
+		if p.Owner == owner {
+			mine = append(mine, p)
+		}
+	}
+	return mine
+}
+
+// renewed gives owner's active peer named a new certificate; the old one stays usable until the new is used.
+func (r *Registry) renewed(owner, name, serial string, expires time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i := range r.peers {
-		if r.peers[i].Name != name || r.peers[i].RevokedAt != nil {
+		if r.peers[i].Owner != owner || r.peers[i].Name != name || r.peers[i].RevokedAt != nil {
 			continue
 		}
 		before := r.peers[i]
@@ -147,12 +165,15 @@ func (r *Registry) add(p Peer) error {
 	return nil
 }
 
-// Revoke refuses the active certificate of the peer named; its files stay.
-func (r *Registry) Revoke(name string, at time.Time) (Peer, error) {
+// Revoke refuses the active certificate of the server's peer named; its files stay.
+func (r *Registry) Revoke(name string, at time.Time) (Peer, error) { return r.RevokeOf("", name, at) }
+
+// RevokeOf refuses the active certificate of owner's peer named; its files stay.
+func (r *Registry) RevokeOf(owner, name string, at time.Time) (Peer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for i := range r.peers {
-		if r.peers[i].Name != name || r.peers[i].RevokedAt != nil {
+		if r.peers[i].Owner != owner || r.peers[i].Name != name || r.peers[i].RevokedAt != nil {
 			continue
 		}
 		r.peers[i].RevokedAt = &at

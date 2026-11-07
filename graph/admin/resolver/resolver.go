@@ -25,7 +25,7 @@ type Resolver struct {
 	// Reads what journal-server index added to the indexes' caches; nil when the server reads files itself.
 	RefreshIndexes func()
 	// The copies of the users' data folders (docs/copies.md), and how a full pass of one is run (and logged).
-	Copies  []*copies.Copier
+	Copies  func() []*copies.Copier
 	RunCopy func(*copies.Copier)
 	// The servers that keep copies here (docs/peers.md); nil without peers_folder.
 	PeerHost *peers.Host
@@ -34,7 +34,10 @@ type Resolver struct {
 // copiersOf are the copies of user, or of every user when user is nil.
 func (r *Resolver) copiersOf(user *string) []*copies.Copier {
 	var found []*copies.Copier
-	for _, c := range r.Copies {
+	if r.Copies == nil {
+		return nil
+	}
+	for _, c := range r.Copies() {
 		if user == nil || c.User == *user {
 			found = append(found, c)
 		}
@@ -89,7 +92,11 @@ func noCopies(user *string) error {
 }
 
 func hostedPeer(h *peers.Host, p peers.Peer) *model.HostedPeer {
-	return &model.HostedPeer{Name: p.Name, Serial: p.Serial, Quota: float64(p.Quota), Used: float64(h.Used(p)),
+	var owner *string
+	if p.Owner != "" {
+		owner = &p.Owner
+	}
+	return &model.HostedPeer{Name: p.Name, Owner: owner, Serial: p.Serial, Quota: float64(p.Quota), Used: float64(h.Used(p)),
 		AddedAt: p.AddedAt, ExpiresAt: p.ExpiresAt, RevokedAt: p.RevokedAt}
 }
 

@@ -65,7 +65,11 @@ func restoreCommand(config auth.AppConfig, args []string, in io.Reader, out io.W
 
 	var src copies.Target
 	if peer != "" {
-		info, cert, err := loadPeer(config, peer)
+		// The user's own peer (a swap from the phone) first, then the server's of that name.
+		info, cert, err := loadPeer(config, peerKey(user, peer))
+		if err != nil {
+			info, cert, err = loadPeer(config, peer)
+		}
 		if err != nil {
 			return err
 		}

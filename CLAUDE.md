@@ -31,7 +31,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/peers.md](docs/peers.md): copies on a friend's server (a peer): `peer invite` / `peer add`, the peer
   certificate (OU `journal-peer`, reaches only `/peer/`), the host's peer API (package `peers`) and `copies.Peer`,
   and finding a peer whose address changes (package `discovery`: server ids, addresses published in the BitTorrent
-  DHT, no relay; package `portmap`: the server opens its port on the router with UPnP or NAT-PMP).
+  DHT, no relay; package `portmap`: the server opens its port on the router with UPnP or NAT-PMP), and swaps set
+  up from the phones (`swap.go`, `graph/schema/swaps.graphql`): each user's own peers, never another user's.
 - [docs/install.md](docs/install.md): the Windows installer (`installer/journal-server.iss`, `scripts/release.sh`),
   `journal-server setup` (config, certificates through package `certs`, downloads through package `bundle`;
   `--move-from` only reads the old server), the JournalServer service and firewall rule (`service_windows.go`),

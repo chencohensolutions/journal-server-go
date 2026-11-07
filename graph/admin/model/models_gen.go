@@ -56,7 +56,9 @@ type EnrollmentCode struct {
 }
 
 type HostedPeer struct {
-	Name   string  `json:"name"`
+	Name string `json:"name"`
+	// The user who invited it from their phone (a swap), whose friend it is; null for one invited here (peer invite).
+	Owner  *string `json:"owner,omitempty"`
 	Serial string  `json:"serial"`
 	Quota  float64 `json:"quota"`
 	// Bytes its files take here now.

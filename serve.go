@@ -76,8 +76,8 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	if err != nil {
 		log.Fatalf("config.json copies: %v", err)
 	}
-	startCopies(running, library, copiers)
-	go renewPeersDaily(running, config, copiers)
+	copySet := startCopies(running, library, copiers)
+	go renewPeersDaily(running, config, copySet.all)
 	host, err := openPeerHost(config, enrollment.Issuer)
 	if err != nil {
 		log.Fatal(err)
@@ -95,7 +95,8 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		go d.publisher.Run(running)
 		go askPeerAddressesEvery(running, config, d)
 	}
-	go serveAdmin(config, enrollment, refreshIndexes, copiers, func(c *copies.Copier) { runCopy(running, c) }, host)
+	swaps := newSwapService(config, library, host, copySet, selfFromDiscovery(config))
+	go serveAdmin(config, enrollment, refreshIndexes, copySet.all, func(c *copies.Copier) { runCopy(running, c) }, host)
 	switch {
 	case ix.daily:
 		go func() { indexDaily(running, daily, library.Users()); close(readerDone) }()
@@ -115,7 +116,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
-		Handler:   newMux(config, enrollment, library, previews, ix, copyRunner{running, copiers}, host),
+		Handler:   newMux(config, enrollment, library, previews, ix, copyRunner{running, copySet}, host, swaps),
 		TLSConfig: tlsConfig,
 		HTTP2:     &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow},
 		// No overall read or write timeout: uploads and video streams take as long as they take.
@@ -213,7 +214,7 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
 // anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
 func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes,
-	copyRuns resolver.CopyRunner, host *peers.Host) *http.ServeMux {
+	copyRuns resolver.CopyRunner, host *peers.Host, swaps resolver.SwapService) *http.ServeMux {
 	registry := enrollment.Registry
 	withUser := func(next http.Handler) http.Handler { return identify(config, registry, false, next) }
 	userStore := func(r *http.Request) *media.Store {
@@ -227,7 +228,7 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 	mux := http.NewServeMux()
 	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix, local, copyRuns)))))
+		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix, local, copyRuns, swaps)))))
 	// The nudity scan, faces and search read a finished upload right away.
 	var wake []func()
 	if ix.reader != nil {
@@ -253,12 +254,12 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 }
 
 func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes, local *localindex.Server,
-	copyRuns resolver.CopyRunner) *handler.Server {
+	copyRuns resolver.CopyRunner, swaps resolver.SwapService) *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Enrollment: enrollment, Library: library, Search: ix.search, Faces: ix.faces,
 			TextInPhotos: ix.ocr, SimilarPhotos: ix.similar, AestheticScores: ix.aesthetic, NudityScan: ix.nudity != nil,
 			Previews: previews, Version: serverVersion(), Local: local, IndexRuns: ix.runs, Copies: copyRuns,
-			Discovery: forPhones},
+			Discovery: forPhones, SwapSetup: swaps},
 		Directives: generated.DirectiveRoot{Public: auth.PassThroughDirective},
 	}))
 	srv.AddTransport(transport.Options{})
