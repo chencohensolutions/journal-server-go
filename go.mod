@@ -10,10 +10,13 @@ require (
 	github.com/anacrolix/torrent v1.48.1-0.20230103142631-c20f73d53e9f
 	github.com/ebitengine/purego v0.11.2
 	github.com/eliben/go-sentencepiece v0.7.0
+	github.com/huin/goupnp v1.3.1
+	github.com/jackpal/gateway v1.2.0
+	github.com/jackpal/go-nat-pmp v1.1.0
 	github.com/klauspost/compress v1.18.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/vektah/gqlparser/v2 v2.5.33
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
@@ -45,6 +48,7 @@ require (
 	github.com/urfave/cli/v3 v3.8.0 // indirect
 	golang.org/x/exp v0.0.0-20221217163422-3c43f8badb15 // indirect
 	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect

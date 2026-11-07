@@ -82,13 +82,16 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	unmapped := make(chan struct{}) // the router's port mapping is removed on stop, before the process ends
 	if d, err := openDiscovery(config); err != nil {
 		log.Printf("Discovery is off: %v", err)
+		close(unmapped)
 	} else {
 		thisServer.Store(d)
 		if host != nil {
 			host.Discovery = d.forPeers
 		}
+		mapPort(running, config, d, unmapped)
 		go d.publisher.Run(running)
 		go askPeerAddressesEvery(running, config, d)
 	}
@@ -108,7 +111,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	default:
 		close(readerDone)
 	}
-	go stopOnSignal(running, stop, readerDone, library, stopped)
+	go stopOnSignal(running, stop, bothDone(readerDone, unmapped), library, stopped)
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
@@ -143,6 +146,13 @@ func stopOnSignal(running context.Context, stop func(), readerDone <-chan struct
 	library.RefreshIndexCachesIfChanged()
 	log.Printf("Stopped")
 	stopped()
+}
+
+// bothDone is closed once a and b are.
+func bothDone(a, b <-chan struct{}) <-chan struct{} {
+	done := make(chan struct{})
+	go func() { <-a; <-b; close(done) }()
+	return done
 }
 
 // exitStopped ends the process once the server has stopped, when it runs from a console.

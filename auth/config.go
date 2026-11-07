@@ -47,6 +47,9 @@ type CopyConfig struct {
 // DiscoveryOn says whether the server uses the DHT: on unless config.json sets "discovery": false.
 func (c AppConfig) DiscoveryOn() bool { return c.Discovery == nil || *c.Discovery }
 
+// PortMappingOn says whether the server asks the router to forward its port: on unless "port_mapping": false.
+func (c AppConfig) PortMappingOn() bool { return c.PortMapping == nil || *c.PortMapping }
+
 type AppConfig struct {
 	TLSCert  string `json:"tls_cert"`
 	TLSKey   string `json:"tls_key"`
@@ -60,6 +63,9 @@ type AppConfig struct {
 	// Publish this server's addresses in the BitTorrent DHT, and look peers up there when the addresses they had
 	// stop answering (docs/peers.md, "Finding the host"). On unless set to false.
 	Discovery *bool `json:"discovery"`
+	// Ask the home router to forward Port to this machine (UPnP IGD or NAT-PMP), renewed while the server runs and
+	// removed when it stops (docs/peers.md, "Opening the router"). On unless set to false.
+	PortMapping *bool `json:"port_mapping"`
 	// Registry of enrolled devices (default devices.json).
 	DevicesFile string `json:"devices_file"`
 	// The peers this server keeps copies on: a folder per peer with its certificate and address, made by

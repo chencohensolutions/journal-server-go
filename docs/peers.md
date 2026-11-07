@@ -87,10 +87,11 @@ can still read the files at the host.
 Since Nov 7, 2026, a peer whose home IP changes, or that has no host name, is followed by its id, as Syncthing finds
 devices: the address in `peer add` is only the first guess. Every connection still checks the host's key against
 the fingerprint, so an address can't make another server pass for the host; a wrong one just fails. Nothing is
-relayed: the host must be reachable at one of its addresses (a port forwarded on its router, or IPv6).
+relayed: the host must be reachable at one of its addresses (its port mapped on the router, by itself or by hand, or
+IPv6).
 
-- **Where a server is.** Each server works out its addresses every 5 minutes (`discovery.Own`): `public_url`, its
-  public IPv4 address at `port` (from a STUN server, `discovery.STUNServers`, or as a peer saw it), its global IPv6
+- **Where a server is.** Each server works out its addresses every 5 minutes (`discovery.Own`): `public_url`, the
+  router's outside address and port when the router forwards one to it (below), its public IPv4 address at `port` (from a STUN server, `discovery.STUNServers`, or as a peer saw it), its global IPv6
   addresses, then its LAN addresses.
 - **Peers tell each other.** `GET /peer/addresses` (with the peer certificate) answers `peers.Discovery`: the host's
   addresses, its DHT key, and the IP the request came from (so a server learns its own public IP). `POST
@@ -110,14 +111,34 @@ relayed: the host must be reachable at one of its addresses (a port forwarded on
 - `"discovery": false` in config.json publishes nothing and looks nothing up; peers still tell each other their
   addresses.
 - `journal-server id` prints this server's id, fingerprint and DHT key. `journal-server discovery` checks it from
-  this network: it prints the addresses it found, publishes them, looks them up again, and looks each peer up.
+  this network: it lists the routers that map ports and their outside addresses, prints the addresses it found,
+  publishes them, looks them up again, and looks each peer up. It only asks the routers: mapping from there would
+  take over the running server's mapping.
 
 - **Phones** read the same through `serverInfo.discovery` (public schema, `graph/schema/discovery.graphql`): the
   fingerprint and id to pin, the DHT key, and the addresses (the apps' side:
   [discovery.md](../../journal-client-kmp/docs/plans/discovery.md)).
 
-What it doesn't do: relay through a third machine (behind carrier-grade NAT the host is found but can't be reached),
-or open the router's port (UPnP, NAT-PMP).
+What it doesn't do: relay through a third machine (behind carrier-grade NAT the host is found but can't be reached).
+
+### Opening the router
+
+Since Nov 7, 2026, the server asks the home router to forward its `port` to this machine (package `portmap`), so
+nobody has to forward it by hand. At start it looks for routers with UPnP IGD (SSDP; WANIPConnection 2 and 1,
+WANPPPConnection) and NAT-PMP on the default gateway at once, and maps TCP `port` on the first that agrees (when
+another machine holds that outside port, the next four are asked for, and the one granted is published), for an
+hour (a router that takes only permanent mappings gets one). It renews at half the lease, looks for a router again
+every 10 minutes while it has none (UPnP turned on, a router restarted), and removes the mapping when the server
+stops, before the process ends.
+
+- The router's outside address and the port it granted go first after `public_url` in the addresses published in
+  the DHT and told to peers and phones.
+- **Carrier-grade NAT.** When the router's outside address isn't public (100.64.0.0/10 or a private range: the
+  provider shares one public IP between many homes, or another router sits in front), the mapping can't help: the
+  log says so once, with what to do (ask the provider for a public IPv4 address, or use IPv6), and that address
+  isn't published.
+- Routers with UPnP turned off and no NAT-PMP: the log says once to forward the port by hand, or to use IPv6.
+- `"port_mapping": false` in config.json turns it off.
 
 ## The peer API
 

@@ -181,9 +181,12 @@ func TestSTUNAnswers(t *testing.T) {
 }
 
 func TestOwnAddresses(t *testing.T) {
-	got := Own("https://journal.example:56398/", "56398", net.IPv4(203, 0, 113, 7))
+	got := Own("https://journal.example:56398/", "", "56398", net.IPv4(203, 0, 113, 7))
 	if len(got) < 2 || got[0] != "https://journal.example:56398" || got[1] != "https://203.0.113.7:56398" {
 		t.Fatalf("own: %v", got)
+	}
+	if mapped := Own("", "https://203.0.113.7:40123", "56398", net.IPv4(203, 0, 113, 7)); mapped[0] != "https://203.0.113.7:40123" || mapped[1] != "https://203.0.113.7:56398" {
+		t.Fatalf("own with the router's mapping: %v", mapped)
 	}
 	if hp := HostPorts(append(got, "not a url", "https://[2001:db8::1]:56398/x")); hp[0] != "journal.example:56398" || hp[len(hp)-1] != "[2001:db8::1]:56398" {
 		t.Fatalf("host ports: %v", hp)
