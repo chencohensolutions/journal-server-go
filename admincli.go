@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/copies"
+	"github.com/journal/server-go/discovery"
 	"github.com/skip2/go-qrcode"
 )
 
@@ -67,15 +71,32 @@ func enrollCodeCommand(config auth.AppConfig, user string) error {
 		return err
 	}
 	code := data.CreateEnrollmentCode
+	// Who this server is and where, so the phone can pin its key from the first connection and find it without a
+	// host name the certificate lists (docs/authentication.md, "Enrolling by id").
+	var found *enrollDiscovery
+	if d, err := openDiscovery(config); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		found = &enrollDiscovery{Fingerprint: d.fingerprint, Addresses: d.publisher.Addresses(ctx)}
+		cancel()
+		if d.key != nil {
+			found.Key = hex.EncodeToString(d.key.Public().(ed25519.PublicKey))
+		}
+		if code.ServerURL == nil && len(found.Addresses) > 0 {
+			code.ServerURL = &found.Addresses[0]
+		}
+	}
 	fmt.Printf("Enrollment code for user %q\n\n", code.User)
 	if code.ServerURL != nil {
 		fmt.Printf("  Server   %s\n", *code.ServerURL)
 	} else {
 		fmt.Printf("  Server   (set public_url in config.json to show the address here)\n")
 	}
+	if found != nil {
+		fmt.Printf("  Id       %s\n", discovery.FormatID(found.Fingerprint))
+	}
 	fmt.Printf("  Code     %s\n", code.Code)
 	fmt.Printf("  Expires  %s (in %d min), single use\n", code.ExpiresAt.Local().Format("15:04"), int(time.Until(code.ExpiresAt).Round(time.Minute).Minutes()))
-	link := enrollmentLink(code.Code, code.ServerURL)
+	link := enrollmentLink(code.Code, code.ServerURL, found)
 	qr, err := qrcode.New(link, qrcode.Medium)
 	if err != nil {
 		return err
@@ -96,12 +117,31 @@ func terminalQR(qr *qrcode.QRCode) string {
 	return b.String()
 }
 
+// enrollDiscovery is who the server is and where, for the enrollment link.
+type enrollDiscovery struct {
+	Fingerprint string   // peers.Fingerprint of the server certificate
+	Key         string   // the DHT key, hex; "" with discovery off
+	Addresses   []string // https://host:port, the most likely first
+}
+
 // enrollmentLink is what the enrollment QR code holds: journal://enroll?code=…&server=…, which opens the
-// app's enrollment on that code. Without a server the app keeps the address it has.
-func enrollmentLink(code string, serverURL *string) string {
+// app's enrollment on that code. Without a server the app keeps the address it has. With found it also carries
+// fingerprint=… (the app checks the server's key against it instead of the host name, from the first
+// connection), key=… (to look the server up in the DHT when no address answers) and address=… for each of the
+// server's addresses.
+func enrollmentLink(code string, serverURL *string, found *enrollDiscovery) string {
 	query := url.Values{"code": {code}}
 	if serverURL != nil {
 		query.Set("server", *serverURL)
+	}
+	if found != nil {
+		query.Set("fingerprint", found.Fingerprint)
+		if found.Key != "" {
+			query.Set("key", found.Key)
+		}
+		for _, a := range found.Addresses[:min(len(found.Addresses), 6)] {
+			query.Add("address", a)
+		}
 	}
 	return "journal://enroll?" + query.Encode()
 }
