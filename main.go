@@ -30,10 +30,14 @@ const usage = `usage:
   journal-server copy [user]          start a full pass of the user's copies now (config.json "copies")
   journal-server copy report [user] [--list]
                                       how each copy is doing, and what it lacks now
+  journal-server id                   this server's id, as peers (and later phones) know it
+  journal-server discovery            check finding servers from this network: publish this server's addresses
+                                      in the BitTorrent DHT and look each peer up there (docs/peers.md)
   journal-server peer invite --name <name> --quota <size>
                                       let another server keep copies here (needs peers_folder): prints its code
   journal-server peer add <name> <url> <code> [--trusted]
-                                      keep copies on another server, with the code its peer invite printed;
+                                      keep copies on another server, with the address and code its peer invite
+                                      printed (the address may change later: the server follows it);
                                       --trusted allows plain copies there (its admin can read them)
   journal-server peers                the servers our copies are on, and those whose copies are here
   journal-server peer revoke <name>   refuse a server that keeps copies here; its files stay
@@ -101,6 +105,16 @@ func main() {
 	switch os.Args[1] {
 	case "peer", "peers":
 		run = runPeerCommand
+	case "id", "discovery":
+		run = func(config auth.AppConfig, command string, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("%s takes no arguments", command)
+			}
+			if command == "id" {
+				return idCommand(config)
+			}
+			return discoveryCommand(config)
+		}
 	case "copy-key":
 		run = func(config auth.AppConfig, _ string, args []string) error {
 			return copyKeyCommand(config, args, os.Stdin, os.Stdout)

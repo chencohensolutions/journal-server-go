@@ -29,7 +29,9 @@ the upload and sync design agreed with the owner. The docs here describe what is
   and as files arrive (`copies` per user in config.json, `Store.OnWrite`), `copy` / `copy report`, and the phone's
   view of its copies (public `copies`, `startCopy`, from each copy's last compare).
 - [docs/peers.md](docs/peers.md): copies on a friend's server (a peer): `peer invite` / `peer add`, the peer
-  certificate (OU `journal-peer`, reaches only `/peer/`), the host's peer API (package `peers`) and `copies.Peer`.
+  certificate (OU `journal-peer`, reaches only `/peer/`), the host's peer API (package `peers`) and `copies.Peer`,
+  and finding a peer whose address changes (package `discovery`: server ids, addresses published in the BitTorrent
+  DHT, no relay).
 - [docs/install.md](docs/install.md): the Windows installer (`installer/journal-server.iss`, `scripts/release.sh`),
   `journal-server setup` (config, certificates through package `certs`, downloads through package `bundle`;
   `--move-from` only reads the old server), the JournalServer service and firewall rule (`service_windows.go`),
@@ -65,6 +67,7 @@ scripts/bump-version.sh minor|major        # version/VERSION; patch goes up by i
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run . copy [user] | copy report [user] [--list]   # start the copies' full pass now; what each copy lacks
+go run . id | discovery                    # this server's id; check publishing and finding peers in the DHT from here
 go run . peer invite --name <n> --quota 2TB | peer add <name> <url> <code> [--trusted] | peers   # swap (docs/peers.md)
 go run . copy-key new <user> (--out <file> [--passphrase] | --from-passphrase)   # the key that encrypts copies on peers
 go run . restore <user> (--from <peer> | --from-folder <dir>) --to <empty dir> [--key <file> | --passphrase] [--as-of <day>]

@@ -37,6 +37,8 @@ type Host struct {
 	codes    *enroll.CodeStore
 	limiter  *enroll.Limiter
 	now      func() time.Time
+	// Where this server can be reached and its DHT key, for peers (GET /peer/addresses); none when nil.
+	Discovery func() Discovery
 
 	mu      sync.Mutex
 	invites map[string]int64 // quota by name, for the codes pending
@@ -121,7 +123,24 @@ func (h *Host) ServeEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("Peer %s added from %s, quota %d bytes", name, r.RemoteAddr, quota)
-	writeJSON(w, Enrolled{Name: name, Quota: quota, Certificate: cert.Raw})
+	writeJSON(w, Enrolled{Name: name, Quota: quota, Certificate: cert.Raw, Discovery: h.discovery(r)})
+}
+
+// discovery is where this server is, for the peer that sent r.
+func (h *Host) discovery(r *http.Request) *Discovery {
+	var d Discovery
+	if h.Discovery != nil {
+		d = h.Discovery()
+	}
+	if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		d.Seen = ip
+	}
+	return &d
+}
+
+// ServeAddresses answers GET /peer/addresses: where this server is now and its DHT key, and the peer's own IP.
+func ServeAddresses(h *Host, p Peer, w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, h.discovery(r))
 }
 
 // peerOf is the request's peer: a peer certificate (enroll.PeerUnit) the registry knows and hasn't revoked.
@@ -591,6 +610,7 @@ func (h *Host) Mount(mux *http.ServeMux) {
 	mux.Handle("POST /peer/enroll", http.HandlerFunc(h.ServeEnroll))
 	mux.Handle("POST /peer/renew", h.Handler(ServeRenew))
 	mux.Handle("GET /peer/space", h.Handler(ServeSpace))
+	mux.Handle("GET /peer/addresses", h.Handler(ServeAddresses))
 	mux.Handle("GET /peer/{user}/list", h.Handler(ServeList))
 	mux.Handle("/peer/{user}/files/{path...}", h.Handler(ServeFile))
 	mux.Handle("GET /peer/{user}/sha256/{path...}", h.Handler(ServeSha256))

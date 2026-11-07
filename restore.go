@@ -69,7 +69,7 @@ func restoreCommand(config auth.AppConfig, args []string, in io.Reader, out io.W
 		if err != nil {
 			return err
 		}
-		src = copies.NewPeer(info.Name, info.URL, user, cert, info.Fingerprint)
+		src = peerFor(config, info, user, cert)
 	} else {
 		if info, err := os.Stat(fromFolder); err != nil || !info.IsDir() {
 			return fmt.Errorf("%s isn't a folder", fromFolder)
