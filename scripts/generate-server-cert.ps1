@@ -18,7 +18,12 @@ param(
     [string]$OpenSSLConfig,
 
     [Parameter(Mandatory=$false)]
-    [string]$OpenSSLPath
+    [string]$OpenSSLPath,
+
+    # Your own names and IP addresses for the certificate, beside localhost and the LAN addresses
+    # below (default: $env:SERVER_NAMES, spaces or commas between them), e.g. "myhome.duckdns.org 10.0.0.5".
+    [Parameter(Mandatory=$false)]
+    [string]$ServerNames = $env:SERVER_NAMES
 )
 
 $ErrorActionPreference = 'Stop'
@@ -116,10 +121,17 @@ subjectAltName = @alt_names
 
 [alt_names]
 DNS.1 = localhost
-DNS.2 = journal.example.com
 IP.1 = 192.168.50.2
 IP.2 = 192.168.50.150
 "@
+    $dnsN = 2; $ipN = 3
+    foreach ($name in ($ServerNames -split '[,\s]+' | Where-Object { $_ })) {
+        if ($name -match '^[0-9.]+$' -or $name.Contains(':')) {
+            $extContent += "`nIP.$ipN = $name"; $ipN++
+        } else {
+            $extContent += "`nDNS.$dnsN = $name"; $dnsN++
+        }
+    }
     Set-Content -Path $extPath -Value $extContent
 
     Write-Host "Signing server certificate with CA..."

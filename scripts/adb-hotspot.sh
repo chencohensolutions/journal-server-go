@@ -2,14 +2,14 @@
 # Connect adb to an Android phone over its hotspot, without looking up the IP.
 #
 # Usage: scripts/adb-hotspot.sh [serial]
-#   serial  USB serial of the phone (default: YOUR_PHONE_SERIAL)
+#   serial  USB serial of the phone (default: $PHONE_SERIAL, else the one phone on USB)
 #
 # Needs the phone plugged in over USB with USB debugging enabled. Reads the
 # phone's hotspot address from its hotspot interface, switches adbd to TCP on
 # port 5555, then connects over the network. Unplug the cable afterwards.
 set -euo pipefail
 
-SERIAL="${1:-YOUR_PHONE_SERIAL}"
+SERIAL="${1:-${PHONE_SERIAL:-}}"
 IFACE="${IFACE:-swlan0}"
 PORT="${PORT:-5555}"
 ADB="${ADB:-$(command -v adb || true)}"
@@ -20,14 +20,16 @@ if [[ ! -x "$ADB" ]]; then
 	exit 1
 fi
 
-if ! "$ADB" -s "$SERIAL" get-state >/dev/null 2>&1; then
+if [[ -n "$SERIAL" ]]; then TARGET=(-s "$SERIAL"); else TARGET=(-d); SERIAL="on USB"; fi
+
+if ! "$ADB" "${TARGET[@]}" get-state >/dev/null 2>&1; then
 	echo "Phone $SERIAL is not connected over USB." >&2
 	exit 1
 fi
 
 # Read the hotspot address before switching to TCP, since the USB transport
 # goes away when adbd restarts.
-IP="$("$ADB" -s "$SERIAL" shell ip -4 addr show "$IFACE" 2>/dev/null \
+IP="$("$ADB" "${TARGET[@]}" shell ip -4 addr show "$IFACE" 2>/dev/null \
 	| tr -d '\r' \
 	| awk '/inet /{split($2, a, "/"); print a[1]; exit}')"
 
@@ -37,7 +39,7 @@ if [[ -z "$IP" ]]; then
 fi
 
 echo "Hotspot address: $IP"
-"$ADB" -s "$SERIAL" tcpip "$PORT"
+"$ADB" "${TARGET[@]}" tcpip "$PORT"
 sleep 2
 
 "$ADB" disconnect "$IP:$PORT" >/dev/null 2>&1 || true

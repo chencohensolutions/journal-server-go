@@ -6,8 +6,9 @@
 #                                        [--ca-key PATH] [--days N] [--openssl PATH]
 #                                        [--openssl-config PATH]
 #
-# The certificate is valid for the names in alt_names below; devices must use one of them as the
-# server address. OpenSSL is taken from --openssl, $OPENSSL_BIN, Homebrew, or PATH (in that order).
+# The certificate is valid for localhost, the LAN addresses below and every name or IP address in
+# $SERVER_NAMES (spaces or commas between them), e.g. SERVER_NAMES="myhome.duckdns.org 10.0.0.5";
+# devices must use one of them as the server address. OpenSSL is taken from --openssl, $OPENSSL_BIN, Homebrew, or PATH (in that order).
 set -euo pipefail
 
 cert_out="certs/server.pem"
@@ -84,10 +85,20 @@ subjectAltName = @alt_names
 
 [alt_names]
 DNS.1 = localhost
-DNS.2 = journal.example.com
 IP.1 = 192.168.50.2
 IP.2 = 192.168.50.150
 EOF
+
+# Your own names and addresses, kept out of the repository: $SERVER_NAMES.
+dns_n=2; ip_n=3
+names="${SERVER_NAMES:-}"
+for name in ${names//,/ }; do
+    if [[ "$name" =~ ^[0-9.]+$ || "$name" == *:* ]]; then
+        echo "IP.$ip_n = $name" >> "$work_dir/server.ext"; ip_n=$((ip_n + 1))
+    else
+        echo "DNS.$dns_n = $name" >> "$work_dir/server.ext"; dns_n=$((dns_n + 1))
+    fi
+done
 
 echo "Signing server certificate with CA..."
 "$openssl_bin" x509 -req -in "$work_dir/server.csr" -CA "$ca_cert" -CAkey "$ca_key" -CAcreateserial \

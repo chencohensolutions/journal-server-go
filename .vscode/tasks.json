@@ -99,18 +99,18 @@
 		{
 			"label": "adb: enable TCP/IP on port 5555 (USB)",
 			"type": "shell",
-			"command": "adb -s YOUR_PHONE_SERIAL tcpip 5555",
+			"command": "adb -d tcpip 5555",
 			"osx": {
-				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb -s YOUR_PHONE_SERIAL tcpip 5555"
+				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb -d tcpip 5555"
 			},
 			"problemMatcher": []
 		},
 		{
 			"label": "adb: hotspot IP (USB)",
 			"type": "shell",
-			"command": "adb -s YOUR_PHONE_SERIAL shell ip -4 addr show swlan0",
+			"command": "adb -d shell ip -4 addr show swlan0",
 			"osx": {
-				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb -s YOUR_PHONE_SERIAL shell ip -4 addr show swlan0"
+				"command": "${env:HOME}/Library/Android/sdk/platform-tools/adb -d shell ip -4 addr show swlan0"
 			},
 			"problemMatcher": []
 		},

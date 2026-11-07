@@ -203,8 +203,10 @@ What iOS insists on (Android is more lenient, but follow the same rules):
   accepted as a trust anchor: the app's TLS handshake fails with `remote error: tls: unknown
   certificate` in the server log. The scripts now add the extensions explicitly and check the result.
 - **The server certificate needs `extendedKeyUsage = serverAuth` and a `subjectAltName` listing every
-  address devices use.** The scripts issue it for `localhost`, `journal.example.com` and
-  `192.168.50.2` and `192.168.50.150`; edit `alt_names` in the script to add more. A device connecting by an address that
+  address devices use.** The scripts issue it for `localhost`, `192.168.50.2` and
+  `192.168.50.150`, and every name or IP address in `SERVER_NAMES` (spaces or commas between them, e.g.
+  `SERVER_NAMES="myhome.duckdns.org"`; `-ServerNames` in the PowerShell script), so your public address stays out
+  of the repository. A device connecting by an address that
   is not listed rejects the server, e.g. `127.0.0.1` (only the name `localhost` is listed). From the
   Android emulator, run `adb reverse tcp:56398 tcp:56398` and use `localhost:56398`.
 
