@@ -67,6 +67,13 @@ Created by `journal-server enroll-code <user>` (`enroll/codes.go`):
   Android app's code screen (Google's code scanner, no camera permission), it fills in both and checks the code,
   landing on "Register this device?". It is drawn white on black whatever the
   terminal's colors; Windows needs Windows Terminal (the old console doesn't draw the colors).
+- **Enrolling by id** (Nov 7, 2026): the command also prints the server's id, and the QR code also holds
+  `fingerprint=` (the sha256 of the server certificate's key), `key=` (its DHT key) and an `address=` for each of
+  the server's addresses (up to 6: `public_url`, the public IPv4 from STUN, IPv6, LAN; docs/peers.md "Finding the
+  host"). Without `public_url`, `server` is the first of them. An app that reads `fingerprint` checks the server's
+  key against it from the first connection instead of the apps' CA and the host name, so an IP address the
+  certificate doesn't list works, and when no address answers it looks the server up in the DHT under `key`.
+  Older apps ignore the new parameters.
 - `enrollmentPreview` looks a code up without using it. `enrollDevice` uses it up atomically (lookup
   and delete under one lock), so two racing requests cannot both use it. A malformed certificate
   request is rejected *before* the code is used, so a client bug does not burn the code.
