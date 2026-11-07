@@ -76,7 +76,7 @@ func (r *mutationResolver) CreatePeerInvite(ctx context.Context, name string, qu
 	if r.PeerHost == nil {
 		return nil, errNoPeersFolder
 	}
-	code, expires, err := r.PeerHost.Invite(name, int64(quota))
+	code, expires, err := r.PeerHost.Invite("", name, int64(quota))
 	if err != nil {
 		return nil, err
 	}

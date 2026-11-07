@@ -54,6 +54,9 @@ type testEnv struct {
 	copiesCtx context.Context
 	// The host of other servers' copies, with peers_folder; nil otherwise.
 	peers *peers.Host
+	// All the copies, config.json's and the swaps' added from the phone.
+	copySet *copySet
+	swaps   *swapService
 }
 
 // fakeFaceModel as config.FaceModel gives a test env face search without the models: the test writes the faces
@@ -173,15 +176,28 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	}
 	copiesCtx, cancelCopies := context.WithCancel(context.Background())
 	t.Cleanup(cancelCopies)
-	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix, copyRunner{copiesCtx, copiers}, host))
+	set := newCopySet(copiesCtx, copiers)
+	self := &testSelf{}
+	swaps := newSwapService(config, library, host, set, self.get)
+	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix, copyRunner{copiesCtx, set}, host, swaps))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}
 	server.StartTLS()
 	t.Cleanup(server.Close)
+	self.fingerprint = peers.Fingerprint(server.Certificate())
+	self.found = peers.Discovery{Addresses: []string{server.URL}}
 	return &testEnv{server: server, dataFolder: config.Users[0].DataFolder, enrollment: enrollment, roots: pool,
 		config: config, search: searcher, faces: facer, reader: reader, refreshIndexes: refreshIndexes, library: library,
-		copiers: copiers, copiesCtx: copiesCtx, peers: host}
+		copiers: copiers, copiesCtx: copiesCtx, peers: host, copySet: set, swaps: swaps}
 }
+
+// testSelf is a test server's fingerprint and address, for the swap links it makes.
+type testSelf struct {
+	fingerprint string
+	found       peers.Discovery
+}
+
+func (s *testSelf) get() (string, peers.Discovery) { return s.fingerprint, s.found }
 
 func (e *testEnv) client(cert *tls.Certificate) *http.Client {
 	tlsConfig := &tls.Config{RootCAs: e.roots}

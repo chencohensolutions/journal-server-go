@@ -24,7 +24,7 @@ import (
 
 // serveAdmin runs the admin GraphQL API on a loopback-only listener. Callers prove they can read
 // the token file, which is rewritten (owner-only) on every start.
-func serveAdmin(config auth.AppConfig, enrollment *enroll.Service, refreshIndexes func(), copiers []*copies.Copier,
+func serveAdmin(config auth.AppConfig, enrollment *enroll.Service, refreshIndexes func(), copiers func() []*copies.Copier,
 	runCopy func(*copies.Copier), host *peers.Host) {
 	if err := requireLoopback(config.AdminAddr); err != nil {
 		log.Fatalf("admin_addr: %v", err)
@@ -44,7 +44,7 @@ func serveAdmin(config auth.AppConfig, enrollment *enroll.Service, refreshIndexe
 }
 
 func newAdminMux(config auth.AppConfig, enrollment *enroll.Service, token string, refreshIndexes func(),
-	copiers []*copies.Copier, runCopy func(*copies.Copier), host *peers.Host) *http.ServeMux {
+	copiers func() []*copies.Copier, runCopy func(*copies.Copier), host *peers.Host) *http.ServeMux {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Config: config, Enrollment: enrollment, Now: time.Now, RefreshIndexes: refreshIndexes,
 			Copies: copiers, RunCopy: runCopy, PeerHost: host},

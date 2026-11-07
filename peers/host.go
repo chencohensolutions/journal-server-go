@@ -29,7 +29,8 @@ const partialDir = ".journal-partial"
 // diskReserve stays free on the host's disk whatever the quotas say.
 const diskReserve = 1 << 30
 
-// Host keeps the peers' files in Folder/<peer>/<user>/.
+// Host keeps the peers' files in Folder/<peer>/<user>/, and those a user invited from their phone in
+// Folder/<owner>/<peer>/<user>/.
 type Host struct {
 	Folder   string
 	Registry *Registry
@@ -39,10 +40,16 @@ type Host struct {
 	now      func() time.Time
 	// Where this server can be reached and its DHT key, for peers (GET /peer/addresses); none when nil.
 	Discovery func() Discovery
+	// The users of this server: a peer invited at the command line may not take one's name, which names the folder
+	// of that user's peers.
+	Users map[string]bool
+	// Offered is told of the swap a peer that a user invited offers back as it enrolls (one scan, both ways): the
+	// invite the peer's server made for this user. Offers are dropped when nil.
+	Offered func(p Peer, offer Offer)
 
 	mu      sync.Mutex
-	invites map[string]int64 // quota by name, for the codes pending
-	used    map[string]int64 // bytes by peer, counted at the first ask
+	invites map[string]int64 // quota by inviteKey, for the codes pending
+	used    map[string]int64 // bytes by peer (inviteKey), counted at the first ask
 	putting map[string]bool  // uploads under way, by partial file
 }
 
@@ -61,23 +68,68 @@ func ValidName(name string) bool {
 	return filepath.IsLocal(name)
 }
 
-// Invite makes a one-time code for a peer named name with quota bytes, valid enroll.CodeTTL. A revoked peer's name
-// may be given again: the new peer then has the old one's files (a server set up again after it was lost).
-func (h *Host) Invite(name string, quota int64) (string, time.Time, error) {
+// ErrNameTaken is an invite for a name an active peer has.
+var ErrNameTaken = errors.New("an active peer has that name")
+
+// inviteKey names owner's peer name in the code store and the maps.
+func inviteKey(owner, name string) string { return owner + "\x00" + name }
+
+// Invite makes a one-time code for a peer named name with quota bytes, valid enroll.CodeTTL, for owner (a user who
+// invites from their phone) or the server (""). A revoked peer's name may be given again: the new peer then has the
+// old one's files (a server set up again after it was lost).
+func (h *Host) Invite(owner, name string, quota int64) (string, time.Time, error) {
 	if !ValidName(name) {
 		return "", time.Time{}, fmt.Errorf("%q can't name a peer: letters, digits and dashes", name)
+	}
+	if owner == "" && h.Users[name] {
+		return "", time.Time{}, fmt.Errorf("%q is a user's name here, which names the folder of their friends' copies: choose another", name)
+	}
+	if owner != "" && !ValidName(owner) {
+		return "", time.Time{}, fmt.Errorf("%q can't own a peer", owner)
 	}
 	if quota <= 0 {
 		return "", time.Time{}, errors.New("a peer needs a quota")
 	}
-	if _, ok := h.Registry.Active(name); ok {
-		return "", time.Time{}, fmt.Errorf("peer %s is already added; revoke it first to invite it again", name)
+	if _, ok := h.Registry.ActiveOf(owner, name); ok {
+		return "", time.Time{}, fmt.Errorf("%w: peer %s is already added; revoke it first to invite it again", ErrNameTaken, name)
+	}
+	key := inviteKey(owner, name)
+	h.mu.Lock()
+	h.invites[key] = quota
+	h.mu.Unlock()
+	code, expires := h.codes.Create(key)
+	return code, expires, nil
+}
+
+// FreeSpace is the free space on the disk of the folder peers' copies go to, less what stays free whatever the
+// quotas say: the most a user may offer a friend.
+func (h *Host) FreeSpace() (int64, error) {
+	disk, err := media.FreeBytes(h.Folder)
+	if err != nil {
+		return 0, err
+	}
+	return max(0, int64(disk)-diskReserve), nil
+}
+
+// Holds says whether p's folder is here (its files not deleted).
+func (h *Host) Holds(p Peer) bool {
+	_, err := os.Stat(h.space(p))
+	return err == nil
+}
+
+// Remove deletes the files of owner's revoked peer name (all its users'), to free the space they took.
+func (h *Host) Remove(owner, name string) error {
+	if _, ok := h.Registry.ActiveOf(owner, name); ok {
+		return fmt.Errorf("peer %s is active: revoke it first", name)
+	}
+	p := Peer{Owner: owner, Name: name}
+	if err := os.RemoveAll(h.space(p)); err != nil {
+		return err
 	}
 	h.mu.Lock()
-	h.invites[name] = quota
+	delete(h.used, inviteKey(owner, name))
 	h.mu.Unlock()
-	code, expires := h.codes.Create(name)
-	return code, expires, nil
+	return nil
 }
 
 // ServeEnroll trades an invite code and a certificate request for the peer's certificate (POST /peer/enroll).
@@ -106,24 +158,35 @@ func (h *Host) ServeEnroll(w http.ResponseWriter, r *http.Request) {
 		answerError(w, http.StatusForbidden, CodeInvalidCode, "the code is wrong, used or expired")
 		return
 	}
-	name := pending.User
+	owner, name, _ := strings.Cut(pending.User, "\x00")
 	h.mu.Lock()
-	quota := h.invites[name]
-	delete(h.invites, name)
+	quota := h.invites[pending.User]
+	delete(h.invites, pending.User)
 	h.mu.Unlock()
-	cert, err := h.issuer.IssuePeer(csr, name)
+	if _, ok := h.Registry.ActiveOf(owner, name); ok {
+		answerError(w, http.StatusForbidden, CodeInvalidCode, "a peer of that name was added meanwhile")
+		return
+	}
+	cert, err := h.issuer.IssuePeer(csr, name, owner)
 	if err != nil {
 		answerError(w, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	peer := Peer{Name: name, Serial: enroll.SerialString(cert.SerialNumber), Quota: quota, AddedAt: h.now().UTC(),
-		ExpiresAt: cert.NotAfter.UTC()}
+	peer := Peer{Name: name, Owner: owner, Serial: enroll.SerialString(cert.SerialNumber), Quota: quota,
+		AddedAt: h.now().UTC(), ExpiresAt: cert.NotAfter.UTC()}
 	if err := h.Registry.add(peer); err != nil {
 		answerError(w, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	log.Printf("Peer %s added from %s, quota %d bytes", name, r.RemoteAddr, quota)
-	writeJSON(w, Enrolled{Name: name, Quota: quota, Certificate: cert.Raw, Discovery: h.discovery(r)})
+	if owner != "" {
+		log.Printf("Peer %s of %s added from %s, quota %d bytes", name, owner, r.RemoteAddr, quota)
+	} else {
+		log.Printf("Peer %s added from %s, quota %d bytes", name, r.RemoteAddr, quota)
+	}
+	if req.Offer != nil && owner != "" && h.Offered != nil {
+		h.Offered(peer, *req.Offer)
+	}
+	writeJSON(w, Enrolled{Name: name, Quota: quota, Certificate: cert.Raw, Discovery: h.discovery(r), Owner: owner})
 }
 
 // discovery is where this server is, for the peer that sent r.
@@ -154,7 +217,7 @@ func (h *Host) peerOf(r *http.Request) (Peer, bool) {
 	}
 	serial := enroll.SerialString(cert.SerialNumber)
 	p, ok := h.Registry.BySerial(serial)
-	if !ok || p.RevokedAt != nil || p.Name != cert.Subject.CommonName {
+	if !ok || p.RevokedAt != nil || p.Name != cert.Subject.CommonName || p.Owner != enroll.PeerOwner(cert) {
 		return Peer{}, false
 	}
 	if p.PreviousSerial != "" && serial == p.Serial {
@@ -177,12 +240,12 @@ func ServeRenew(h *Host, p Peer, w http.ResponseWriter, r *http.Request) {
 		answerError(w, http.StatusBadRequest, CodeInvalidCSR, err.Error())
 		return
 	}
-	cert, err := h.issuer.IssuePeer(csr, p.Name)
+	cert, err := h.issuer.IssuePeer(csr, p.Name, p.Owner)
 	if err != nil {
 		answerError(w, http.StatusInternalServerError, "", err.Error())
 		return
 	}
-	if err := h.Registry.renewed(p.Name, enroll.SerialString(cert.SerialNumber), cert.NotAfter.UTC()); err != nil {
+	if err := h.Registry.renewed(p.Owner, p.Name, enroll.SerialString(cert.SerialNumber), cert.NotAfter.UTC()); err != nil {
 		answerError(w, http.StatusInternalServerError, "", err.Error())
 		return
 	}
@@ -203,8 +266,13 @@ func (h *Host) Handler(serve func(h *Host, p Peer, w http.ResponseWriter, r *htt
 	})
 }
 
-// space is a peer's folder.
-func (h *Host) space(p Peer) string { return filepath.Join(h.Folder, p.Name) }
+// space is a peer's folder: Folder/<name>, or Folder/<owner>/<name> for a user's.
+func (h *Host) space(p Peer) string {
+	if p.Owner != "" {
+		return filepath.Join(h.Folder, p.Owner, p.Name)
+	}
+	return filepath.Join(h.Folder, p.Name)
+}
 
 // local is a user's path in the peer's space, or "" for one that isn't safe.
 func (h *Host) local(p Peer, user, rel string) string {
@@ -223,8 +291,9 @@ func (h *Host) local(p Peer, user, rel string) string {
 
 // Used is the bytes a peer's files take, counted once and then kept up as they change.
 func (h *Host) Used(p Peer) int64 {
+	key := inviteKey(p.Owner, p.Name)
 	h.mu.Lock()
-	used, ok := h.used[p.Name]
+	used, ok := h.used[key]
 	h.mu.Unlock()
 	if ok {
 		return used
@@ -243,17 +312,17 @@ func (h *Host) Used(p Peer) int64 {
 	})
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if used, ok := h.used[p.Name]; ok {
+	if used, ok := h.used[key]; ok {
 		return used
 	}
-	h.used[p.Name] = total
+	h.used[key] = total
 	return total
 }
 
 func (h *Host) addUsed(p Peer, n int64) {
 	h.Used(p)
 	h.mu.Lock()
-	h.used[p.Name] += n
+	h.used[inviteKey(p.Owner, p.Name)] += n
 	h.mu.Unlock()
 }
 

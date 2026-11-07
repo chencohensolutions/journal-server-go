@@ -95,7 +95,12 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 	if r.Discovery != nil {
 		found = r.Discovery()
 	}
+	swap := &model.SwapInfo{CopyKey: model.CopyKeyKindNone}
+	if user := auth.FromContext(ctx); user != nil && r.SwapSetup != nil {
+		swap = r.SwapSetup.Info(user.Username)
+	}
 	return &model.ServerInfo{
+		Swap:              swap,
 		Discovery:         found,
 		API:               APIVersion,
 		Version:           r.Version,

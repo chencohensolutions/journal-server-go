@@ -10,7 +10,7 @@ import (
 // The peer API, shared with the client side in package copies (copies.Peer). Paths are relative to the copy's root,
 // with forward slashes, as in a data folder.
 //
-//	POST   /peer/enroll                       {code, csr} → {name, quota, certificate}; anonymous, rate limited
+//	POST   /peer/enroll                       {code, csr, offer?} → {name, quota, certificate, discovery, owner}; anonymous, rate limited
 //	POST   /peer/renew                        {csr} → {name, quota, certificate}; the old certificate works until the new is used
 //	GET    /peer/space                        Space
 //	GET    /peer/{user}/list?prefix=&recursive=1   one ListEntry per line (JSON)
@@ -51,6 +51,21 @@ const (
 type EnrollRequest struct {
 	Code string `json:"code"`
 	CSR  []byte `json:"csr"` // PKCS#10, DER
+	// The swap offered back, when a user's invite is redeemed by a user of the peer's server who offers to keep a
+	// copy for the inviting user too (one scan, both ways).
+	Offer *Offer `json:"offer,omitempty"`
+}
+
+// Offer is an invite the peer's server made for the host's user, to keep their copy there in return.
+type Offer struct {
+	// The swap link (journal://swap?…), as swapInvite answers it.
+	Link string `json:"link"`
+	// What the peer's user keeps for the host's user, in bytes.
+	Quota int64 `json:"quota"`
+	// The peer's user, who offers: how the host's user may name that server.
+	From string `json:"from"`
+	// When the invite's code expires.
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // Enrolled is the host's answer: the name the invite gave the peer, its quota and its certificate (DER), and how
@@ -60,6 +75,8 @@ type Enrolled struct {
 	Quota       int64      `json:"quota"`
 	Certificate []byte     `json:"certificate"`
 	Discovery   *Discovery `json:"discovery,omitempty"`
+	// The host's user whose invite it was; "" for the server's.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Discovery is how a peer finds the host when the address it has stops answering (docs/peers.md, "Finding the

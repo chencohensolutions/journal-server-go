@@ -116,9 +116,22 @@ func (i *Issuer) Issue(csr *x509.CertificateRequest, user string) (*x509.Certifi
 // certificate reaches only the peer API, never a user's, whatever its CN.
 const PeerUnit = "journal-peer"
 
-// IssuePeer signs a peer's client certificate, named by the invite (CN) and marked PeerUnit.
-func (i *Issuer) IssuePeer(csr *x509.CertificateRequest, name string) (*x509.Certificate, error) {
-	return i.issue(csr, pkix.Name{CommonName: name, OrganizationalUnit: []string{PeerUnit}})
+// IssuePeer signs a peer's client certificate, named by the invite (CN) and marked PeerUnit. A peer a user invited
+// from their phone names that user too, as its O (PeerOwner reads it); owner is "" for the server's peers.
+func (i *Issuer) IssuePeer(csr *x509.CertificateRequest, name, owner string) (*x509.Certificate, error) {
+	subject := pkix.Name{CommonName: name, OrganizationalUnit: []string{PeerUnit}}
+	if owner != "" {
+		subject.Organization = []string{owner}
+	}
+	return i.issue(csr, subject)
+}
+
+// PeerOwner is the user a peer certificate belongs to, "" for one of the server's.
+func PeerOwner(cert *x509.Certificate) string {
+	if len(cert.Subject.Organization) == 1 {
+		return cert.Subject.Organization[0]
+	}
+	return ""
 }
 
 // IsPeer reports whether cert is a peer's certificate.

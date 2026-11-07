@@ -1,0 +1,149 @@
+# --- Swaps set up from the phones (docs/peers.md, "Swaps from the phones") --------------------------------------
+# A user keeps their copy on a friend's journal server, and keeps the friend's copy on theirs, without the command
+# line. Each user sets up their own: a phone sees and changes only its own user's swaps, never another user's
+# friends, copies or invites. Whoever runs the server decides only whether it keeps friends' copies (peers_folder).
+
+extend type Query {
+  "The caller's swaps: their copy at each friend's, each friend's copy kept here for them, and swaps offered back."
+  swaps: Swaps!
+}
+
+extend type Mutation {
+  """
+  Makes an invite for a friend's server to keep its user's copy here, up to quota bytes (at most serverInfo.swap
+  freeSpace), named name among the caller's friends. Its code works once, for 10 minutes. The app shows the link as
+  a QR code and to share.
+  """
+  swapInvite(name: String!, quota: Int64!): SwapInvite!
+  """
+  Keeps the caller's copy at the server that made link (a friend's swapInvite), named name here. The copy is encrypted
+  with the caller's copy key, made from passphrase when they have none yet (it must be strong: 24 characters, or 4
+  words and 20), and checked against it when they have one from a passphrase; plain: true keeps a plain copy, which
+  the friend can read, instead. With offerQuota, the friend is offered a copy here in return, up to that many bytes:
+  their phone shows it in swaps.offers. The first pass starts at once; then daily.
+  """
+  joinSwap(link: String!, name: String!, passphrase: String, plain: Boolean, offerQuota: Int64): JoinSwapResult!
+  "Accepts a swap offered back (swaps.offers): the caller's copy goes to that friend's server, as joinSwap does."
+  acceptSwapOffer(id: ID!, passphrase: String, plain: Boolean): JoinSwapResult!
+  "Declines a swap offered back; the copy kept for that friend here stays."
+  declineSwapOffer(id: ID!): Boolean!
+  """
+  Stops keeping the caller's copy at the friend named: no more passes go there, and this server forgets the friend's
+  server. The files already there stay until the friend removes them.
+  """
+  removeSwap(name: String!): Boolean!
+  """
+  Stops keeping the copy of the caller's friend named here: their server is refused from now on. With deleteFiles,
+  its files are deleted too, to free the space.
+  """
+  revokeSwap(name: String!, deleteFiles: Boolean): Boolean!
+}
+
+extend type ServerInfo {
+  "What this server offers for swaps."
+  swap: SwapInfo!
+}
+
+type SwapInfo {
+  "This server keeps friends' copies (its admin set peers_folder): swapInvite works. Joining a friend's always does."
+  available: Boolean!
+  "Free bytes on the disk friends' copies go to, the most a friend may be offered; null when not available."
+  freeSpace: Int64
+  "The caller's copy key, which encrypts their copies on friends' servers."
+  copyKey: CopyKeyKind!
+}
+
+enum CopyKeyKind {
+  "None yet: joinSwap makes one from the passphrase given."
+  NONE
+  "Made from a passphrase: joinSwap needs the same passphrase again."
+  PASSPHRASE
+  "In a key file made at the server (copy-key new): joinSwap needs no passphrase."
+  KEY_FILE
+}
+
+type SwapInvite {
+  "journal://swap?code=…&id=…&key=…&address=…&from=…, for the friend's app (QR code or link)."
+  link: String!
+  code: String!
+  expiresAt: Time!
+}
+
+union JoinSwapResult = SwapJoined | SwapRefused
+
+type SwapJoined {
+  swap: MySwap!
+  "A copy here was offered back to the friend (offerQuota)."
+  offered: Boolean!
+}
+
+type SwapRefused {
+  reason: SwapRefusal!
+  message: String!
+}
+
+enum SwapRefusal {
+  "Not a swap link."
+  INVALID_LINK
+  "The friend's server refused the code: wrong, used or expired (they make a new one), or too many tries."
+  CODE_REFUSED
+  "The friend's server couldn't be reached at any of its addresses, nor found in the DHT."
+  UNREACHABLE
+  "The link is this server's own."
+  OWN_SERVER
+  "The caller has a friend or a copy of that name already."
+  NAME_TAKEN
+  "An encrypted copy needs the passphrase (copyKey NONE or PASSPHRASE)."
+  NEEDS_PASSPHRASE
+  "Too weak for a new copy key: 24 characters, or 4 words and 20. Six random words are best."
+  WEAK_PASSPHRASE
+  "It isn't the passphrase of the caller's copy key."
+  WRONG_PASSPHRASE
+  "offerQuota is more than this server's free space, or this server keeps no friends' copies."
+  NO_SPACE
+  "The offer isn't there any more (expired after 10 minutes, or answered)."
+  OFFER_GONE
+}
+
+type Swaps {
+  "The caller's copy at friends' servers."
+  mine: [MySwap!]!
+  "The caller's friends whose copies this server keeps."
+  kept: [KeptSwap!]!
+  "Swaps friends offered back when they joined one of the caller's invites, for 10 minutes."
+  offers: [SwapOffer!]!
+}
+
+type MySwap {
+  "The friend's server, as the caller named it; names the copy in copies (folder), startCopy and removeSwap."
+  name: String!
+  "Bytes the friend keeps for the caller."
+  quota: Int64!
+  addedAt: Time!
+  "The copy is encrypted: the friend can't read it."
+  encrypted: Boolean!
+  "How the copy is doing; null when it can't be opened (the log says why)."
+  copy: DataCopy
+}
+
+type KeptSwap {
+  "As the caller named the friend in swapInvite."
+  name: String!
+  quota: Int64!
+  "Bytes the friend's files take here now."
+  used: Int64!
+  addedAt: Time!
+  "When revokeSwap refused the friend's server; its files stay until deleted."
+  revokedAt: Time
+}
+
+type SwapOffer {
+  id: ID!
+  "The friend's user on their server."
+  from: String!
+  "The caller's friend, as named in swapInvite: the name acceptSwapOffer keeps for their server."
+  name: String!
+  "Bytes the friend keeps for the caller."
+  quota: Int64!
+  expiresAt: Time!
+}

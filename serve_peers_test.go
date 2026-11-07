@@ -168,7 +168,7 @@ func TestAnEncryptedCopyOnAFriendsServer(t *testing.T) {
 		c.PeersFolder = t.TempDir()
 		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
 	})
-	code, _, err := dana.peers.Invite("hen-home", 1e9)
+	code, _, err := dana.peers.Invite("", "hen-home", 1e9)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestAServerLostIsRestoredFromAFriend(t *testing.T) {
 	keyFile := filepath.Join(t.TempDir(), "hen.journalkey")
 
 	// Before: hen's server keeps an encrypted copy at dana's.
-	code, _, _ := dana.peers.Invite("hen-home", 1e9)
+	code, _, _ := dana.peers.Invite("", "hen-home", 1e9)
 	old := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
 		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
 	if err := peerAddCommand(old, []string{"dana", dana.server.URL, code + "." + fingerprint}); err != nil {
@@ -285,7 +285,7 @@ func TestAServerLostIsRestoredFromAFriend(t *testing.T) {
 	if _, err := dana.peers.Registry.Revoke("hen-home", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	code, _, _ = dana.peers.Invite("hen-home", 1e9)
+	code, _, _ = dana.peers.Invite("", "hen-home", 1e9)
 	fresh := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
 		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
 	if err := peerAddCommand(fresh, []string{"dana", dana.server.URL, code + "." + fingerprint}); err != nil {
@@ -367,7 +367,7 @@ func TestACopyKeyFromAPassphrase(t *testing.T) {
 		c.PeersFolder = t.TempDir()
 		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
 	})
-	code, _, _ := dana.peers.Invite("hen-home", 1e9)
+	code, _, _ := dana.peers.Invite("", "hen-home", 1e9)
 	config := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), CopyKeysDir: filepath.Join(t.TempDir(), "keys"),
 		Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
 	if err := peerAddCommand(config, []string{"dana", dana.server.URL, code + "." + peers.Fingerprint(dana.server.Certificate())}); err != nil {
@@ -419,7 +419,7 @@ func TestAPeerCertificateIsRenewed(t *testing.T) {
 		c.PeersFolder = t.TempDir()
 		c.PeersFile = filepath.Join(t.TempDir(), "peers.json")
 	})
-	code, _, _ := dana.peers.Invite("hen-home", 1e9)
+	code, _, _ := dana.peers.Invite("", "hen-home", 1e9)
 	config := auth.AppConfig{PeersDir: filepath.Join(t.TempDir(), "peers"), Users: []auth.UserConfig{{Username: "hen"}}}.WithDefaults()
 	if err := peerAddCommand(config, []string{"dana", dana.server.URL, code + "." + peers.Fingerprint(dana.server.Certificate()), "--trusted"}); err != nil {
 		t.Fatal(err)

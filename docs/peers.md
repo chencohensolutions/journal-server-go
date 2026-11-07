@@ -140,15 +140,67 @@ stops, before the process ends.
 - Routers with UPnP turned off and no NAT-PMP: the log says once to forward the port by hand, or to use IPv6.
 - `"port_mapping": false` in config.json turns it off.
 
+## Swaps from the phones
+
+Since Nov 7, 2026, each user sets up their own swap from their phone, with no command line, no config.json edit and
+no restart (the plan: [swap-from-phones.md](../../journal-client-kmp/docs/plans/swap-from-phones.md)). There is no
+admin role: a phone sees and changes only its own user's swaps, never another user's friends, copies or invites.
+Whoever runs the server decides only whether it keeps friends' copies at all (`peers_folder`), and where.
+
+- **A peer belongs to a user.** On the host, a peer a user invited from their phone is that user's: `peers.json`
+  records its `owner`, its files go in `peers_folder/<owner>/<friend>/<their user>/`, and its certificate names the
+  owner as its O beside `CN=<friend>` and `OU=journal-peer` (`enroll.PeerOwner`); `/peer/` checks both against the
+  registry. On the other server, a peer added from a phone is that user's: `peers_dir/<user>/<friend>/`, whose
+  `peer.json` has `user` and the user's `copy` there (`encrypt`, `at`). It is used only for that user's copy, which
+  the server opens at start beside config.json's copies (`newCopiers`), and starts at once when added
+  (`copySet`). Peers invited or added at the command line stay the server's, as before; `peer invite` and
+  `peer add` refuse a user's name, which names the folder of that user's own peers.
+- **`serverInfo.swap`**: `available` (the server has `peers_folder`), `freeSpace` (the free space on its disk, less
+  1 GB: the most a user may offer a friend; there is no cap per user, as the owner chose) and `copyKey` (`NONE`,
+  `PASSPHRASE` or `KEY_FILE`: what joinSwap needs).
+- **`swapInvite(name, quota)`** makes an invite of the caller's (`peers.Host.Invite` with an owner), 10 minutes,
+  once, like every code. It answers the link the app shows as a QR code and shares:
+  `journal://swap?code=…&id=<server id>&key=<DHT key>&address=<https://…>…&from=<user>` (up to 6 addresses, as the
+  enrollment link).
+- **`joinSwap(link, name, passphrase, plain, offerQuota)`** on the friend's server: enrolls with the host as
+  `peer add` does (`enrollPeer`), dialing every address in the link and then the DHT, with the host's key pinned
+  from the link's id; keeps the peer as the caller's; and starts the caller's copy there. **Encrypted by default**,
+  with the caller's copy key: made from the passphrase when they have none (the same Argon2id key as
+  `copy-key new --from-passphrase`, so the passphrase alone restores; it must be 24 characters, or 4 words and 20),
+  checked against it when they have one from a passphrase, or the key file's when it was made at the command line.
+  The passphrase is never kept on either server: the phone keeps it (the apps' plan). `plain: true` keeps a plain
+  copy, which the friend can read, for a friend the user trusts. Refusals are a union with a reason
+  (`SwapRefused`: `INVALID_LINK`, `CODE_REFUSED`, `UNREACHABLE`, `OWN_SERVER`, `NAME_TAKEN`, `NEEDS_PASSPHRASE`,
+  `WEAK_PASSPHRASE`, `WRONG_PASSPHRASE`, `NO_SPACE`, `OFFER_GONE`).
+- **One scan, both ways.** With `offerQuota`, the joining server makes an invite of its own user's for the host's
+  user and sends it in the enrollment (`EnrollRequest.offer`). The host keeps the offer in memory for the code's 10
+  minutes; its user's phone sees it in `swaps.offers` ("hen offers to keep your copy too, 500 GB") and
+  `acceptSwapOffer(id, passphrase, plain)` joins back, under the name the user gave the friend in the invite.
+  `declineSwapOffer` leaves a one-way copy. (Proposed in the plan and built as proposed; the owner hadn't confirmed
+  it yet.)
+- **`swaps`**: `mine` (the caller's copy at each friend's, with its `DataCopy`), `kept` (each friend's copy kept
+  here: quota and bytes used) and `offers`. The copy also shows in `copies` (`kind: PEER`), and `startCopy` /
+  `stopCopy` name it by the friend's name.
+- **`removeSwap(name)`** stops the caller's copy at a friend's and sets the peer's folder aside
+  (`peers_dir/<user>/<friend>.removed-<time>`, as `peer remove` does); the files at the friend's stay.
+  **`revokeSwap(name, deleteFiles)`** refuses the friend's server from now on, and with `deleteFiles` deletes its
+  files here to free the space.
+- `restore <user> --from <friend>` finds the user's own peer of that name first.
+- `journal-server peers` lists the users' own peers too (the admin at the command line sees every user's; a phone
+  never does), and the admin API's `peers` has `owner`.
+
+Not built yet: on the host's phone, **Let a new server take over** a friend's copy (after the friend's PC is lost),
+and **Invite back the friends whose copies are here** (after the host is set up again); restoring from the phone.
+
 ## The peer API
 
-Over mTLS with the peer certificate. The host keeps each peer's files in `peers_folder/<peer>/<user>/`, in the data
-folder's layout. The host only stores files: it makes no previews or indexes from them and never shows them to
+Over mTLS with the peer certificate. The host keeps each peer's files in `peers_folder/<peer>/<user>/` (a user's own peer's in
+`peers_folder/<owner>/<peer>/<user>/`), in the data folder's layout. The host only stores files: it makes no previews or indexes from them and never shows them to
 phones. Defined in `peers/protocol.go`:
 
 | Route | |
 |---|---|
-| `POST /peer/enroll` | `{code, csr}` → `{name, quota, certificate, discovery}`; anonymous, rate limited |
+| `POST /peer/enroll` | `{code, csr, offer?}` → `{name, quota, certificate, discovery, owner}`; anonymous, rate limited |
 | `GET /peer/addresses` | `{addresses, key, seen}`: where the host is, its DHT key, the caller's IP |
 | `GET /peer/space` | `{quota, used, free}`: free is the quota left, or the host's free disk space less 1 GB if smaller |
 | `GET /peer/{user}/list?prefix=media/2026/&recursive=1` | the files under a folder, one JSON line each (path, size, modified); dot names left out |
@@ -277,6 +329,8 @@ journal-server restore hen --from-folder F:\hen-home\hen --to D:\Journal\hen-res
   `discover.go`: the peers' address books, asking peers, `id` and `discovery`. `copies/addresses.go`: the dialer.
 - `enroll.Issuer.IssuePeer` and `enroll.IsPeer`; `identify` in `middleware.go` refuses peer certificates.
 - The admin schema's `peers`, `createPeerInvite` and `revokePeer`.
+- `swap.go`: the swaps from the phones (`swapService`, the links, the offers); `graph/schema/swaps.graphql` and
+  `graph/resolver/swaps.go`. `copy.go`'s `copySet` holds the copies that phones add and remove while the server runs.
 
 ## Not built yet
 

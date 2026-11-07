@@ -75,7 +75,7 @@ func newTestHost(t *testing.T) *testHost {
 // enroll invites a peer named name and enrolls it as peer add does; its certificate.
 func (h *testHost) enroll(t *testing.T, name string, quota int64) tls.Certificate {
 	t.Helper()
-	code, _, err := h.host.Invite(name, quota)
+	code, _, err := h.host.Invite("", name, quota)
 	if err != nil {
 		t.Fatal(err)
 	}

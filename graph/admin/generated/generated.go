@@ -91,6 +91,7 @@ type ComplexityRoot struct {
 		AddedAt   func(childComplexity int) int
 		ExpiresAt func(childComplexity int) int
 		Name      func(childComplexity int) int
+		Owner     func(childComplexity int) int
 		Quota     func(childComplexity int) int
 		RevokedAt func(childComplexity int) int
 		Serial    func(childComplexity int) int
@@ -377,6 +378,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.HostedPeer.Name(childComplexity), true
+	case "HostedPeer.owner":
+		if e.ComplexityRoot.HostedPeer.Owner == nil {
+			break
+		}
+
+		return e.ComplexityRoot.HostedPeer.Owner(childComplexity), true
 	case "HostedPeer.quota":
 		if e.ComplexityRoot.HostedPeer.Quota == nil {
 			break
@@ -665,6 +672,8 @@ type PeerInvite {
 
 type HostedPeer {
   name: String!
+  "The user who invited it from their phone (a swap), whose friend it is; null for one invited here (peer invite)."
+  owner: String
   serial: String!
   quota: Float!
   "Bytes its files take here now."
@@ -844,6 +853,8 @@ func (ec *executionContext) childFields_HostedPeer(ctx context.Context, field gr
 	switch field.Name {
 	case "name":
 		return ec.fieldContext_HostedPeer_name(ctx, field)
+	case "owner":
+		return ec.fieldContext_HostedPeer_owner(ctx, field)
 	case "serial":
 		return ec.fieldContext_HostedPeer_serial(ctx, field)
 	case "quota":
@@ -2024,6 +2035,29 @@ func (ec *executionContext) _HostedPeer_name(ctx context.Context, field graphql.
 	)
 }
 func (ec *executionContext) fieldContext_HostedPeer_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _HostedPeer_owner(ctx context.Context, field graphql.CollectedField, obj *model.HostedPeer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_HostedPeer_owner(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Owner, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_HostedPeer_owner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("HostedPeer", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -4142,6 +4176,8 @@ func (ec *executionContext) _HostedPeer(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "owner":
+			out.Values[i] = ec._HostedPeer_owner(ctx, field, obj)
 		case "serial":
 			out.Values[i] = ec._HostedPeer_serial(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

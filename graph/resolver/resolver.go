@@ -43,6 +43,8 @@ type Resolver struct {
 	Copies CopyRunner
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
 	Discovery func() *model.ServerDiscovery
+	// Sets up each user's swaps from their phone; nil on a server that sets up none.
+	SwapSetup SwapService
 }
 
 // APIVersion is serverInfo.api: raised when a change needs newer apps.

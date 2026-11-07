@@ -139,11 +139,12 @@ func (d *serverDiscovery) forPeers() peers.Discovery {
 // peerInfoMu keeps one rewrite of a peer.json at a time in this process.
 var peerInfoMu sync.Mutex
 
-// updatePeerInfo rewrites peer name's peer.json with change, written to a temp file and renamed.
-func updatePeerInfo(config auth.AppConfig, name string, change func(*peerInfo)) error {
+// updatePeerInfo rewrites the peer.json of the peer with that key (peerInfo.key) with change, written to a temp
+// file and renamed.
+func updatePeerInfo(config auth.AppConfig, key string, change func(*peerInfo)) error {
 	peerInfoMu.Lock()
 	defer peerInfoMu.Unlock()
-	path := filepath.Join(peerDir(config, name), "peer.json")
+	path := filepath.Join(peerDir(config, key), "peer.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -167,12 +168,15 @@ const maxAddresses = 16
 // peerBook is the address book of one peer this server keeps copies on (copies.AddressBook), kept in its peer.json.
 type peerBook struct {
 	config      auth.AppConfig
-	name        string
+	name        string // for the log
+	key         string // its folder in peers_dir (peerInfo.key)
 	fingerprint string
+	// A book for enrolling, before the peer is kept: nothing is written.
+	unsaved bool
 
 	mu         sync.Mutex
 	addrs      []string // host:port, the one that last worked first
-	key        string   // the peer's DHT key, hex
+	dhtKey     string   // the peer's DHT key, hex
 	lookedUpAt time.Time
 }
 
@@ -193,14 +197,21 @@ var lookupEvery = 2 * time.Minute
 func bookFor(config auth.AppConfig, info peerInfo) *peerBook {
 	booksMu.Lock()
 	defer booksMu.Unlock()
-	id := config.PeersDir + "\x00" + info.Name
+	id := config.PeersDir + "\x00" + info.key()
 	if b, ok := books[id]; ok {
 		return b
 	}
-	b := &peerBook{config: config, name: info.Name, fingerprint: info.Fingerprint, key: info.DiscoveryKey,
-		addrs: slices.Clone(info.Addresses)}
+	b := &peerBook{config: config, name: info.Name, key: info.key(), fingerprint: info.Fingerprint,
+		dhtKey: info.DiscoveryKey, addrs: slices.Clone(info.Addresses)}
 	books[id] = b
 	return b
+}
+
+// forgetBook drops the book of a peer removed, so one added again by the same name starts afresh.
+func forgetBook(config auth.AppConfig, info peerInfo) {
+	booksMu.Lock()
+	defer booksMu.Unlock()
+	delete(books, config.PeersDir+"\x00"+info.key())
 }
 
 func (b *peerBook) Addresses() []string {
@@ -219,17 +230,20 @@ func (b *peerBook) Worked(hostport string) {
 	b.addrs = withFirst(b.addrs, hostport)
 	addrs := slices.Clone(b.addrs)
 	b.mu.Unlock()
-	if moved {
+	if moved && !b.unsaved {
 		log.Printf("Peer %s: reached at %s", b.name, hostport)
 	}
-	if err := updatePeerInfo(b.config, b.name, func(i *peerInfo) { i.Addresses = addrs }); err != nil {
+	if b.unsaved {
+		return
+	}
+	if err := updatePeerInfo(b.config, b.key, func(i *peerInfo) { i.Addresses = addrs }); err != nil {
 		log.Printf("Peer %s: keeping its address: %v", b.name, err)
 	}
 }
 
 func (b *peerBook) Discover(ctx context.Context) ([]string, error) {
 	b.mu.Lock()
-	keyHex, recent := b.key, time.Since(b.lookedUpAt) < lookupEvery
+	keyHex, recent := b.dhtKey, time.Since(b.lookedUpAt) < lookupEvery
 	if !recent {
 		b.lookedUpAt = time.Now()
 	}
@@ -269,17 +283,17 @@ func (b *peerBook) learn(found []string, key string) {
 		}
 	}
 	merged = merged[:min(len(merged), maxAddresses)]
-	changed := !slices.Equal(merged, b.addrs) || (key != "" && key != b.key)
+	changed := !slices.Equal(merged, b.addrs) || (key != "" && key != b.dhtKey)
 	b.addrs = merged
 	if key != "" {
-		b.key = key
+		b.dhtKey = key
 	}
-	key = b.key
+	key = b.dhtKey
 	b.mu.Unlock()
-	if !changed {
+	if !changed || b.unsaved {
 		return
 	}
-	if err := updatePeerInfo(b.config, b.name, func(i *peerInfo) { i.Addresses, i.DiscoveryKey = merged, key }); err != nil {
+	if err := updatePeerInfo(b.config, b.key, func(i *peerInfo) { i.Addresses, i.DiscoveryKey = merged, key }); err != nil {
 		log.Printf("Peer %s: keeping its addresses: %v", b.name, err)
 	}
 }
@@ -298,6 +312,7 @@ func withFirst(list []string, first string) []string {
 // its address book.
 func peerFor(config auth.AppConfig, info peerInfo, user string, cert tls.Certificate) *copies.Peer {
 	p := copies.NewPeer(info.Name, info.URL, user, cert, info.Fingerprint)
+	p.Key = info.key()
 	p.SetAddressBook(bookFor(config, info))
 	return p
 }
@@ -305,12 +320,8 @@ func peerFor(config auth.AppConfig, info peerInfo, user string, cert tls.Certifi
 // askPeerAddresses asks each peer this server keeps copies on where it is now (GET /peer/addresses) and keeps the
 // answer in its book; what the peers saw this server's requests come from goes to d's publisher.
 func askPeerAddresses(ctx context.Context, config auth.AppConfig, d *serverDiscovery) {
-	entries, _ := os.ReadDir(config.PeersDir)
-	for _, e := range entries {
-		if !e.IsDir() || strings.Contains(e.Name(), ".removed-") {
-			continue
-		}
-		info, cert, err := loadPeer(config, e.Name())
+	for _, key := range peerKeys(config) {
+		info, cert, err := loadPeer(config, key)
 		if err != nil {
 			continue
 		}
@@ -412,12 +423,8 @@ func discoveryCommand(config auth.AppConfig) error {
 	} else {
 		fmt.Printf("  found again: %s\n", strings.Join(record.Addresses, ", "))
 	}
-	entries, _ := os.ReadDir(config.PeersDir)
-	for _, e := range entries {
-		if !e.IsDir() || strings.Contains(e.Name(), ".removed-") {
-			continue
-		}
-		info, _, err := loadPeer(config, e.Name())
+	for _, pk := range peerKeys(config) {
+		info, _, err := loadPeer(config, pk)
 		if err != nil {
 			continue
 		}
