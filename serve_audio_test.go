@@ -14,7 +14,7 @@ import (
 	"github.com/journal/server-go/media"
 )
 
-// TestSoundRecordingsAreHiddenUntilShown imports a call as scripts/import does: devices don't get it until the user
+// TestSoundRecordingsAreHiddenUntilShown imports a call as journal-server import does: devices don't get it until the user
 // shows calls, then it plays from /media with Range, has no preview, and its contact can be corrected.
 func TestSoundRecordingsAreHiddenUntilShown(t *testing.T) {
 	env := newTestEnv(t)

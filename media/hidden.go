@@ -314,7 +314,7 @@ func (s *Store) hides(v View, item Item) bool {
 	return false
 }
 
-// Collection is one group of files the user can hide: how many files it has, how many of them scripts/import placed,
+// Collection is one group of files the user can hide: how many files it has, how many of them journal-server import placed,
 // and whether it is hidden.
 type Collection struct {
 	Name     string

@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/importcmd"
+	"github.com/journal/server-go/jxlcmd"
 	"github.com/journal/server-go/version"
 )
 
@@ -27,6 +29,11 @@ const usage = `usage:
                                       similar, aesthetic), to bring those up to date first
   journal-server index --user <name>  the same, for one user's files only
   journal-server index --progress     also write how the run is going to stdout, for the server that started it
+  journal-server import --user <name> --imported <folder> --not-imported <folder> [--dry-run] <folder>...
+                                      bring photos, videos and sound recordings from folders on this PC (or
+                                      --cloud gdrive,onedrive) into a user's data folder (journal-server import -h)
+  journal-server jxl --user <name> [--dry-run | --report] [--until HH:MM]
+                                      keep the user's JPEG photos as JPEG XL, losslessly (journal-server jxl -h)
   journal-server copy [user]          start a full pass of the user's copies now (config.json "copies")
   journal-server copy report [user] [--list]
                                       how each copy is doing, and what it lacks now
@@ -52,6 +59,9 @@ const usage = `usage:
   journal-server restore <user> (--from <peer> | --from-folder <folder>) --to <empty folder> [--key <file> | --passphrase] [--as-of <day>]
                                       bring a copy back into an empty folder; an encrypted one needs the key file;
                                       --as-of brings back each sidecar as it was that day
+  journal-server update [--check | --rollback]
+                                      install the latest release now (a release build updates itself daily with
+                                      "update": "auto"), only say whether one is out, or go back to the last one
   journal-server setup ...            make a server folder: config, certificates, downloads (docs/install.md;
                                       journal-server setup --help)
   journal-server service install|uninstall|start|stop
@@ -63,11 +73,24 @@ func main() {
 		fmt.Println("journal-server", version.String())
 		return
 	}
-	// These two run before there is a config.json (setup makes it).
-	if len(os.Args) >= 2 && (os.Args[1] == "setup" || os.Args[1] == "service") {
+	// import and jxl take the folders given from where they were started, before changing to the install folder,
+	// and read config.json themselves (--config).
+	if len(os.Args) >= 2 && (os.Args[1] == "import" || os.Args[1] == "jxl") {
+		if os.Args[1] == "import" {
+			importcmd.Main(os.Args[2:])
+		} else {
+			jxlcmd.Main(os.Args[2:])
+		}
+		return
+	}
+	// These run before there is a config.json (setup makes it), or don't need it.
+	if len(os.Args) >= 2 && (os.Args[1] == "setup" || os.Args[1] == "service" || os.Args[1] == "update") {
 		run := runSetup
-		if os.Args[1] == "service" {
+		switch os.Args[1] {
+		case "service":
 			run = runServiceCommand
+		case "update":
+			run = updateCommand
 		}
 		if err := run(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)

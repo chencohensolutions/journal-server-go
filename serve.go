@@ -44,6 +44,9 @@ const h2ReceiveWindow = 3 << 20
 // serve runs the server until ctx ends, Ctrl+C or a stop from the system, then calls stopped (exitStopped by
 // default) once the reader has finished the file in hand and the index caches are saved.
 func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
+	log.Printf("journal-server %s", version.String())
+	ctx, stopForUpdate := context.WithCancel(ctx)
+	defer stopForUpdate()
 	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
 		log.Fatalf("failed to create TLS config: %v", err)
@@ -113,6 +116,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		close(readerDone)
 	}
 	go stopOnSignal(running, stop, bothDone(readerDone, unmapped), library, stopped)
+	go updateDaily(running, config, func() { restarting.Store(true); stopForUpdate() })
 
 	server := &http.Server{
 		Addr:      ":" + config.Port,
@@ -156,8 +160,14 @@ func bothDone(a, b <-chan struct{}) <-chan struct{} {
 	return done
 }
 
-// exitStopped ends the process once the server has stopped, when it runs from a console.
-func exitStopped() { os.Exit(0) }
+// exitStopped ends the process once the server has stopped, when it runs from a console, or starts the newer
+// program an update installed.
+func exitStopped() {
+	if restarting.Load() {
+		startAgain()
+	}
+	os.Exit(0)
+}
 
 // serverVersion is serverInfo.version: version/VERSION and the build's commit ("1.4.2 (3f2a9c1 2026-10-23)").
 func serverVersion() string { return version.String() }

@@ -15,7 +15,7 @@ import (
 )
 
 // What a sound recording's file says about it: when it started, how long it is, its format, and for a phone call who
-// it was with. Shared by scripts/import and device uploads (Store.finish), so a recording gets the same facts however
+// it was with. Shared by journal-server import and device uploads (Store.finish), so a recording gets the same facts however
 // it arrives. Names are read in the time zone of where the recording was made when that is known (a device's
 // takenAt), else this machine's.
 

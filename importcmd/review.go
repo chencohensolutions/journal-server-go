@@ -1,4 +1,4 @@
-package main
+package importcmd
 
 import (
 	"context"
@@ -118,7 +118,7 @@ func (im *importer) addToReviewInTurn() {
 		log.Printf("%s: %v", im.reviewFile(), err)
 		return
 	}
-	fmt.Printf("%d near-duplicates wait for you. To see them side by side and decide:\n  go run ./scripts/import --user %s --imported \"%s\" --review\n", len(items), im.user, im.importedFolder)
+	fmt.Printf("%d near-duplicates wait for you. To see them side by side and decide:\n  journal-server import --user %s --imported \"%s\" --review\n", len(items), im.user, im.importedFolder)
 }
 
 // review serves a page on this machine showing each near-duplicate next to the photo it looks like, to

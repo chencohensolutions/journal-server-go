@@ -1,4 +1,4 @@
-package main
+package importcmd
 
 import (
 	"context"
@@ -79,7 +79,7 @@ func (im *importer) recheck(ctx context.Context, jobs int) {
 	}
 
 	sort.SliceStable(found, func(i, j int) bool { return found[i].size > found[j].size })
-	decided := map[string]bool{}        // by sha256: off the list
+	decided := map[string]bool{}       // by sha256: off the list
 	updated := map[string]reviewItem{} // by sha256: still waiting, with what the check found
 	for i, r := range found {
 		if ctx.Err() != nil {
@@ -127,7 +127,7 @@ func (im *importer) recheck(ctx context.Context, jobs int) {
 	if im.dryRun {
 		fmt.Printf("%d near-duplicates would still wait for you\n", waiting)
 	} else if waiting > 0 {
-		fmt.Printf("%d near-duplicates still wait for you. To see them side by side and decide:\n  go run ./scripts/import --user %s --imported \"%s\" --review\n", waiting, im.user, im.importedFolder)
+		fmt.Printf("%d near-duplicates still wait for you. To see them side by side and decide:\n  journal-server import --user %s --imported \"%s\" --review\n", waiting, im.user, im.importedFolder)
 	}
 }
 

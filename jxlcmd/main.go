@@ -1,4 +1,4 @@
-// Command jxl keeps a user's JPEG photos as JPEG XL, losslessly (the owner's choice, Oct 28, 2026): each JPEG is
+// Package jxlcmd is `journal-server jxl`: it keeps a user's JPEG photos as JPEG XL, losslessly (the owner's choice, Oct 28, 2026): each JPEG is
 // packed again with libjxl, about 20% smaller, and replaces the JPEG only when the very same JPEG, byte for byte,
 // comes back from it (media.Store.KeepAsJXL). The JPEG XL's sidecar keeps the JPEG's sha256, size, type and name in
 // encodedFrom, so phones and imports holding the JPEG find it, and GET /media/{the JPEG's sha256} still gives the JPEG.
@@ -12,13 +12,13 @@
 // from the sidecars, with --report). --dry-run writes nothing at all: it packs --sample JPEGs in memory, spread over
 // the library, and estimates what a run would save. Run from the server folder:
 //
-//	go run ./scripts/jxl --user hen --dry-run
-//	go run ./scripts/jxl --user hen [--until 07:00] [--limit n] [--jobs n]
-//	go run ./scripts/jxl --user hen --report
+//	journal-server jxl --user hen --dry-run
+//	journal-server jxl --user hen [--until 07:00] [--limit n] [--jobs n]
+//	journal-server jxl --user hen --report
 //
 // The indexes (search, faces, and the others) give each JPEG XL the JPEG's results without reading it again (reading.Carrier):
 // the server does so within a minute, or, with "index": "daily", journal-server index at its next run.
-package main
+package jxlcmd
 
 import (
 	"bufio"
@@ -42,32 +42,34 @@ import (
 	"github.com/journal/server-go/version"
 )
 
-func main() {
-	user := flag.String("user", "", "user whose data folder is converted (from config.json)")
-	dryRun := flag.Bool("dry-run", false, "estimate what a run would save from a sample; writes nothing")
-	sample := flag.Int("sample", 200, "with --dry-run, how many JPEGs are packed to estimate the saving")
-	reportOnly := flag.Bool("report", false, "only report what has been saved so far")
-	jobs := flag.Int("jobs", max(1, runtime.NumCPU()/2), "files packed at once")
-	limit := flag.Int("limit", 0, "convert at most this many files in this run (0: all)")
-	until := flag.String("until", "", "stop at this local time (HH:MM), finishing the files in hand")
-	retry := flag.Bool("retry", false, "try again the JPEGs earlier runs could not keep")
-	configPath := flag.String("config", "config.json", "the server's config file")
-	showVersion := flag.Bool("version", false, "print the version and exit")
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/jxl --user <name> [--dry-run | --report] [--until HH:MM] [--limit n]")
-		flag.PrintDefaults()
+// Main runs `journal-server jxl` with the arguments after it. Its own flags; it may exit the process.
+func Main(args []string) {
+	flags := flag.NewFlagSet("journal-server jxl", flag.ExitOnError)
+	user := flags.String("user", "", "user whose data folder is converted (from config.json)")
+	dryRun := flags.Bool("dry-run", false, "estimate what a run would save from a sample; writes nothing")
+	sample := flags.Int("sample", 200, "with --dry-run, how many JPEGs are packed to estimate the saving")
+	reportOnly := flags.Bool("report", false, "only report what has been saved so far")
+	jobs := flags.Int("jobs", max(1, runtime.NumCPU()/2), "files packed at once")
+	limit := flags.Int("limit", 0, "convert at most this many files in this run (0: all)")
+	until := flags.String("until", "", "stop at this local time (HH:MM), finishing the files in hand")
+	retry := flags.Bool("retry", false, "try again the JPEGs earlier runs could not keep")
+	configPath := flags.String("config", "config.json", "the server's config file")
+	showVersion := flags.Bool("version", false, "print the version and exit")
+	flags.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: journal-server jxl --user <name> [--dry-run | --report] [--until HH:MM] [--limit n]")
+		flags.PrintDefaults()
 	}
-	flag.Parse()
+	flags.Parse(args)
 	if *showVersion {
-		fmt.Println("journal-jxl", version.String())
+		fmt.Println("journal-server", version.String())
 		return
 	}
-	if *user == "" || flag.NArg() != 0 || *jobs < 1 || *sample < 1 {
-		flag.Usage()
+	if *user == "" || flags.NArg() != 0 || *jobs < 1 || *sample < 1 {
+		flags.Usage()
 		os.Exit(2)
 	}
 
-	// Installed as journal-jxl, it may run from any folder (auth.UseInstallFolder).
+	// Installed, journal-server jxl may run from any folder (auth.UseInstallFolder).
 	_, err := auth.UseInstallFolder(*configPath)
 	check(err)
 	config, err := auth.LoadConfig(*configPath)

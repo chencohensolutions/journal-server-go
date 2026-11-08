@@ -1,4 +1,4 @@
-// Command import copies the photos, videos and sound recordings found in folders on the server's disk into a user's data
+// Package importcmd is `journal-server import`: it copies the photos, videos and sound recordings found in folders on the server's disk into a user's data
 // folder, once each: a file whose sha256 the data folder already has (from a device, an earlier run, or
 // another copy found in this run) is not copied again. Every source file it is done with, copied or a
 // duplicate, is then moved to the --imported folder under its original path, so that folder can be
@@ -29,9 +29,9 @@
 // The server may keep running: it and every import take turns at writing to the data folder (media/turns.go),
 // and it sees imported files at once. Run from the server folder:
 //
-//	go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] D:\Backups "E:\Old phone"
-//	go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" --recheck [--dry-run]
-package main
+//	journal-server import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] D:\Backups "E:\Old phone"
+//	journal-server import --user hen --imported D:\Imported --not-imported "D:\Not imported" --recheck [--dry-run]
+package importcmd
 
 import (
 	"context"
@@ -110,11 +110,11 @@ type importer struct {
 	waiting      map[string]int  // sha256s of near-duplicates waiting for review: their index in toReview
 	photos       []photo         // compared for near-duplicates
 	counts       counts
-	notMedia     map[string]int // by extension
-	leftBehind   []string       // report lines: files that stay where they are
-	rejected     []string       // report lines: files moved to the not-imported folder
-	others       []sourceFile   // files that aren't photos or videos, or are hidden: moved with --move-other
-	deleted      []string       // report lines: duplicates deleted with --delete-duplicates
+	notMedia     map[string]int  // by extension
+	leftBehind   []string        // report lines: files that stay where they are
+	rejected     []string        // report lines: files moved to the not-imported folder
+	others       []sourceFile    // files that aren't photos or videos, or are hidden: moved with --move-other
+	deleted      []string        // report lines: duplicates deleted with --delete-duplicates
 	verified     map[string]bool // sha256s whose original in the data folder was hashed again: whether it has those bytes
 	dateNotes    []string
 	near         []nearPair
@@ -153,55 +153,57 @@ type nearPair struct {
 
 type counts struct {
 	imported, duplicates, same, noDate, failed, hidden int
-	importedBytes, duplicateBytes                int64
-	deleted                                      int   // duplicates deleted (--delete-duplicates)
-	emptyFolders                                 int   // folders left empty in the searched folders, deleted
-	deletedBytes                                 int64
-	audio                                        map[string]int // sound recordings imported, by media.AudioCollectionOf
-	encoded                                      int            // WAVs kept as FLAC
+	importedBytes, duplicateBytes                      int64
+	deleted                                            int // duplicates deleted (--delete-duplicates)
+	emptyFolders                                       int // folders left empty in the searched folders, deleted
+	deletedBytes                                       int64
+	audio                                              map[string]int // sound recordings imported, by media.AudioCollectionOf
+	encoded                                            int            // WAVs kept as FLAC
 }
 
-func main() {
-	user := flag.String("user", "", "user whose data folder the files go to (from config.json)")
-	imported := flag.String("imported", "", "folder the source files are moved to once imported (or found to be duplicates)")
-	dryRun := flag.Bool("dry-run", false, "only count what would be imported; nothing is copied or moved")
-	jobs := flag.Int("jobs", 4, "files worked on at once")
-	near := flag.Int("near", 8, "most dHash bits two photos may differ in to be compared as near-duplicates (0–64)")
-	review := flag.Bool("review", false, "show the near-duplicates waiting in the imported folder side by side, to import or skip each")
-	recheck := flag.Bool("recheck", false, "decide again on the near-duplicates waiting for review, with the same-picture check")
-	noBrowser := flag.Bool("no-browser", false, "with --review, only print the page's address")
-	notImported := flag.String("not-imported", "", "folder the files that weren't imported are moved to, by why (required to import)")
-	deleteDups := flag.Bool("delete-duplicates", false, "delete a source file the data folder already has (same sha256, both hashed again first) instead of moving it to the imported folder; nothing in the data folder is ever deleted")
-	moveOther := flag.Bool("move-other", false, "also move files that aren't photos or videos, and hidden ones (.trashed-…), to the not-imported folder")
-	backfill := flag.Bool("backfill-folders", false, "only add the folders of files looked at by earlier runs (from .cache/source-hashes.tsv) to their sidecars")
-	cloud := flag.String("cloud", "", "import from the cloud instead of folders: gdrive, onedrive, or gdrive,onedrive (through rclone; see cloud.go)")
-	temp := flag.String("temp", "", "with --cloud, the folder files are downloaded to before they are imported (emptied as they are)")
-	batchGB := flag.Float64("batch-gb", 20, "with --cloud, about how much is downloaded at a time")
-	rclonePath := flag.String("rclone", "", "with --cloud, the rclone program (found on the PATH or where winget links it when empty)")
-	configPath := flag.String("config", "config.json", "the server's config file")
-	showVersion := flag.Bool("version", false, "print the version and exit")
-	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--move-other] <folder>...")
-		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> --cloud gdrive,onedrive --temp <folder> [--dry-run]")
-		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> --recheck [--dry-run]")
-		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --review")
-		fmt.Fprintln(os.Stderr, "       go run ./scripts/import --user <name> --imported <folder> --backfill-folders <folder>...")
-		flag.PrintDefaults()
+// Main runs `journal-server import` with the arguments after it. Its own flags; it may exit the process.
+func Main(args []string) {
+	flags := flag.NewFlagSet("journal-server import", flag.ExitOnError)
+	user := flags.String("user", "", "user whose data folder the files go to (from config.json)")
+	imported := flags.String("imported", "", "folder the source files are moved to once imported (or found to be duplicates)")
+	dryRun := flags.Bool("dry-run", false, "only count what would be imported; nothing is copied or moved")
+	jobs := flags.Int("jobs", 4, "files worked on at once")
+	near := flags.Int("near", 8, "most dHash bits two photos may differ in to be compared as near-duplicates (0–64)")
+	review := flags.Bool("review", false, "show the near-duplicates waiting in the imported folder side by side, to import or skip each")
+	recheck := flags.Bool("recheck", false, "decide again on the near-duplicates waiting for review, with the same-picture check")
+	noBrowser := flags.Bool("no-browser", false, "with --review, only print the page's address")
+	notImported := flags.String("not-imported", "", "folder the files that weren't imported are moved to, by why (required to import)")
+	deleteDups := flags.Bool("delete-duplicates", false, "delete a source file the data folder already has (same sha256, both hashed again first) instead of moving it to the imported folder; nothing in the data folder is ever deleted")
+	moveOther := flags.Bool("move-other", false, "also move files that aren't photos or videos, and hidden ones (.trashed-…), to the not-imported folder")
+	backfill := flags.Bool("backfill-folders", false, "only add the folders of files looked at by earlier runs (from .cache/source-hashes.tsv) to their sidecars")
+	cloud := flags.String("cloud", "", "import from the cloud instead of folders: gdrive, onedrive, or gdrive,onedrive (through rclone; see cloud.go)")
+	temp := flags.String("temp", "", "with --cloud, the folder files are downloaded to before they are imported (emptied as they are)")
+	batchGB := flags.Float64("batch-gb", 20, "with --cloud, about how much is downloaded at a time")
+	rclonePath := flags.String("rclone", "", "with --cloud, the rclone program (found on the PATH or where winget links it when empty)")
+	configPath := flags.String("config", "config.json", "the server's config file")
+	showVersion := flags.Bool("version", false, "print the version and exit")
+	flags.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: journal-server import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--move-other] <folder>...")
+		fmt.Fprintln(os.Stderr, "       journal-server import --user <name> --imported <folder> --not-imported <folder> --cloud gdrive,onedrive --temp <folder> [--dry-run]")
+		fmt.Fprintln(os.Stderr, "       journal-server import --user <name> --imported <folder> --not-imported <folder> --recheck [--dry-run]")
+		fmt.Fprintln(os.Stderr, "       journal-server import --user <name> --imported <folder> --review")
+		fmt.Fprintln(os.Stderr, "       journal-server import --user <name> --imported <folder> --backfill-folders <folder>...")
+		flags.PrintDefaults()
 	}
-	flag.Parse()
+	flags.Parse(args)
 	if *showVersion {
-		fmt.Println("journal-import", version.String())
+		fmt.Println("journal-server", version.String())
 		return
 	}
-	if *user == "" || *imported == "" || (flag.NArg() == 0) != (*review || *recheck || *cloud != "") || *jobs < 1 ||
+	if *user == "" || *imported == "" || (flags.NArg() == 0) != (*review || *recheck || *cloud != "") || *jobs < 1 ||
 		(*cloud != "") != (*temp != "") || *batchGB <= 0 {
-		flag.Usage()
+		flags.Usage()
 		os.Exit(2)
 	}
 
-	// Installed as journal-import, it may run from any folder: the folders given are taken from here before it
+	// Installed, journal-server import may run from any folder: the folders given are taken from here before it
 	// changes to the folder of its config.json (auth.UseInstallFolder).
-	args := flag.Args()
+	args = flags.Args()
 	for i := range args {
 		args[i] = absolute(args[i])
 	}
@@ -254,7 +256,7 @@ func main() {
 		im.notImported = absolute(*notImported)
 		im.notImportedRun = filepath.Join(im.notImported, started)
 	}
-	roots := make([]string, flag.NArg())
+	roots := make([]string, flags.NArg())
 	for i, root := range args {
 		roots[i] = root
 		if im.excluded(roots[i]) {

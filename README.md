@@ -42,7 +42,7 @@ It is written in Go, with no cgo, and runs on Windows, macOS and Linux. The Andr
   the app can keep them and search without a connection.
 - **JPEG XL, losslessly.** JPEG photos are kept as JPEG XL. Each one is checked to rebuild the original JPEG byte
   for byte before the JPEG is replaced. Phone photos come out about 20% smaller, with nothing lost.
-- **Imports from anywhere.** `scripts/import` brings in photos from folders, Google Drive or OneDrive
+- **Imports from anywhere.** `journal-server import` brings in photos from folders, Google Drive or OneDrive
   (through rclone). It reads dates, GPS and cameras, finds near-duplicates with dHash, and has a
   review page in the browser.
 - **Safe with several processes.** The server, imports and maintenance scripts can share a data folder. Each writer

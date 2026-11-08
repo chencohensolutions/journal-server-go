@@ -44,7 +44,7 @@ func TestKeepAsJXLReplacesTheJPEG(t *testing.T) {
 	if _, err := f.chunk([]byte("an edit of the photo"), 0, 20); err != nil {
 		t.Fatal(err)
 	}
-	other, err := OpenStore(f.root, time.Now) // a second process with the folder open, such as scripts/import
+	other, err := OpenStore(f.root, time.Now) // a second process with the folder open, such as journal-server import
 	if err != nil {
 		t.Fatal(err)
 	}

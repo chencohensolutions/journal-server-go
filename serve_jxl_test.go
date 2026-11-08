@@ -14,7 +14,7 @@ import (
 	"github.com/journal/server-go/media"
 )
 
-// TestAJPEGKeptAsJXLOnAPhone keeps a photo the phone uploaded as JPEG as JPEG XL, as scripts/jxl does overnight: the
+// TestAJPEGKeptAsJXLOnAPhone keeps a photo the phone uploaded as JPEG as JPEG XL, as journal-server jxl does overnight: the
 // phone's feed takes the JPEG back and sends the JPEG XL, which names it, and the JPEG's sha256 still finds it,
 // downloads the very same JPEG, and verifies.
 func TestAJPEGKeptAsJXLOnAPhone(t *testing.T) {

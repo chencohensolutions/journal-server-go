@@ -55,7 +55,7 @@ Set per user in `config.json` as `data_folder`. Users without one can't upload.
   .cache/similar/<model>.vectors            ← DINOv2 vectors, for similar photos and duplicates (indexes.md)
   .cache/aesthetic/<model>.vectors          ← each file's aesthetic score (indexes.md)
   .cache/{nudity,faces,search}/<model>.failed.log  ← files those indexes could not read, one line each
-  .cache/jxl/failed.tsv                     ← JPEGs scripts/jxl could not keep as JPEG XL (JPEG XL, below)
+  .cache/jxl/failed.tsv                     ← JPEGs journal-server jxl could not keep as JPEG XL (JPEG XL, below)
 ```
 
 - The month folder is from `takenAt` in the photo's own local time (the offset the device sent).
@@ -647,7 +647,7 @@ The JPEG XL is the file from then on, under **its own sha256**, beside where the
 - **When**: an uploaded JPEG photo is kept so before it is placed (`Store.keepUploadAsJXL`, its camera read from the
   JPEG first). A phone may send the JPEG XL itself, with the JPEG in `StartUploadInput.encodedFrom` (and its
   `fileName`); the server makes the JPEG again before placing it and answers `409` (`ErrNotTheJPEG`) unless it is
-  byte for byte the JPEG named. The files already there are kept so by `scripts/jxl` (below).
+  byte for byte the JPEG named. The files already there are kept so by `journal-server jxl` (below).
 - **What stays a JPEG**: a JPEG libjxl can't keep (CMYK, arithmetic coding, some unusual encoders, a damaged file),
   one whose JPEG XL wouldn't be smaller, and every JPEG while libjxl isn't loaded. libjxl is found beside the vips
   program (`vips/bin/libjxl.dll` from `scripts/bundle-vips`, Homebrew's `lib/libjxl.dylib`), or at `"libjxl"` in
@@ -664,12 +664,12 @@ The JPEG XL is the file from then on, under **its own sha256**, beside where the
   (`indexItem`). The [copies](copies.md) drop the JPEG too, once the copy's JPEG XL is checked to make it
   byte for byte: only the JPEG XL is kept anywhere.
 
-**The files already there** (`scripts/jxl`), made to run overnight beside the server:
+**The files already there** (`journal-server jxl`), made to run overnight beside the server:
 
 ```bash
-go run ./scripts/jxl --user hen --dry-run              # packs 200 JPEGs in memory: what a run would save, and how long
-go run ./scripts/jxl --user hen --until 07:00          # keeps them as JPEG XL until 07:00; run again to continue
-go run ./scripts/jxl --user hen --report               # what has been saved so far, from the sidecars
+go run . jxl --user hen --dry-run              # packs 200 JPEGs in memory: what a run would save, and how long
+go run . jxl --user hen --until 07:00          # keeps them as JPEG XL until 07:00; run again to continue
+go run . jxl --user hen --report               # what has been saved so far, from the sidecars
 ```
 
 It packs `--jobs` files at once (half the CPUs), one turn each to place them, oldest month first, and says every 10
@@ -766,13 +766,13 @@ its commits.
 
 ## Importing files already on the server's disk
 
-`scripts/import` copies photos, videos and sound recordings from folders on the server's disk (old phone backups)
+`journal-server import` copies photos, videos and sound recordings from folders on the server's disk (old phone backups)
 into a user's data folder, once each. **The server may keep running**: phones keep backing up, and imported files reach them at
 once (see "Several processes on one data folder"). Run from the server folder; try `--dry-run` first (it only
 counts):
 
 ```
-go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] [--move-other] D:\Backups "E:\Old phone"
+go run . import --user hen --imported D:\Imported --not-imported "D:\Not imported" [--dry-run] [--move-other] D:\Backups "E:\Old phone"
 ```
 
 - Each folder given is searched at any depth, except hidden folders (`.thumbnails`), `$RECYCLE.BIN`,
@@ -882,7 +882,7 @@ go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not
 ### Importing from Google Drive and OneDrive
 
 ```
-go run ./scripts/import --user hen --imported D:\Imported --not-imported "D:\Not imported" --cloud gdrive,onedrive --temp D:\CloudTemp [--dry-run] [--batch-gb 20]
+go run . import --user hen --imported D:\Imported --not-imported "D:\Not imported" --cloud gdrive,onedrive --temp D:\CloudTemp [--dry-run] [--batch-gb 20]
 ```
 
 Through **rclone** (a separate program: `winget install Rclone.Rclone`, `brew install rclone`). The first time for
@@ -906,7 +906,7 @@ each service, rclone opens the browser to sign in, with **read-only** access (re
 
 ## Several processes on one data folder
 
-The server, `scripts/import` (one or more at once), `scripts/scan-nudity`, `scripts/read-cameras` and `scripts/fix-sources` may all have the same data folder
+The server, `journal-server import` (one or more at once), `scripts/scan-nudity`, `scripts/read-cameras` and `scripts/fix-sources` may all have the same data folder
 open. Each keeps the index in memory, so they **take turns** at the few steps that change it (`media/turns.go`):
 placing a file (a finished upload, an import), and rewriting a sidecar (folders, a scan's answer, a corrected source).
 

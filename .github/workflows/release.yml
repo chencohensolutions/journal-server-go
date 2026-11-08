@@ -1,0 +1,83 @@
+# Publishes a release (docs/install.md, "Releases"): journal-server for Windows, Linux and macOS, the Windows
+# installer, and SHA256SUMS signed with the release key, which servers check before they update themselves.
+#
+# Start it from the Actions tab ("Run workflow"), which releases version/VERSION as tag v<version>, or by pushing
+# that tag. Needs the repository secret RELEASE_SIGNING_KEY (go run ./scripts/sign-release new-key <file>).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Version
+        id: version
+        run: |
+          version="$(tr -d ' \r\n' < version/VERSION)"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match version/VERSION ($version)" >&2
+            exit 1
+          fi
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "Release v$version exists already: raise version/VERSION first (scripts/bump-version.sh)" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          for target in windows/amd64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}" arch="${target#*/}"
+            out="dist/journal-server-$os-$arch"
+            [ "$os" = windows ] && out="$out.exe"
+            echo "Building $out"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X github.com/journal/server-go/version.Build=release" -o "$out" .
+          done
+
+      - name: Installer
+        run: |
+          mkdir -p dist/installer
+          cp dist/journal-server-windows-amd64.exe dist/installer/journal-server.exe
+          docker run --rm -v "$PWD:/work" -w /work amake/innosetup:innosetup6 \
+            "/DAppVersion=${{ steps.version.outputs.version }}" "/DDist=..\dist\installer" \
+            installer/journal-server.iss
+          mv dist/installer/journal-server-setup-*.exe dist/
+          rm -r dist/installer
+
+      - name: Sign
+        run: |
+          cd dist
+          { echo "# journal-server ${{ steps.version.outputs.version }}"; sha256sum -- *; } > SHA256SUMS
+          cd ..
+          go run ./scripts/sign-release sign dist/SHA256SUMS
+          go run ./scripts/sign-release verify dist/SHA256SUMS
+          cat dist/SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+
+      - name: Publish
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" dist/* \
+            --target "$GITHUB_SHA" --title "journal-server ${{ steps.version.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
