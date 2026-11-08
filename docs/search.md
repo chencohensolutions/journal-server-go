@@ -143,6 +143,16 @@ device may see is listed or sent, as everywhere else.
   doesn't carry it. `scripts/bundle-onnx` and `journal-server setup` download it into `models/phone/` (version 1 from
   Google's MediaPipe model storage, pinned by its sha256); `"phone_models"` in config.json names another folder. A
   server without it lists none, and the app finds near-duplicates by dHash alone.
+- **Downloading from where the models came from.** Each model file a phone may download (`phoneModels` and
+  `localIndexes`' models) can carry a `source`: the link bundle-onnx downloaded it from, pinned so it doesn't
+  change (Hugging Face at the repository's commit for SigLIP's text half and tokenizer, Google's MediaPipe storage at
+  version 1 for the photo embedder). bundle-onnx writes them in `.sources.json` in each model folder, and the server
+  offers a source only while the file's sha256 is still the one written there. The phone downloads from the source
+  first, so 290 MB per phone doesn't go out through the server's home upload, checks it against the server's
+  `sha256` (the phone's text half must be exactly the server's, or its searches won't match the index), and falls
+  back to `url` here. The phone then contacts Hugging Face or Google once: they see its address and which model it
+  took, nothing of the photos (the owner's choice, Nov 8, 2026). A model downloaded before then has no source until
+  bundle-onnx runs again.
 - **Doing what the server does.** A phone's search must give the server's answers. `go run ./scripts/local-fixtures
   --out <folder>` writes made-up cases with the server's answers: the tokens and vectors of queries (fp32 and 8-bit),
   text in photos' words, matches and order, grouping into sets and moments, and the thresholds. The apps test against

@@ -496,6 +496,10 @@ type ModelFile struct {
 	Sha256    string `json:"sha256"`
 	// Its path on this server, to GET with Range: /models/{index}/{name} (/models/phone/{name} for phoneModels).
 	URL string `json:"url"`
+	// Where the phone may download the same file first, to spare the server's upload: the pinned Hugging Face or Google
+	// link it came from. The phone checks what it gets against sha256 and downloads from url when that fails. Null when
+	// the server doesn't know (a model downloaded before Nov 8, 2026: run bundle-onnx again).
+	Source *string `json:"source,omitempty"`
 }
 
 type Mutation struct {

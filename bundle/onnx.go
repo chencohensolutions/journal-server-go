@@ -3,6 +3,7 @@ package bundle
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/binary"
@@ -196,6 +197,9 @@ func ONNX(ctx context.Context, o ONNXOptions) (searchModel string, err error) {
 	if err := download(ctx, phoneEmbedderURL, phone, phoneEmbedderSha256); err != nil {
 		return "", err
 	}
+	if err := writeSources(filepath.Dir(phone), map[string]Source{PhoneEmbedder: {URL: phoneEmbedderURL, Sha256: phoneEmbedderSha256}}); err != nil {
+		return "", err
+	}
 	Logf("The phones' photo embedder in %s", phone)
 	return out, nil
 }
@@ -322,9 +326,12 @@ func bundleRuntime(ctx context.Context, dir string) error {
 // bundleModel downloads the vision and text models of repo (in the precision of suffix), the tokenizer and the
 // image settings into out, under the names the server looks for.
 func bundleModel(ctx context.Context, repo, suffix, out string) error {
-	hashes, err := repoHashes(ctx, repo)
+	hashes, commit, err := repoFiles(ctx, repo)
 	if err != nil {
 		return err
+	}
+	if commit == "" {
+		commit = "main"
 	}
 	files := map[string]string{ // in the repository → in out
 		"tokenizer.model":          "tokenizer.model",
@@ -344,14 +351,22 @@ func bundleModel(ctx context.Context, repo, suffix, out string) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
 	}
+	sources := map[string]Source{}
 	for from, to := range files {
 		hash, ok := hashes[from]
 		if !ok {
 			return fmt.Errorf("%s has no %s", repo, from)
 		}
-		if err := download(ctx, "https://huggingface.co/"+repo+"/resolve/main/"+from, filepath.Join(out, to), hash); err != nil {
+		url := "https://huggingface.co/" + repo + "/resolve/" + commit + "/" + from
+		if err := download(ctx, url, filepath.Join(out, to), hash); err != nil {
 			return err
 		}
+		if sum, err := fileSha256(filepath.Join(out, to)); err == nil {
+			sources[to] = Source{URL: url, Sha256: sum}
+		}
+	}
+	if err := writeSources(out, sources); err != nil {
+		return err
 	}
 	Logf("%s in %s", repo, out)
 	return nil
@@ -440,14 +455,21 @@ func writeLAIONHead(pth, out string) error {
 // repoHashes is the files of the Hugging Face repository repo, with the sha256 of each kept in LFS ("" for the
 // others).
 func repoHashes(ctx context.Context, repo string) (map[string]string, error) {
+	hashes, _, err := repoFiles(ctx, repo)
+	return hashes, err
+}
+
+// repoFiles is repoHashes and the commit the repository's main is at now, to download from links that don't change.
+func repoFiles(ctx context.Context, repo string) (map[string]string, string, error) {
 	var info struct {
+		SHA      string `json:"sha"`
 		Siblings []struct {
 			Name string `json:"rfilename"`
 			LFS  *struct{ Sha256 string }
 		}
 	}
 	if err := getJSON(ctx, "https://huggingface.co/api/models/"+repo+"?blobs=true", &info); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	hashes := map[string]string{}
 	for _, s := range info.Siblings {
@@ -456,5 +478,32 @@ func repoHashes(ctx context.Context, repo string) (map[string]string, error) {
 			hashes[s.Name] = s.LFS.Sha256
 		}
 	}
-	return hashes, nil
+	return hashes, info.SHA, nil
+}
+
+// SourcesFile, in a model folder, says where each file there was downloaded from, so phones may download the same
+// file from there first (phoneModels, localIndexes' models): {"<name>": {"url": "…", "sha256": "…"}}. The server
+// offers a source only for a file whose sha256 is still the one written here.
+const SourcesFile = ".sources.json"
+
+// Source is where a file in a model folder came from.
+type Source struct {
+	URL    string `json:"url"`
+	Sha256 string `json:"sha256"`
+}
+
+// writeSources adds sources to dir's SourcesFile, keeping the others it names.
+func writeSources(dir string, sources map[string]Source) error {
+	all := map[string]Source{}
+	if data, err := os.ReadFile(filepath.Join(dir, SourcesFile)); err == nil {
+		json.Unmarshal(data, &all)
+	}
+	for name, s := range sources {
+		all[name] = s
+	}
+	data, err := json.MarshalIndent(all, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFile(filepath.Join(dir, SourcesFile), bytes.NewReader(data))
 }

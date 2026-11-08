@@ -23,8 +23,7 @@ func (r *queryResolver) LocalIndexes(ctx context.Context) ([]*model.LocalIndex, 
 	for _, x := range indexes {
 		files := make([]*model.ModelFile, 0, len(x.Models))
 		for _, f := range x.Models {
-			files = append(files, &model.ModelFile{Name: f.Name, Precision: f.Precision, Bytes: f.Bytes,
-				Sha256: f.Sha256, URL: f.URL})
+			files = append(files, modelFileOf(f))
 		}
 		out = append(out, &model.LocalIndex{Name: x.Name, Model: x.Model, Format: x.Format, Dim: x.Dim,
 			Files: x.Files, Bytes: x.Bytes, Models: files})
@@ -36,7 +35,7 @@ func (r *queryResolver) LocalIndexes(ctx context.Context) ([]*model.LocalIndex, 
 func (r *queryResolver) PhoneModels(ctx context.Context) ([]*model.ModelFile, error) {
 	out := []*model.ModelFile{}
 	for _, f := range r.Local.PhoneModels() {
-		out = append(out, &model.ModelFile{Name: f.Name, Precision: f.Precision, Bytes: f.Bytes, Sha256: f.Sha256, URL: f.URL})
+		out = append(out, modelFileOf(f))
 	}
 	return out, nil
 }
