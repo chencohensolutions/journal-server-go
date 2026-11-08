@@ -132,6 +132,9 @@ type AppConfig struct {
 	// Folder of CLIP ViT-L/14 and LAION's head for aesthetic scores, made by scripts/bundle-onnx;
 	// models/clip-vit-large-patch14-laion when empty. Off when the folder isn't there.
 	AestheticModel string `json:"aesthetic_model"`
+	// Folder of the models phones run by themselves and download from here (phoneModels), made by
+	// scripts/bundle-onnx; models/phone when empty. A file that isn't there isn't offered.
+	PhoneModels string `json:"phone_models"`
 	// Path of the ONNX Runtime library, which runs the search, face and nudity models; the one in ./onnxruntime (scripts/bundle-onnx)
 	// or Homebrew's when empty.
 	OnnxRuntime string `json:"onnxruntime"`
@@ -153,6 +156,7 @@ const (
 	DefaultSimilarModel   = "models/dinov2-small"
 	DefaultOCRModel       = "models/paddleocr-hebrew"
 	DefaultAestheticModel = "models/clip-vit-large-patch14-laion"
+	DefaultPhoneModels    = "models/phone"
 	IndexInServer         = "server"
 	IndexDaily            = "daily"
 	UpdateAuto            = "auto"
@@ -249,6 +253,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.AestheticModel == "" {
 		c.AestheticModel = DefaultAestheticModel
+	}
+	if c.PhoneModels == "" {
+		c.PhoneModels = DefaultPhoneModels
 	}
 	if c.Index == "" {
 		c.Index = IndexInServer

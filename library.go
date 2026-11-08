@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/journal/server-go/bundle"
 	"log"
 	"os"
 	"path/filepath"
@@ -382,6 +383,9 @@ func (ix indexes) refresh() {
 	debug.FreeOSMemory()
 }
 
+// phoneModels are the files phones run by themselves and download from here (bundle.PhoneModels downloads them).
+var phoneModels = []localindex.ModelFileSpec{{Name: bundle.PhoneEmbedder}}
+
 // newLocal is what phones may keep of the indexes that are on: each one's cache, the people of the face index, and
 // the files a phone runs text search with (SigLIP's text half, fp32 or q8, and its tokenizer).
 func newLocal(config auth.AppConfig, library *media.Library, ix indexes) *localindex.Server {
@@ -409,7 +413,7 @@ func newLocal(config auth.AppConfig, library *media.Library, ix indexes) *locali
 	if ix.aesthetic != nil {
 		sources = append(sources, localindex.Source{Name: "aesthetic", Format: localindex.FormatVectors, Cache: ix.aesthetic})
 	}
-	return localindex.New(library, people, sources...)
+	return localindex.NewWithPhoneModels(library, people, config.PhoneModels, phoneModels, sources...)
 }
 
 // close closes the indexes' cache files.

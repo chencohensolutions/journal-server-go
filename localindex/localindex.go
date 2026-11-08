@@ -62,10 +62,23 @@ type Server struct {
 	people Members
 }
 
+// PhoneIndex is the name the models phones run by themselves are served under: /models/phone/{name}.
+const PhoneIndex = "phone"
+
 // New is a server of sources and, when people isn't nil, the people of the face index. It hashes the model files in
 // the background (Manifest lists each once it is hashed).
 func New(library *media.Library, people Members, sources ...Source) *Server {
+	return NewWithPhoneModels(library, people, "", nil, sources...)
+}
+
+// NewWithPhoneModels is New that also offers phone, files in phoneFolder that phones run by themselves, not as part
+// of an index the server keeps (the photo embedder the Android app finds near-duplicates with). PhoneModels lists
+// them once hashed.
+func NewWithPhoneModels(library *media.Library, people Members, phoneFolder string, phone []ModelFileSpec, sources ...Source) *Server {
 	s := &Server{library: library, sources: map[string]*Source{}, people: people, models: newModelFiles()}
+	for _, f := range phone {
+		s.models.add(PhoneIndex, phoneFolder, f)
+	}
 	for _, src := range sources {
 		s.sources[src.Name] = &src
 		s.order = append(s.order, src.Name)
@@ -75,6 +88,14 @@ func New(library *media.Library, people Members, sources ...Source) *Server {
 	}
 	go s.models.hashAll()
 	return s
+}
+
+// PhoneModels is the model files phones run by themselves whose sha256 is known; none on a nil server.
+func (s *Server) PhoneModels() []ModelFile {
+	if s == nil {
+		return nil
+	}
+	return s.models.of(PhoneIndex)
 }
 
 // On reports whether any index can be kept on a phone.

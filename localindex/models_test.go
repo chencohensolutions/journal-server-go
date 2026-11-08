@@ -67,3 +67,39 @@ func TestModelFilesDownloadWithRange(t *testing.T) {
 		}
 	}
 }
+
+// The models phones run by themselves are offered under /models/phone/ once hashed, even with no index to keep.
+func TestPhoneModelsAreOfferedWithoutAnIndex(t *testing.T) {
+	folder := t.TempDir()
+	data := []byte("a photo embedder, made up")
+	os.WriteFile(filepath.Join(folder, "embedder.tflite"), data, 0o644)
+	s := NewWithPhoneModels(nil, nil, folder, []ModelFileSpec{{Name: "embedder.tflite"}, {Name: "missing.tflite"}})
+	if s.On() {
+		t.Error("a server with no index says phones may keep one")
+	}
+	var files []ModelFile
+	for deadline := time.Now().Add(5 * time.Second); len(files) == 0 && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		files = s.PhoneModels()
+	}
+	sum := sha256.Sum256(data)
+	if len(files) != 1 || files[0].URL != "/models/phone/embedder.tflite" || files[0].Sha256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("listed: %+v, want only the file that is there", files)
+	}
+	if got := (*Server)(nil).PhoneModels(); got != nil {
+		t.Errorf("a nil server: %+v", got)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /models/{index}/{name}", s.ServeModel)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	resp, err := http.Get(server.URL + files[0].URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != string(data) {
+		t.Fatalf("download: %d %q", resp.StatusCode, body)
+	}
+}

@@ -52,6 +52,15 @@ var faceModels = [][2]string{
 	{"opencv/face_recognition_sface", "face_recognition_sface_2021dec.onnx"},
 }
 
+// The models phones run by themselves and download from the server (phoneModels), into ModelsDir/phone: MediaPipe's
+// image embedder (MobileNet V3 large, Apache 2.0), which the Android app finds near-duplicates with. Version 1 is
+// pinned by its sha256, so a new upload at Google's doesn't change what phones get.
+const (
+	PhoneEmbedder       = "mobilenet_v3_large.tflite"
+	phoneEmbedderURL    = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_large/float32/1/mobilenet_v3_large.tflite"
+	phoneEmbedderSha256 = "11af3c560dfeed7737cb4c03c23bf52a8403020784192d4dea0b74862a12828d"
+)
+
 // ONNXOptions says what ONNX downloads, and where.
 type ONNXOptions struct {
 	RuntimeDir string // folder for the ONNX Runtime library (replaced); "onnxruntime" when empty
@@ -83,7 +92,9 @@ func AllIndexes() ONNXOptions {
 //   - CLIP ViT-L/14's vision half (OpenAI, MIT; 8-bit, from Xenova) and LAION's aesthetic predictor (the
 //     sac+logos+ava1 linear head of christophschuhmann/improved-aesthetic-predictor, Apache 2.0), for aesthetic
 //     scores, into ModelsDir/clip-vit-large-patch14-laion. The head's five linear layers (no activation between
-//     them) are multiplied out here into one: 768 weights and a bias, kept as laion-head.json.
+//     them) are multiplied out here into one: 768 weights and a bias, kept as laion-head.json;
+//   - the models phones run by themselves and download from the server, into ModelsDir/phone: MediaPipe's image
+//     embedder (11 MB, from Google's MediaPipe model storage), so the app doesn't carry it.
 //
 // It returns the search model's folder, for "search_model" in config.json (the default folder needs no entry).
 func ONNX(ctx context.Context, o ONNXOptions) (searchModel string, err error) {
@@ -181,6 +192,11 @@ func ONNX(ctx context.Context, o ONNXOptions) (searchModel string, err error) {
 		}
 		Logf("LAION's aesthetic head in %s", filepath.Join(aestheticOut, "laion-head.json"))
 	}
+	phone := filepath.Join(o.ModelsDir, "phone", PhoneEmbedder)
+	if err := download(ctx, phoneEmbedderURL, phone, phoneEmbedderSha256); err != nil {
+		return "", err
+	}
+	Logf("The phones' photo embedder in %s", phone)
 	return out, nil
 }
 

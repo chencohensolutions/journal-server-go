@@ -1,6 +1,7 @@
 // Command bundle-onnx downloads what text search, face search and the other indexes need (run from the server
 // folder: go run ./scripts/bundle-onnx): ONNX Runtime into ./onnxruntime and every index's model into ./models.
-// What each is, and where it comes from, is in bundle.ONNX; journal-server setup downloads the same.
+// It also downloads the photo embedder phones run by themselves into ./models/phone (phoneModels). What each is, and
+// where it comes from, is in bundle.ONNX; journal-server setup downloads the same.
 //
 // --model base (the default, google/siglip2-base-patch16-256) reads a photo in about a tenth of a second on a
 // desktop CPU; --model large (google/siglip2-so400m-patch16-256) finds better but is about four times slower.
