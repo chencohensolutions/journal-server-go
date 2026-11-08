@@ -137,6 +137,8 @@ type Sidecar struct {
 	Facts  Facts  `json:"facts"`
 	// The user's choice to keep the file private (SetPrivate); absent until it is first marked.
 	Privacy *Privacy `json:"privacy,omitempty"`
+	// The user's choice to tuck the file away (SetTucked); absent until it is first tucked.
+	Tucked *Tuck `json:"tucked,omitempty"`
 	// Caption and tags, written through sync (not built yet). Kept as is when the facts are rewritten.
 	Note json.RawMessage `json:"note,omitempty"`
 	// What models found in the file (scripts/scan-nudity). Never the user's tags: clients decide what to hide.
@@ -166,11 +168,24 @@ type Privacy struct {
 	SetBy string `json:"setBy,omitempty"`
 }
 
+// Tuck is whether the user tucked a file away: a lighter hiding than private. Apps leave a tucked file out of their
+// feeds until the user reveals it, and search never finds it; it is still sent, previewed and copied like any other.
+// It is kept when the user brings the file back, so that change has a time and comes in the change feed.
+type Tuck struct {
+	Tucked bool      `json:"tucked"`
+	SetAt  time.Time `json:"setAt"`
+	// The device that tucked it, or the one that uploaded an edit or paired file of a tucked one.
+	SetBy string `json:"setBy,omitempty"`
+}
+
+// IsTucked reports whether the user tucked the file away.
+func (s Sidecar) IsTucked() bool { return s.Tucked != nil && s.Tucked.Tucked }
+
 // IsPrivate reports whether the user marked the file private.
 func (s Sidecar) IsPrivate() bool { return s.Privacy != nil && s.Privacy.Private }
 
 // ChangedAt is the last time the sidecar changed in a way clients see: its upload, a later scan, a correction or
-// a private mark.
+// a private or tucked mark.
 func (s Sidecar) ChangedAt() time.Time {
 	changed := s.Facts.UploadedAt
 	if s.Detected != nil && s.Detected.Nudity != nil && s.Detected.Nudity.ScannedAt.After(changed) {
@@ -181,6 +196,9 @@ func (s Sidecar) ChangedAt() time.Time {
 	}
 	if p := s.Privacy; p != nil && p.SetAt.After(changed) {
 		changed = p.SetAt
+	}
+	if t := s.Tucked; t != nil && t.SetAt.After(changed) {
+		changed = t.SetAt
 	}
 	return changed
 }

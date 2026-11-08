@@ -63,13 +63,14 @@ func (r *queryResolver) SearchMedia(ctx context.Context, text *string, people []
 		}
 	}
 	// Private files are left out unless the app shows private media: a search is no place to see them by surprise.
+	// Tucked files are never found.
 	withPrivate := includePrivate != nil && *includePrivate
 	keep := func(sha string) bool {
 		if withPeople != nil && !withPeople[sha] {
 			return false
 		}
 		item, ok := v.store.Get(sha)
-		return ok && !v.hides(item) && (withPrivate || !item.Sidecar.IsPrivate()) && filter.keeps(item)
+		return ok && v.findable(item, withPrivate) && filter.keeps(item)
 	}
 	// The hits before the offset are found too: the sets and moments are numbered from the first hit.
 	var hits []search.Hit

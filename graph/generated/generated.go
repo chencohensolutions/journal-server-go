@@ -265,6 +265,7 @@ type ComplexityRoot struct {
 		Source        func(childComplexity int) int
 		TakenAt       func(childComplexity int) int
 		Text          func(childComplexity int) int
+		Tucked        func(childComplexity int) int
 		URL           func(childComplexity int) int
 		UploadedAt    func(childComplexity int) int
 		UploadedBy    func(childComplexity int) int
@@ -314,6 +315,7 @@ type ComplexityRoot struct {
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
 		SetSoundFolder       func(childComplexity int, id string, as model.SoundFolderMark) int
+		SetTucked            func(childComplexity int, sha256s []string, tucked bool) int
 		StartCopy            func(childComplexity int, folder string) int
 		StartIndexing        func(childComplexity int) int
 		StartUpload          func(childComplexity int, input model.StartUploadInput) int
@@ -416,6 +418,7 @@ type ComplexityRoot struct {
 		SoundFolders      func(childComplexity int) int
 		Swap              func(childComplexity int) int
 		TextInPhotos      func(childComplexity int) int
+		TuckedAway        func(childComplexity int) int
 		Version           func(childComplexity int) int
 		VideoFrames       func(childComplexity int) int
 	}
@@ -515,6 +518,7 @@ type MutationResolver interface {
 	PauseIndexing(ctx context.Context) (*model.Indexing, error)
 	StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error)
 	SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error)
+	SetTucked(ctx context.Context, sha256s []string, tucked bool) ([]*model.Media, error)
 	NamePerson(ctx context.Context, id string, name string) (model.PersonResult, error)
 	MergePeople(ctx context.Context, into string, from []string) (model.PersonResult, error)
 	MoveFace(ctx context.Context, face string, to *string) (model.FaceResult, error)
@@ -1493,6 +1497,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.Text(childComplexity), true
+	case "Media.tucked":
+		if e.ComplexityRoot.Media.Tucked == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Tucked(childComplexity), true
 	case "Media.url":
 		if e.ComplexityRoot.Media.URL == nil {
 			break
@@ -1809,6 +1819,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetSoundFolder(childComplexity, args["id"].(string), args["as"].(model.SoundFolderMark)), true
+	case "Mutation.setTucked":
+		if e.ComplexityRoot.Mutation.SetTucked == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setTucked_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetTucked(childComplexity, args["sha256s"].([]string), args["tucked"].(bool)), true
 	case "Mutation.startCopy":
 		if e.ComplexityRoot.Mutation.StartCopy == nil {
 			break
@@ -2339,6 +2360,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.TextInPhotos(childComplexity), true
+	case "ServerInfo.tuckedAway":
+		if e.ComplexityRoot.ServerInfo.TuckedAway == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.TuckedAway(childComplexity), true
 	case "ServerInfo.version":
 		if e.ComplexityRoot.ServerInfo.Version == nil {
 			break
@@ -3283,6 +3310,12 @@ type Media {
   it. Devices the server keeps from private files never get it at all.
   """
   private: Boolean!
+  """
+  The user tucked it away (setTucked): a lighter hiding than private. Apps leave it out of their feeds until the user
+  reveals it, and search never finds it (searchMedia, similarMedia, duplicates, people, similarFaces leave it out),
+  but it is sent, previewed and copied like any other file.
+  """
+  tucked: Boolean!
   "Who a recorded phone call was with; null for anything but a call."
   call: Call
   """
@@ -3400,6 +3433,12 @@ extend type Mutation {
   server keeps from private files may mark files private but not unmark them, and gets back none of them.
   """
   setPrivate(sha256s: [Sha256!]!, private: Boolean!): [Media!]!
+  """
+  Tucks files away, or brings them back, with every file that goes with them, as setPrivate does
+  (serverInfo.tuckedAway). Returns the files that changed; they come again in the change feed. At most 1000 hashes
+  per call.
+  """
+  setTucked(sha256s: [Sha256!]!, tucked: Boolean!): [Media!]!
 }
 
 # --- Change feed --------------------------------------------------------------
@@ -3609,6 +3648,8 @@ type ServerInfo {
   similar: Boolean!
   "Photos get aesthetic scores (Media.aesthetic)."
   aesthetic: Boolean!
+  "Files can be tucked away (setTucked, Media.tucked)."
+  tuckedAway: Boolean!
 }
 
 type Mutation {
@@ -4480,6 +4521,8 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_nudity(ctx, field)
 	case "private":
 		return ec.fieldContext_Media_private(ctx, field)
+	case "tucked":
+		return ec.fieldContext_Media_tucked(ctx, field)
 	case "call":
 		return ec.fieldContext_Media_call(ctx, field)
 	case "encodedFrom":
@@ -4642,6 +4685,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_similar(ctx, field)
 	case "aesthetic":
 		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
+	case "tuckedAway":
+		return ec.fieldContext_ServerInfo_tuckedAway(ctx, field)
 	case "audio":
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
@@ -5297,6 +5342,28 @@ func (ec *executionContext) field_Mutation_setSoundFolder_args(ctx context.Conte
 		return nil, err
 	}
 	args["as"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setTucked_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "sha256s",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalNSha2562ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sha256s"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "tucked",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["tucked"] = arg1
 	return args, nil
 }
 
@@ -9358,6 +9425,29 @@ func (ec *executionContext) fieldContext_Media_private(_ context.Context, field 
 	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _Media_tucked(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_tucked(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Tucked, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Media_tucked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _Media_call(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10270,6 +10360,50 @@ func (ec *executionContext) fieldContext_Mutation_setPrivate(ctx context.Context
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_setPrivate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setTucked(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setTucked(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetTucked(ctx, fc.Args["sha256s"].([]string), fc.Args["tucked"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setTucked(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setTucked_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -12705,6 +12839,29 @@ func (ec *executionContext) _ServerInfo_aesthetic(ctx context.Context, field gra
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_aesthetic(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_tuckedAway(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_tuckedAway(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.TuckedAway, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_tuckedAway(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -17245,6 +17402,11 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "tucked":
+			out.Values[i] = ec._Media_tucked(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "call":
 			out.Values[i] = ec._Media_call(ctx, field, obj)
 		case "encodedFrom":
@@ -17625,6 +17787,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "setPrivate":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setPrivate(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "setTucked":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setTucked(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -18696,6 +18865,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "aesthetic":
 			out.Values[i] = ec._ServerInfo_aesthetic(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tuckedAway":
+			out.Values[i] = ec._ServerInfo_tuckedAway(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

@@ -85,6 +85,12 @@ type Media {
   it. Devices the server keeps from private files never get it at all.
   """
   private: Boolean!
+  """
+  The user tucked it away (setTucked): a lighter hiding than private. Apps leave it out of their feeds until the user
+  reveals it, and search never finds it (searchMedia, similarMedia, duplicates, people, similarFaces leave it out),
+  but it is sent, previewed and copied like any other file.
+  """
+  tucked: Boolean!
   "Who a recorded phone call was with; null for anything but a call."
   call: Call
   """
@@ -202,6 +208,12 @@ extend type Mutation {
   server keeps from private files may mark files private but not unmark them, and gets back none of them.
   """
   setPrivate(sha256s: [Sha256!]!, private: Boolean!): [Media!]!
+  """
+  Tucks files away, or brings them back, with every file that goes with them, as setPrivate does
+  (serverInfo.tuckedAway). Returns the files that changed; they come again in the change feed. At most 1000 hashes
+  per call.
+  """
+  setTucked(sha256s: [Sha256!]!, tucked: Boolean!): [Media!]!
 }
 
 # --- Change feed --------------------------------------------------------------

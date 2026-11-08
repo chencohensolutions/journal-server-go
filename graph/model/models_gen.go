@@ -453,6 +453,10 @@ type Media struct {
 	// The user marked it private (setPrivate). Clients hide it while "Show private media" is off, and fetch nothing of
 	// it. Devices the server keeps from private files never get it at all.
 	Private bool `json:"private"`
+	// The user tucked it away (setTucked): a lighter hiding than private. Apps leave it out of their feeds until the user
+	// reveals it, and search never finds it (searchMedia, similarMedia, duplicates, people, similarFaces leave it out),
+	// but it is sent, previewed and copied like any other file.
+	Tucked bool `json:"tucked"`
 	// Who a recorded phone call was with; null for anything but a call.
 	Call *Call `json:"call,omitempty"`
 	// The WAV this FLAC was made from (on a device, by the server or by the import), or the JPEG this JPEG XL was made
@@ -632,6 +636,8 @@ type ServerInfo struct {
 	Similar bool `json:"similar"`
 	// Photos get aesthetic scores (Media.aesthetic).
 	Aesthetic bool `json:"aesthetic"`
+	// Files can be tucked away (setTucked, Media.tucked).
+	TuckedAway bool `json:"tuckedAway"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.

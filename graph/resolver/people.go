@@ -8,6 +8,7 @@ import (
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/graph/model"
+	"github.com/journal/server-go/media"
 )
 
 var errFacesOff = errors.New("face search is off on this server")
@@ -21,12 +22,18 @@ func (r *Resolver) facesOf(ctx context.Context) (*faces.Service, string, error) 
 }
 
 // shows is whether the device may see the file sha in a list of people or faces: files the user marked private
-// only when the app shows private media (withPrivate), as in searchMedia.
+// only when the app shows private media (withPrivate), as in searchMedia, and files tucked away never.
 func (v view) shows(withPrivate bool) func(sha string) bool {
 	return func(sha string) bool {
 		item, ok := v.store.Get(sha)
-		return ok && !v.hides(item) && (withPrivate || !item.Sidecar.IsPrivate())
+		return ok && v.findable(item, withPrivate)
 	}
+}
+
+// findable is whether a search may answer item: not hidden from the device, not tucked away, and private only
+// withPrivate.
+func (v view) findable(item media.Item, withPrivate bool) bool {
+	return !v.hides(item) && !item.Sidecar.IsTucked() && (withPrivate || !item.Sidecar.IsPrivate())
 }
 
 func toFace(info faces.FaceInfo) *model.Face {
