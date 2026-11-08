@@ -82,7 +82,7 @@ func (m *modelFiles) hashAll() {
 		m.hashing = false
 		m.mu.Unlock()
 	}()
-	saved := map[string]map[string]hashed{} // folder → name → hash
+	saved := map[string]map[string]hashed{}                         // folder → name → hash
 	sources := map[string]map[string]struct{ URL, Sha256 string }{} // folder → name → where it came from
 	for _, f := range files {
 		info, err := os.Stat(f.path)
