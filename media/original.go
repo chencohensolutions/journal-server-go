@@ -85,7 +85,7 @@ func (p *Previews) decode(ctx context.Context, store *Store, item Item, largest 
 			return nil, err
 		}
 		defer os.RemoveAll(work)
-		if original, err = p.poster(ctx, store, item, original, work); err != nil {
+		if original, err = p.poster(ctx, store, item, original, work, false); err != nil {
 			return nil, err
 		}
 	} else if isDNG(item.Path) {

@@ -14,9 +14,16 @@ import (
 // A video's preview is made from its poster: one frame, taken by ffmpeg (a separate program, like
 // libvips) and then scaled, cut and encoded like any photo. The frame is upright (ffmpeg applies the
 // video's rotation), and an HDR video (HLG or PQ) is tone-mapped to standard range so it doesn't look
-// washed out. It is kept as poster.jpg beside the video's previews when the user's preview_cache is on.
+// washed out. It is kept as poster.jpg (or first-frame.jpg) beside the video's previews when the user's
+// preview_cache is on.
+//
+// A phone may ask for the very first frame instead (?frame=first): ffmpeg then decodes from the start, so the
+// frame is the first one the video shows, as a player would, even where that isn't a keyframe.
 
-const posterName = "poster.jpg"
+const (
+	posterName     = "poster.jpg"
+	firstFrameName = "first-frame.jpg"
+)
 
 // The frame is the first keyframe this far in or later (or halfway through a shorter video), past the black or
 // blurry first frame many recordings start with. Only keyframes are decoded: landing exactly on the time would mean
@@ -51,15 +58,19 @@ func (p *Previews) WithFFmpeg(ffmpeg, ffprobe string) *Previews {
 	return p
 }
 
-// poster returns the poster frame of a video: kept beside its previews with the store's CachePreviews
-// (and found there next time), else made in into, the request's temporary folder.
-func (p *Previews) poster(ctx context.Context, store *Store, item Item, original, into string) (string, error) {
+// poster returns the poster frame of a video (with first, its very first frame): kept beside its previews with
+// the store's CachePreviews (and found there next time), else made in into, the request's temporary folder.
+func (p *Previews) poster(ctx context.Context, store *Store, item Item, original, into string, first bool) (string, error) {
 	if p.ffmpeg == "" {
 		return "", ErrPostersUnavailable
 	}
-	path := filepath.Join(into, posterName)
+	name := posterName
+	if first {
+		name = firstFrameName
+	}
+	path := filepath.Join(into, name)
 	if store.CachePreviews {
-		path = filepath.Join(store.previewDir(item.Sha256()), posterName)
+		path = filepath.Join(store.previewDir(item.Sha256()), name)
 		unlock := p.locks.Lock(path)
 		defer unlock()
 	}
@@ -75,11 +86,18 @@ func (p *Previews) poster(ctx context.Context, store *Store, item Item, original
 	if d := item.Sidecar.Facts.DurationMs; d != nil && *d > 0 && *d < 2*posterAtMillis {
 		at = *d / 2
 	}
-	frame := filepath.Join(filepath.Dir(path), "poster.tmp.jpg")
+	frame := filepath.Join(filepath.Dir(path), strings.TrimSuffix(name, ".jpg")+".tmp.jpg")
 	defer os.Remove(frame)
 	args := func(filter string) []string {
-		a := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-			"-skip_frame", "nokey", "-ss", fmt.Sprintf("%d.%03d", at/1000, at%1000), "-i", original, "-frames:v", "1", "-an"}
+		a := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y"}
+		if first {
+			// Every frame is decoded from the start until the first one shown is out (with its edit list and
+			// frame order, as a player shows it): only the first group of frames is read.
+			a = append(a, "-i", original)
+		} else {
+			a = append(a, "-skip_frame", "nokey", "-ss", fmt.Sprintf("%d.%03d", at/1000, at%1000), "-i", original)
+		}
+		a = append(a, "-map", "0:v:0", "-frames:v", "1", "-an")
 		if filter != "" {
 			a = append(a, "-vf", filter)
 		}
@@ -106,7 +124,11 @@ func (p *Previews) poster(ctx context.Context, store *Store, item Item, original
 	}
 	got := false
 	// The keyframe from the time on, else the video's first frame (always a keyframe).
-	for _, from := range []int64{at, 0} {
+	times := []int64{at, 0}
+	if first {
+		times = []int64{0}
+	}
+	for _, from := range times {
 		at = from
 		var toneMapping error
 		for _, filter := range filters {
@@ -146,4 +168,32 @@ func (p *Previews) isHDR(ctx context.Context, original string) bool {
 	}
 	transfer := strings.TrimSpace(out)
 	return transfer == "smpte2084" || transfer == "arib-std-b67"
+}
+
+// ErrNoVideoFrame is a file with no video stream to cut a first frame from.
+var ErrNoVideoFrame = errors.New("no video frame")
+
+// FirstFrameVideo cuts the video's first frame out as a video of its own, in into: an MP4 holding only the first
+// frame's compressed data, copied as it is (nothing is decoded or encoded here), with the video's rotation and colour
+// tags, for a phone to decode with its own decoder (GET /media/{sha256}/frame). It is the least a phone needs to
+// show the first frame itself: about the size of one keyframe (0.3 to 2 MB for a phone's 4K video), against the
+// tens of kilobytes of a preview, which the server decodes instead. The first frame of a phone's recording is a
+// keyframe; a video whose first shown frame isn't (an open group of frames) gets its first keyframe.
+func (p *Previews) FirstFrameVideo(ctx context.Context, item Item, original, into string) (string, error) {
+	if p.ffmpeg == "" {
+		return "", ErrPostersUnavailable
+	}
+	if item.Sidecar.Facts.Kind != KindVideo {
+		return "", ErrNoVideoFrame
+	}
+	out := filepath.Join(into, "first-frame.mp4")
+	if _, err := p.output(ctx, p.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", original,
+		"-map", "0:v:0", "-c", "copy", "-frames:v", "1", "-an", "-sn", "-dn", "-movflags", "+faststart",
+		"-f", "mp4", out); err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(out); err != nil || info.Size() == 0 {
+		return "", fmt.Errorf("ffmpeg: no first frame in %s", item.Path)
+	}
+	return out, nil
 }

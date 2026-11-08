@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -118,12 +119,74 @@ func TestThePosterIsTheFirstKeyframeAfterASecond(t *testing.T) {
 		t.Fatalf("upload: %v", err)
 	}
 	spec, _ := ParsePreviewSpec(url.Values{"w": {"64"}, "h": {"64"}, "fit": {"contain"}, "fmt": {"jpeg"}})
-	path, release, err := NewPreviews(vips, header).WithFFmpeg(ffmpeg, ffprobe).Get(context.Background(), f.store, *result.Item, spec)
+	previews := NewPreviews(vips, header).WithFFmpeg(ffmpeg, ffprobe)
+	path, release, err := previews.Get(context.Background(), f.store, *result.Item, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
 	if r, _, _, _ := decodeJPEG(t, path).At(32, 32).RGBA(); r < 200*257 {
 		t.Errorf("the poster is dark (%d): the frame at 1 s, not the keyframe at 1.2 s", r>>8)
+	}
+
+	// Asked for the very first frame, it is the black one, and kept apart from the usual poster.
+	first, _ := ParsePreviewSpec(url.Values{"w": {"64"}, "h": {"64"}, "fit": {"contain"}, "fmt": {"jpeg"}, "frame": {"first"}})
+	f.store.CachePreviews = true
+	path, releaseFirst, err := previews.Get(context.Background(), f.store, *result.Item, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseFirst()
+	if r, _, _, _ := decodeJPEG(t, path).At(32, 32).RGBA(); r > 50*257 {
+		t.Errorf("the first frame is light (%d), not the video's black start", r>>8)
+	}
+	if _, err := os.Stat(filepath.Join(f.store.previewDir(result.Item.Sha256()), firstFrameName)); err != nil {
+		t.Errorf("first-frame.jpg not kept: %v", err)
+	}
+}
+
+// The first frame as a video of its own: one frame, copied (the same codec), with the video's rotation.
+func TestTheFirstFrameIsCutAsAVideoOfOneFrame(t *testing.T) {
+	ffmpeg, ffprobe, err := FindFFmpeg("")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	video := rotatedVideo(t, ffmpeg)
+	f := newFixture(t)
+	req := photoRequest(video, "VID.mp4")
+	req.Kind, req.MimeType = KindVideo, "video/mp4"
+	f.start(req)
+	result, err := f.chunk(video, 0, int64(len(video)))
+	if err != nil || result.Item == nil {
+		t.Fatalf("upload: %v", err)
+	}
+	item := *result.Item
+	previews := NewPreviews("", "").WithFFmpeg(ffmpeg, ffprobe)
+	original := filepath.Join(f.store.root, filepath.FromSlash(item.Path))
+	out, err := previews.FirstFrameVideo(context.Background(), item, original, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := exec.Command(ffprobe, "-v", "error", "-count_packets", "-select_streams", "v:0", "-show_entries",
+		"stream=codec_name,nb_read_packets:stream_side_data=rotation", "-of", "default=noprint_wrappers=1", out).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(probe)
+	rotation, err := exec.Command(ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+		"stream_side_data=rotation", "-of", "default=noprint_wrappers=1", original).Output()
+	if err != nil || !strings.Contains(string(rotation), "rotation=") {
+		t.Fatalf("the test video's rotation: %v %s", err, rotation)
+	}
+	for _, want := range []string{"codec_name=h264", "nb_read_packets=1", strings.TrimSpace(string(rotation))} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the one-frame video lacks %s:\n%s", want, got)
+		}
+	}
+	if info, _ := os.Stat(out); info.Size() >= int64(len(video)) {
+		t.Errorf("the one-frame video (%d bytes) isn't smaller than the video (%d)", info.Size(), len(video))
+	}
+	if _, err := previews.FirstFrameVideo(context.Background(), Item{}, original, t.TempDir()); err != ErrNoVideoFrame {
+		t.Errorf("a file that isn't a video: %v", err)
 	}
 }

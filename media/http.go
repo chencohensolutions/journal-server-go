@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -180,6 +182,49 @@ func OriginalHandler(lookup StoreLookup) http.Handler {
 		w.Header().Set("ETag", `"`+sha+`"`)
 		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 		http.ServeContent(w, r, path.Base(item.Path), item.Sidecar.Facts.UploadedAt, file)
+	})
+}
+
+// FirstFrameHandler serves GET /media/{sha256}/frame: the video's first frame as a one-frame MP4 of its own
+// compressed data (Previews.FirstFrameVideo), for a phone that decodes video thumbnails itself. Made for each
+// request and not kept. 404 for what isn't a video, 503 without ffmpeg.
+func FirstFrameHandler(lookup StoreLookup, previews *Previews) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		store, ok := storeOf(w, r, lookup)
+		if !ok {
+			return
+		}
+		sha := r.PathValue("sha256")
+		item, ok := store.Get(sha)
+		if !ok || item.Sidecar.Facts.Kind != KindVideo {
+			http.NotFound(w, r)
+			return
+		}
+		if err := os.MkdirAll(filepath.Join(store.root, ".cache"), 0o755); err != nil {
+			http.Error(w, "could not cut the frame", http.StatusInternalServerError)
+			return
+		}
+		work, err := os.MkdirTemp(filepath.Join(store.root, ".cache"), "frame-")
+		if err != nil {
+			http.Error(w, "could not cut the frame", http.StatusInternalServerError)
+			return
+		}
+		defer os.RemoveAll(work)
+		original := filepath.Join(store.root, filepath.FromSlash(item.Path))
+		out, err := previews.FirstFrameVideo(r.Context(), item, original, work)
+		switch {
+		case errors.Is(err, ErrPostersUnavailable):
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		case err != nil:
+			log.Printf("media: first frame of %s: %v", item.Path, err)
+			http.Error(w, "could not cut the frame", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("ETag", `"`+sha+`-frame"`)
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+		http.ServeFile(w, r, out)
 	})
 }
 

@@ -31,6 +31,11 @@ type ServerInfo {
   "Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503."
   posters: Boolean!
   """
+  With posters: a video's preview can be its very first frame (?frame=first), and GET /media/{sha256}/frame gives
+  that frame as a one-frame MP4 of the video's own data, for a phone that decodes video thumbnails itself.
+  """
+  videoFrames: Boolean!
+  """
   New files are scanned for nudity (NudeNet's model is installed), so what scores high is hidden soon after it comes
   (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
   """
