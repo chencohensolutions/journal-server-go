@@ -1418,6 +1418,8 @@ const (
 	SwapRefusalOwnServer SwapRefusal = "OWN_SERVER"
 	// The caller has a friend or a copy of that name already.
 	SwapRefusalNameTaken SwapRefusal = "NAME_TAKEN"
+	// The caller's copy is at that friend's server already, under another name: one swap per friend.
+	SwapRefusalAlreadySwapped SwapRefusal = "ALREADY_SWAPPED"
 	// An encrypted copy needs the passphrase (copyKey NONE or PASSPHRASE).
 	SwapRefusalNeedsPassphrase SwapRefusal = "NEEDS_PASSPHRASE"
 	// Too weak for a new copy key: 24 characters, or 4 words and 20. Six random words are best.
@@ -1436,6 +1438,7 @@ var AllSwapRefusal = []SwapRefusal{
 	SwapRefusalUnreachable,
 	SwapRefusalOwnServer,
 	SwapRefusalNameTaken,
+	SwapRefusalAlreadySwapped,
 	SwapRefusalNeedsPassphrase,
 	SwapRefusalWeakPassphrase,
 	SwapRefusalWrongPassphrase,
@@ -1445,7 +1448,7 @@ var AllSwapRefusal = []SwapRefusal{
 
 func (e SwapRefusal) IsValid() bool {
 	switch e {
-	case SwapRefusalInvalidLink, SwapRefusalCodeRefused, SwapRefusalUnreachable, SwapRefusalOwnServer, SwapRefusalNameTaken, SwapRefusalNeedsPassphrase, SwapRefusalWeakPassphrase, SwapRefusalWrongPassphrase, SwapRefusalNoSpace, SwapRefusalOfferGone:
+	case SwapRefusalInvalidLink, SwapRefusalCodeRefused, SwapRefusalUnreachable, SwapRefusalOwnServer, SwapRefusalNameTaken, SwapRefusalAlreadySwapped, SwapRefusalNeedsPassphrase, SwapRefusalWeakPassphrase, SwapRefusalWrongPassphrase, SwapRefusalNoSpace, SwapRefusalOfferGone:
 		return true
 	}
 	return false

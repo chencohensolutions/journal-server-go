@@ -93,6 +93,8 @@ enum SwapRefusal {
   OWN_SERVER
   "The caller has a friend or a copy of that name already."
   NAME_TAKEN
+  "The caller's copy is at that friend's server already, under another name: one swap per friend."
+  ALREADY_SWAPPED
   "An encrypted copy needs the passphrase (copyKey NONE or PASSPHRASE)."
   NEEDS_PASSPHRASE
   "Too weak for a new copy key: 24 characters, or 4 words and 20. Six random words are best."

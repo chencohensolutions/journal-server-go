@@ -126,11 +126,16 @@ func TestASwapSetUpFromThePhones(t *testing.T) {
 		r.Swap.Copy == nil || r.Swap.Copy.Kind != "PEER" || !r.Swap.Copy.Encrypted {
 		t.Fatalf("joined: %+v", r)
 	}
-	if r := join(map[string]any{"link": inv.Link, "name": "dana2", "passphrase": passphrase}); r.Reason != "CODE_REFUSED" {
-		t.Errorf("the code worked twice: %+v", r)
+	if r := join(map[string]any{"link": inv.Link, "name": "dana2", "passphrase": passphrase}); r.Reason != "ALREADY_SWAPPED" {
+		t.Errorf("the same friend under another name: %+v", r)
 	}
 	if r := join(map[string]any{"link": inv.Link, "name": "dana", "passphrase": passphrase}); r.Reason != "NAME_TAKEN" {
 		t.Errorf("the same name again: %+v", r)
+	}
+	// The same friend again, under another name: refused, one swap per friend.
+	twice := gqlData[invite](t, dana.graphql(t, danaPhone, `mutation { swapInvite(name: "hen2", quota: 1000) { link } }`, nil), "swapInvite")
+	if r := join(map[string]any{"link": twice.Link, "name": "dana-again", "passphrase": passphrase}); r.Reason != "ALREADY_SWAPPED" {
+		t.Errorf("the same friend twice: %+v", r)
 	}
 	if _, err := os.Stat(filepath.Join(hen.config.PeersDir, "hen", "dana", "peer.json")); err != nil {
 		t.Errorf("the peer isn't hen's own: %v", err)
@@ -242,13 +247,18 @@ func TestASwapSetUpFromThePhones(t *testing.T) {
 // A plain copy, for a friend the user trusts, needs no passphrase; a command-line peer can't take a user's name.
 func TestAPlainSwapAndNames(t *testing.T) {
 	dana := swapEnv(t, "dana")
-	hen := swapEnv(t, "hen")
+	hen := swapEnv(t, "hen", "ann")
 	henPhone := hen.enrolledClient(t)
 	link := gqlData[struct{ Link string }](t, dana.graphql(t, dana.enrolledClientOf(t, "dana"),
 		`mutation { swapInvite(name: "hen", quota: 1000000) { link } }`, nil), "swapInvite").Link
 	r := gqlData[joinResult](t, hen.graphql(t, henPhone, joinSwapMutation, map[string]any{"link": link, "name": "dana", "plain": true}), "joinSwap")
 	if r.Typename != "SwapJoined" || r.Swap.Encrypted {
 		t.Fatalf("plain: %+v", r)
+	}
+	// The code works once: ann, on the same server, can't use it again.
+	annPhone := hen.enrolledClientOf(t, "ann")
+	if r := gqlData[joinResult](t, hen.graphql(t, annPhone, joinSwapMutation, map[string]any{"link": link, "name": "dana", "plain": true}), "joinSwap"); r.Reason != "CODE_REFUSED" {
+		t.Errorf("the code worked twice: %+v", r)
 	}
 	hen.uploadPhoto(t, henPhone, []byte("plain"), "IMG_1.jpg")
 	runCopy(context.Background(), hen.swaps.copierOn("hen", peerKey("hen", "dana")))

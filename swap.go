@@ -199,6 +199,11 @@ func (s *swapService) Join(ctx context.Context, user string, join resolver.SwapJ
 	if s.nameTaken(user, name) {
 		return refused(model.SwapRefusalNameTaken, "you have a copy named %s already", name)
 	}
+	for _, info := range s.mine(user) {
+		if info.Fingerprint == link.fingerprint && (info.HostUser == "" || link.from == "" || info.HostUser == link.from) {
+			return refused(model.SwapRefusalAlreadySwapped, "your copy is at that friend's server already, as %s", info.Name)
+		}
+	}
 
 	// The copy key: the user's, checked against the passphrase, or a new one from it.
 	var newKey *copies.CopyKey
