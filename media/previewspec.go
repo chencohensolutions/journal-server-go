@@ -28,6 +28,9 @@ type PreviewSpec struct {
 	Format string
 	// "low", "medium", "high" or "max": how much detail is kept against how small the file is.
 	Quality string
+	// For a video: "first" is its very first frame, decoded from the start; "" (the default) is the first keyframe
+	// a second in, past the black or blurry start many recordings have (poster.go).
+	Frame string
 }
 
 // previewFormats are the encodings a preview can be asked for, with their MIME type and libvips options.
@@ -46,7 +49,7 @@ type Rect struct{ X, Y, W, H float64 }
 
 var ErrInvalidPreview = errors.New("invalid preview request")
 
-// ParsePreviewSpec reads ?w=1080&h=1440&fit=cover&crop=x,y,w,h&fmt=webp&q=high.
+// ParsePreviewSpec reads ?w=1080&h=1440&fit=cover&crop=x,y,w,h&fmt=webp&q=high&frame=first.
 func ParsePreviewSpec(q url.Values) (PreviewSpec, error) {
 	spec := PreviewSpec{Fit: "cover", Format: "webp", Quality: "high"}
 	var err error
@@ -73,6 +76,12 @@ func ParsePreviewSpec(q url.Values) (PreviewSpec, error) {
 			return spec, fmt.Errorf("%w: q is low, medium, high or max", ErrInvalidPreview)
 		}
 		spec.Quality = quality
+	}
+	if frame := q.Get("frame"); frame != "" {
+		if frame != "first" {
+			return spec, fmt.Errorf("%w: frame is first", ErrInvalidPreview)
+		}
+		spec.Frame = frame
 	}
 	if crop := q.Get("crop"); crop != "" {
 		parts := strings.Split(crop, ",")
@@ -104,6 +113,9 @@ func (s PreviewSpec) fileName() string {
 	name := fmt.Sprintf("%dx%d-%s", s.Width, s.Height, s.Fit)
 	if s.Crop != nil {
 		name += fmt.Sprintf("-%g,%g,%g,%g", s.Crop.X, s.Crop.Y, s.Crop.W, s.Crop.H)
+	}
+	if s.Frame != "" {
+		name += "-" + s.Frame
 	}
 	return name + "-" + s.Quality + "." + s.Format
 }

@@ -173,11 +173,11 @@ func (p *Previews) make(ctx context.Context, store *Store, item Item, spec Previ
 	source, sizeKey := original, item.Sha256()
 	// A video's preview is made from its poster frame.
 	if item.Sidecar.Facts.Kind == KindVideo {
-		poster, err := p.poster(ctx, store, item, original, work)
+		poster, err := p.poster(ctx, store, item, original, work, spec.Frame == "first")
 		if err != nil {
 			return "", err
 		}
-		return p.render(ctx, item.Sha256()+"/poster", poster, work, spec)
+		return p.render(ctx, item.Sha256()+"/"+strings.TrimSuffix(filepath.Base(poster), ".jpg"), poster, work, spec)
 	}
 	// A DNG with demosaiced, JPEG XL compressed raw data (DNG 1.7) is developed here first, since LibRaw
 	// can't unpack it; other DNGs go to libvips (LibRaw) like any photo. The JPEG a DNG carries is never

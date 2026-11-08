@@ -394,6 +394,16 @@ video on a slow disk takes minutes); hashing stops when the device drops the req
   - **When there's no keyframe there** (a short video), the first frame is taken.
   ffmpeg is found like libvips (`"ffmpeg"` in config.json, the PATH, or Homebrew; on Windows `winget install
   Gyan.FFmpeg`). The frame is kept as `poster.jpg` only with `preview_cache` (about 2 s for a large video on a disk).
+- **The very first frame**, when a phone asks for it (`&frame=first`; the owner's choice, Nov 8, 2026: a poster
+  should be what the video starts with): ffmpeg decodes from the start and takes the first frame shown, as a player
+  would (its edit list and frame order applied), even where that isn't a keyframe. Only the first group of frames is
+  read. Kept apart, as `first-frame.jpg`, with `preview_cache`; any format a preview can have (`fmt=jxl` too).
+- **`GET /media/{sha256}/frame`**: the first frame as a video of its own, for a phone that decodes video
+  thumbnails itself (a setting, off by default). ffmpeg copies the first frame's compressed data into a one-frame
+  MP4 with the video's rotation and colour tags, decoding and encoding nothing, so the server does almost no work.
+  It is the least a phone can decode the frame from: about one keyframe, 0.3 to 2 MB for a phone's 4K video, against
+  tens of kilobytes for a preview. A phone's recordings start with a keyframe; a video whose first shown frame
+  isn't one (an open group of frames) gets its first keyframe. `404` for what isn't a video, `503` without ffmpeg.
 - Answers: `422` bad parameters, `404` unknown sha256, `503` when libvips (or, for a video, ffmpeg) isn't installed (the server logs this at startup; set `"vips"` in config.json if it's
   installed somewhere unusual).
 
@@ -587,7 +597,8 @@ about half the bytes); its sidecar's `encodedFrom` names the WAV, which isn't ke
 ```
 
 **A WAV is never kept**: wherever it comes from (the import, a phone that encoded it, or an upload of the WAV itself,
-which the server encodes with ffmpeg), there is only the FLAC, with both sha256s. Everything a device asks by sha256
+which the server encodes with ffmpeg at its highest effort that stays within the FLAC subset: level 12,
+prediction order 12, exact Rice parameters), there is only the FLAC, with both sha256s. Everything a device asks by sha256
 answers a WAV's as its FLAC (`Store.Find`, with an index of `encodedFrom`): `missingMedia` doesn't list it,
 `startUpload` answers `MediaExists`, `media(sha256:)` is the FLAC, and `/verify` re-hashes the FLAC against its own
 sha256. So neither the WAV nor the FLAC is sent again, and a phone freeing space can verify whichever it holds.
@@ -931,7 +942,7 @@ stream takes as long as it takes. Instead: headers must arrive within 10 s; Grap
 ## What the server can do
 
 `query serverInfo { api version search previews posters nudityScan }` says what works on this server, so an app
-shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed),
+shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed), `videoFrames` (`frame=first` and `/media/{sha256}/frame`),
 `nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the library), `cameras` (cameras are read: `Media.camera`, `cameras`, `setCamera`), `soundFolders` (folder kinds are in lower case and named by `folderNames`; `soundFolders` and `setSoundFolder`), the
 server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
 (1 today). An app asks once when it connects, rather than learning from errors.

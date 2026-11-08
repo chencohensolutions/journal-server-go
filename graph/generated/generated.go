@@ -416,6 +416,7 @@ type ComplexityRoot struct {
 		Swap              func(childComplexity int) int
 		TextInPhotos      func(childComplexity int) int
 		Version           func(childComplexity int) int
+		VideoFrames       func(childComplexity int) int
 	}
 
 	SimilarHit struct {
@@ -2337,6 +2338,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Version(childComplexity), true
+	case "ServerInfo.videoFrames":
+		if e.ComplexityRoot.ServerInfo.VideoFrames == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.VideoFrames(childComplexity), true
 
 	case "SimilarHit.media":
 		if e.ComplexityRoot.SimilarHit.Media == nil {
@@ -3572,6 +3579,11 @@ type ServerInfo {
   "Posters of videos can be taken (ffmpeg is installed); without it a video's preview answers 503."
   posters: Boolean!
   """
+  With posters: a video's preview can be its very first frame (?frame=first), and GET /media/{sha256}/frame gives
+  that frame as a one-frame MP4 of the video's own data, for a phone that decodes video thumbnails itself.
+  """
+  videoFrames: Boolean!
+  """
   New files are scanned for nudity (NudeNet's model is installed), so what scores high is hidden soon after it comes
   (hiddenCollections.nudity). Without it nothing is scanned, and nothing is hidden for nudity.
   """
@@ -4603,6 +4615,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_previews(ctx, field)
 	case "posters":
 		return ec.fieldContext_ServerInfo_posters(ctx, field)
+	case "videoFrames":
+		return ec.fieldContext_ServerInfo_videoFrames(ctx, field)
 	case "nudityScan":
 		return ec.fieldContext_ServerInfo_nudityScan(ctx, field)
 	case "faces":
@@ -12518,6 +12532,29 @@ func (ec *executionContext) fieldContext_ServerInfo_posters(_ context.Context, f
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_videoFrames(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_videoFrames(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VideoFrames, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_videoFrames(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_nudityScan(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -18589,6 +18626,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "posters":
 			out.Values[i] = ec._ServerInfo_posters(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "videoFrames":
+			out.Values[i] = ec._ServerInfo_videoFrames(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

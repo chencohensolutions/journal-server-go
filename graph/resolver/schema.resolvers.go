@@ -107,6 +107,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Search:            r.Search != nil,
 		Previews:          r.Previews != nil && r.Previews.Available(),
 		Posters:           r.Previews != nil && r.Previews.PostersAvailable(),
+		VideoFrames:       r.Previews != nil && r.Previews.PostersAvailable(),
 		NudityScan:        r.NudityScan,
 		Faces:             r.Faces != nil,
 		TextInPhotos:      r.TextInPhotos != nil,
