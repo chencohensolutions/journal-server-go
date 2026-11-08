@@ -117,6 +117,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Indexing:          r.IndexRuns != nil,
 		RenewCertificates: true,
 		TuckedAway:        true,
+		Notes:             true,
 		Copies:            r.Resolver.Copies != nil,
 		PeerCopies:        r.Resolver.Copies != nil,
 		Audio:             true,

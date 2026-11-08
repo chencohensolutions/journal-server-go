@@ -139,8 +139,9 @@ type Sidecar struct {
 	Privacy *Privacy `json:"privacy,omitempty"`
 	// The user's choice to tuck the file away (SetTucked); absent until it is first tucked.
 	Tucked *Tuck `json:"tucked,omitempty"`
-	// Caption and tags, written through sync (not built yet). Kept as is when the facts are rewritten.
-	Note json.RawMessage `json:"note,omitempty"`
+	// What the user wrote about the file and how they arranged it in the apps (SetNote); absent until first written.
+	// Kept as is when the facts are rewritten, and carried to the JPEG XL a JPEG is kept as.
+	Note *Note `json:"note,omitempty"`
 	// What models found in the file (scripts/scan-nudity). Never the user's tags: clients decide what to hide.
 	Detected *Detected `json:"detected,omitempty"`
 }
@@ -184,8 +185,8 @@ func (s Sidecar) IsTucked() bool { return s.Tucked != nil && s.Tucked.Tucked }
 // IsPrivate reports whether the user marked the file private.
 func (s Sidecar) IsPrivate() bool { return s.Privacy != nil && s.Privacy.Private }
 
-// ChangedAt is the last time the sidecar changed in a way clients see: its upload, a later scan, a correction or
-// a private or tucked mark.
+// ChangedAt is the last time the sidecar changed in a way clients see: its upload, a later scan, a correction,
+// a private or tucked mark or a note.
 func (s Sidecar) ChangedAt() time.Time {
 	changed := s.Facts.UploadedAt
 	if s.Detected != nil && s.Detected.Nudity != nil && s.Detected.Nudity.ScannedAt.After(changed) {
@@ -199,6 +200,9 @@ func (s Sidecar) ChangedAt() time.Time {
 	}
 	if t := s.Tucked; t != nil && t.SetAt.After(changed) {
 		changed = t.SetAt
+	}
+	if n := s.Note; n != nil && n.SetAt.After(changed) {
+		changed = n.SetAt
 	}
 	return changed
 }

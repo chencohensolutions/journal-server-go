@@ -15,7 +15,8 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/media.md](docs/media.md): the data folder and sidecar format, resumable `PUT /upload/{sha256}`,
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, sources (the one rule; folder kinds in lower
   case, named by `folderNames`), cameras and sound folders, the change feed, nudity scores, private
-  files, tucked-away files (search never finds them), hidden collections, sound recordings (recordings, calls,
+  files, tucked-away files (search never finds them), notes (`setNote`, `media/note.go`: what the user writes about
+  a photo, kept in its sidecar and synced through the feed), hidden collections, sound recordings (recordings, calls,
   voice messages; hidden until shown), JPEG photos kept as JPEG XL losslessly (`journal-server jxl`), imports, turns
   between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
@@ -41,7 +42,7 @@ the upload and sync design agreed with the owner. The docs here describe what is
   (`version/VERSION`, raised by the pre-commit hook and `scripts/bump-version.sh`), releases
   (`.github/workflows/release.yml`, signed with `scripts/sign-release`) and updates (package `update`, `selfupdate.go`).
 
-Not built yet: stories and notes in the change feed, the story trash. Certificates renew in their last 30 days
+Not built yet: the story trash. Certificates renew in their last 30 days
 (`renewCertificate` for devices, `POST /peer/renew` for peers; docs/authentication.md, docs/peers.md).
 
 **Platforms.** The owner's server is a Windows PC (search runs there since Oct 22, 2026), development happens on a

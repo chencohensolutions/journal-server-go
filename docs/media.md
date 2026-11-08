@@ -108,7 +108,7 @@ server's rules change `source` (the rule, [Fixing sources](#fixing-sources)); it
 sent, and on files placed before Oct 27, 2026, which get their old source there the first time it is corrected.
 `deviceFolder` is where the file was on the device that uploaded it, as `startUpload`'s `folder` gave it (Android's
 folder in shared storage, `"Pictures/Telegram/"`, or an iPhone's album; at most 500 characters): the device's own
-evidence of its source, as `importedFrom` is the import's, so the server can tell the source again later. A `note` (caption and tags) will be added to the sidecar by sync. `detected` holds what
+evidence of its source, as `importedFrom` is the import's, so the server can tell the source again later. A `note` holds what the user wrote about the file in the apps (see [Notes](#notes)). `detected` holds what
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
@@ -426,8 +426,9 @@ changes come after the page, for a progress count). A new device starts without 
 page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed since (an empty page
 returns the same cursor). A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
 (see [Nudity scan](#nudity-scan)), its source is corrected (see [Fixing sources](#fixing-sources)) or it is marked
-private or unmarked (see [Private files](#private-files)), or tucked away or brought back (see
-[Tucked away](#tucked-away)): it then comes again, whole. To a device the server keeps
+private or unmarked (see [Private files](#private-files)), tucked away or brought back (see
+[Tucked away](#tucked-away)), or its note is written or deleted (see [Notes](#notes)): it then comes again, whole,
+note and all. To a device the server keeps
 from private files, a private file comes as `deleted`, and so does a file the user hides (one of the
 [hidden collections](#hidden-collections), or nudity) to every device, with `hidden` set, so the device leaves out its
 own copy too. A JPEG kept as JPEG XL comes as `deleted` (its JPEG's sha256) right before its JPEG XL, whose
@@ -437,7 +438,7 @@ when the client accepts it.
 
 - **The cursor** is opaque. It carries where the device is in the feed (the time of the last change and sha256 of
   the last original in the page) and the view it was given out for: whether private files were withheld, and what
-  was hidden. Stories and notes can join the feed later without changing clients. A cursor is never wrong to send:
+  was hidden. A cursor is never wrong to send:
   one the server can't read (a format from another server, or damaged) starts the feed again from the beginning,
   with hidden files as `deleted`, since what the device holds is unknown.
 - **When the view changes** (the device's private setting, or the user's hidden collections), the next sync gets
@@ -535,6 +536,42 @@ beside `privacy`:
   feed (flagged), with `/media`, its preview and the copies, also a device kept from private files. The apps hide it
   from their feeds until the user reveals it (behind the phone's lock), and leave it out of the search they do on the
   phone (from the flag in the feed), so the [local indexes](search.md) keep it.
+
+## Notes
+
+What the user writes about a photo and how they arrange it in the apps, asked to be synced by the owner on Nov 8,
+2026: its title and paragraph with their earlier versions, tags, crops, Moments sets and the photo a set opens on,
+whether it is on the storyline, where the viewer was zoomed. The apps own these fields (journal-client-kmp
+docs/design.md "Notes"); the server keeps the note as a JSON object, as sent, without reading it, so a newer app's
+fields are never lost. It sits in the sidecar:
+
+```json
+"note": {
+  "content": { "v": 1, "title": "Beach day", "text": "…", "tags": ["Sea"], "updatedAt": "2026-11-08T19:02:11Z" },
+  "setAt": "2026-11-08T19:02:12Z",
+  "setBy": "Pixel 9 Pro"
+}
+```
+
+- `mutation setNote(sha256, note: String, baseVersion: String): SetNoteResult` replaces it (`serverInfo.notes` says
+  the server has it). `note` is the JSON object as text, at most 256 KB once compacted; null or `{}` deletes it, which
+  keeps the field without `content` and with a new `setAt`, so the change comes in the change feed. A note that isn't a
+  JSON object, or is too large, is refused with `INVALID_ARGUMENT`.
+- **Versions, not locks.** A note's version is the sha256 of its content as kept (compacted), in hex
+  (`Media.noteVersion`). The device sends the version it changed as `baseVersion` (null when it had none). When the
+  file's note is still that one, it is replaced and the answer is `NoteSaved`; when another device changed it since,
+  nothing is written and the answer is `NoteConflict` with the note as it is now: the device merges its change into it
+  (the apps keep both writings, one as an earlier version) and sends again with that version. Sending the note the
+  file already has changes nothing.
+- The API gives it as `Media.note` (the object as text) and `Media.noteVersion`, in the change feed with the rest of
+  the file. A note is per file: an edit or paired file has its own. A JPEG kept as JPEG XL keeps its note (the sidecar
+  is carried over), and `setNote` finds it by either sha256.
+- **Hidden with its file.** A file a device may not see (hidden, or private on a device kept from private files) comes
+  as `deleted`, note and all, and its note can't be written from that device. A tucked file's note is sent like the
+  file; the apps keep a tucked photo's writing out of their feeds and search with the photo. The server's search never
+  reads notes.
+- Notes go to the [copies](copies.md) with the sidecars. A sidecar whose `note` is in another shape (written by hand
+  or by a tool) is read as no note and written back as it was; fields the server doesn't know are kept too.
 
 ## Hidden collections
 
@@ -968,7 +1005,7 @@ stream takes as long as it takes. Instead: headers must arrive within 10 s; Grap
 
 `query serverInfo { api version search previews posters nudityScan }` says what works on this server, so an app
 shows only that: `search` (text search is on), `previews` (libvips is installed), `posters` (ffmpeg is installed), `videoFrames` (`frame=first` and `/media/{sha256}/frame`),
-`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the library), `cameras` (cameras are read: `Media.camera`, `cameras`, `setCamera`), `soundFolders` (folder kinds are in lower case and named by `folderNames`; `soundFolders` and `setSoundFolder`), the
+`nudityScan` (new files are scanned for nudity, so hiding nudity works), `audio` (sound recordings can be in the library), `cameras` (cameras are read: `Media.camera`, `cameras`, `setCamera`), `tuckedAway` (`setTucked`), `notes` (`setNote`, `Media.note`), `soundFolders` (folder kinds are in lower case and named by `folderNames`; `soundFolders` and `setSoundFolder`), the
 server's build (`version`: commit and date, or `dev`), and `api`, a number raised when a change needs newer apps
 (1 today). An app asks once when it connects, rather than learning from errors.
 

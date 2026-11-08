@@ -30,6 +30,10 @@ type PersonResult interface {
 	IsPersonResult()
 }
 
+type SetNoteResult interface {
+	IsSetNoteResult()
+}
+
 type StartUploadResult interface {
 	IsStartUploadResult()
 }
@@ -468,6 +472,11 @@ type Media struct {
 	// How good the photo looks, about 1 to 10, as people rated photos the model learned from: around 4 to 5 is an
 	// ordinary snapshot, 6 and more a good photo. Null until scored, or when aesthetic scores are off.
 	Aesthetic *float64 `json:"aesthetic,omitempty"`
+	// The note, a JSON object as the apps wrote it (setNote); null when there is none. Hidden with its file: a file a
+	// device may not see never reaches it, note and all.
+	Note *string `json:"note,omitempty"`
+	// The note's version, for setNote's baseVersion: the sha256 of note, in hex. Null when there is no note.
+	NoteVersion *string `json:"noteVersion,omitempty"`
 	// The faces found in the file, biggest first; empty until the server has read it, or when face search is off.
 	Faces []*Face `json:"faces"`
 	// The lines of text read in the photo, top to bottom; empty when it has none, hasn't been read, or OCR is off.
@@ -530,6 +539,20 @@ type NotFound struct {
 func (NotFound) IsPersonResult() {}
 
 func (NotFound) IsFaceResult() {}
+
+// The file's note changed since baseVersion: media has it as it is now.
+type NoteConflict struct {
+	Media *Media `json:"media"`
+}
+
+func (NoteConflict) IsSetNoteResult() {}
+
+// The note was kept (or was already this one).
+type NoteSaved struct {
+	Media *Media `json:"media"`
+}
+
+func (NoteSaved) IsSetNoteResult() {}
 
 // Files the nudity scan scored at `from` or more (Media.nudity), hidden on every device while `hidden`. Hidden from 0.5
 // until the user chooses.
@@ -638,6 +661,8 @@ type ServerInfo struct {
 	Aesthetic bool `json:"aesthetic"`
 	// Files can be tucked away (setTucked, Media.tucked).
 	TuckedAway bool `json:"tuckedAway"`
+	// Notes are kept and synced (setNote, Media.note).
+	Notes bool `json:"notes"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
