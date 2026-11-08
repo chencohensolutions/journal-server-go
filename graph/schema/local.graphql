@@ -7,6 +7,12 @@
 extend type Query {
   "The indexes this device may keep, those of the server that are on."
   localIndexes: [LocalIndex!]!
+  """
+  The model files phones run by themselves, not as part of an index: mobilenet_v3_large.tflite, the photo embedder
+  the Android app finds near-duplicates with (MediaPipe's, Apache 2.0). Empty while the server is still hashing them
+  after a start, or when they weren't downloaded (scripts/bundle-onnx). URL: /models/phone/{name}.
+  """
+  phoneModels: [ModelFile!]!
 }
 
 extend type ServerInfo {
@@ -41,6 +47,6 @@ type ModelFile {
   precision: String!
   bytes: Int64!
   sha256: Sha256!
-  "Its path on this server, to GET with Range: /models/{index}/{name}."
+  "Its path on this server, to GET with Range: /models/{index}/{name} (/models/phone/{name} for phoneModels)."
   url: String!
 }

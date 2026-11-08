@@ -368,6 +368,7 @@ type ComplexityRoot struct {
 		Media             func(childComplexity int, sha256 string) int
 		MissingMedia      func(childComplexity int, hashes []string) int
 		People            func(childComplexity int, includeGroups *bool, includePrivate *bool) int
+		PhoneModels       func(childComplexity int) int
 		SearchMedia       func(childComplexity int, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
 		SearchModel       func(childComplexity int, wait *bool) int
 		ServerInfo        func(childComplexity int) int
@@ -535,6 +536,7 @@ type QueryResolver interface {
 	HiddenCollections(ctx context.Context) (*model.HiddenCollections, error)
 	Indexing(ctx context.Context) (*model.Indexing, error)
 	LocalIndexes(ctx context.Context) ([]*model.LocalIndex, error)
+	PhoneModels(ctx context.Context) ([]*model.ModelFile, error)
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
@@ -2078,6 +2080,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.People(childComplexity, args["includeGroups"].(*bool), args["includePrivate"].(*bool)), true
+	case "Query.phoneModels":
+		if e.ComplexityRoot.Query.PhoneModels == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.PhoneModels(childComplexity), true
 	case "Query.searchMedia":
 		if e.ComplexityRoot.Query.SearchMedia == nil {
 			break
@@ -3124,6 +3132,12 @@ type IndexingRun {
 extend type Query {
   "The indexes this device may keep, those of the server that are on."
   localIndexes: [LocalIndex!]!
+  """
+  The model files phones run by themselves, not as part of an index: mobilenet_v3_large.tflite, the photo embedder
+  the Android app finds near-duplicates with (MediaPipe's, Apache 2.0). Empty while the server is still hashing them
+  after a start, or when they weren't downloaded (scripts/bundle-onnx). URL: /models/phone/{name}.
+  """
+  phoneModels: [ModelFile!]!
 }
 
 extend type ServerInfo {
@@ -3158,7 +3172,7 @@ type ModelFile {
   precision: String!
   bytes: Int64!
   sha256: Sha256!
-  "Its path on this server, to GET with Range: /models/{index}/{name}."
+  "Its path on this server, to GET with Range: /models/{index}/{name} (/models/phone/{name} for phoneModels)."
   url: String!
 }
 `, BuiltIn: false},
@@ -11541,6 +11555,38 @@ func (ec *executionContext) fieldContext_Query_localIndexes(_ context.Context, f
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_phoneModels(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_phoneModels(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().PhoneModels(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.ModelFile) graphql.Marshaler {
+			return ec.marshalNModelFile2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐModelFileᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_phoneModels(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ModelFile(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_missingMedia(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -18052,6 +18098,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_localIndexes(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "phoneModels":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_phoneModels(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}

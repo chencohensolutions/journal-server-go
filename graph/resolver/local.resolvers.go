@@ -31,3 +31,12 @@ func (r *queryResolver) LocalIndexes(ctx context.Context) ([]*model.LocalIndex, 
 	}
 	return out, nil
 }
+
+// PhoneModels is the resolver for the phoneModels field.
+func (r *queryResolver) PhoneModels(ctx context.Context) ([]*model.ModelFile, error) {
+	out := []*model.ModelFile{}
+	for _, f := range r.Local.PhoneModels() {
+		out = append(out, &model.ModelFile{Name: f.Name, Precision: f.Precision, Bytes: f.Bytes, Sha256: f.Sha256, URL: f.URL})
+	}
+	return out, nil
+}

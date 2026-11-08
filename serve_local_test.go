@@ -13,8 +13,10 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/bundle"
 	"github.com/journal/server-go/faces"
 	"github.com/journal/server-go/localindex"
 )
@@ -309,5 +311,40 @@ func TestAPhoneKeepsFacesTextAndPeople(t *testing.T) {
 		default:
 			t.Errorf("an index that is off: %+v", x)
 		}
+	}
+}
+
+// A phone gets the photo embedder it runs by itself from the server (phoneModels), so the app needn't carry it.
+func TestAPhoneDownloadsItsPhotoEmbedder(t *testing.T) {
+	folder := t.TempDir()
+	data := []byte("MediaPipe's embedder, made up")
+	os.WriteFile(filepath.Join(folder, bundle.PhoneEmbedder), data, 0o644)
+	env := newTestEnv(t, func(c *auth.AppConfig) { c.PhoneModels = folder })
+	phone := env.enrolledClient(t)
+	var files []struct {
+		Name, Sha256, URL string
+		Bytes             int64
+	}
+	for deadline := time.Now().Add(5 * time.Second); len(files) == 0 && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		resp := env.graphql(t, phone, `{ phoneModels { name bytes sha256 url } }`, nil)
+		if err := json.Unmarshal(resp.Data["phoneModels"], &files); err != nil {
+			t.Fatalf("phoneModels: %s %+v", resp.Data["phoneModels"], resp.Errors)
+		}
+	}
+	if len(files) != 1 || files[0].Name != bundle.PhoneEmbedder || files[0].Bytes != int64(len(data)) ||
+		files[0].URL != "/models/phone/"+bundle.PhoneEmbedder {
+		t.Fatalf("phoneModels: %+v", files)
+	}
+	resp, err := phone.Get(env.server.URL + files[0].URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != string(data) {
+		t.Fatalf("download: %d %q", resp.StatusCode, body)
+	}
+	if resp, _ := env.client(nil).Get(env.server.URL + files[0].URL); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("anonymous: %d", resp.StatusCode)
 	}
 }

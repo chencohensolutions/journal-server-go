@@ -137,6 +137,12 @@ device may see is listed or sent, as everywhere else.
 - **Model files.** `GET /models/{index}/{name}` sends a file the manifest lists, with Range (a gigabyte resumes where
   it broke) and its sha256 as the ETag. The server hashes them in the background at start and keeps the hashes in
   `.hashes.json` in the model folder; a file is listed once hashed.
+- **Models a phone runs by itself.** `phoneModels` lists files a phone runs that aren't part of any index the server
+  keeps, served the same way at `/models/phone/{name}`: today MediaPipe's photo embedder
+  (`mobilenet_v3_large.tflite`, 11 MB, Apache 2.0), which the Android app finds near-duplicates with, so the app
+  doesn't carry it. `scripts/bundle-onnx` and `journal-server setup` download it into `models/phone/` (version 1 from
+  Google's MediaPipe model storage, pinned by its sha256); `"phone_models"` in config.json names another folder. A
+  server without it lists none, and the app finds near-duplicates by dHash alone.
 - **Doing what the server does.** A phone's search must give the server's answers. `go run ./scripts/local-fixtures
   --out <folder>` writes made-up cases with the server's answers: the tokens and vectors of queries (fp32 and 8-bit),
   text in photos' words, matches and order, grouping into sets and moments, and the thresholds. The apps test against

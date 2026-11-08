@@ -494,7 +494,7 @@ type ModelFile struct {
 	Precision string `json:"precision"`
 	Bytes     int64  `json:"bytes"`
 	Sha256    string `json:"sha256"`
-	// Its path on this server, to GET with Range: /models/{index}/{name}.
+	// Its path on this server, to GET with Range: /models/{index}/{name} (/models/phone/{name} for phoneModels).
 	URL string `json:"url"`
 }
 
