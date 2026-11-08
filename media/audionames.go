@@ -229,14 +229,18 @@ func ProbeAudio(ctx context.Context, ffprobe, path, fileName, folder string, hin
 	return f
 }
 
-// EncodeFLAC encodes a WAV as FLAC in work, keeping its metadata, and returns the FLAC's path.
+// EncodeFLAC encodes a WAV as FLAC in work, keeping its metadata, and returns the FLAC's path. It takes ffmpeg's
+// highest effort (level 12, exact Rice parameters; the owner's choice, Nov 8, 2026) but keeps the prediction order
+// at 12, the most the FLAC subset allows up to 48 kHz: level 12 alone goes to 32, which saves about 0.2% and makes
+// a file some players and phones' decoders refuse.
 func EncodeFLAC(ctx context.Context, ffmpeg, work, wav string) (string, error) {
 	if ffmpeg == "" {
 		return "", ErrNoEncoder
 	}
 	out := filepath.Join(work, strings.TrimSuffix(filepath.Base(wav), filepath.Ext(wav))+".flac")
 	cmd := exec.CommandContext(ctx, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", wav,
-		"-map_metadata", "0", "-map", "0:a", "-c:a", "flac", "-compression_level", "8", out)
+		"-map_metadata", "0", "-map", "0:a", "-c:a", "flac",
+		"-compression_level", "12", "-max_prediction_order", "12", "-exact_rice_parameters", "1", out)
 	if msg, err := cmd.CombinedOutput(); err != nil {
 		os.Remove(out)
 		return "", fmt.Errorf("encoding as FLAC: %v: %s", err, strings.TrimSpace(string(msg)))

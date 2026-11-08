@@ -587,7 +587,8 @@ about half the bytes); its sidecar's `encodedFrom` names the WAV, which isn't ke
 ```
 
 **A WAV is never kept**: wherever it comes from (the import, a phone that encoded it, or an upload of the WAV itself,
-which the server encodes with ffmpeg), there is only the FLAC, with both sha256s. Everything a device asks by sha256
+which the server encodes with ffmpeg at its highest effort that stays within the FLAC subset: level 12,
+prediction order 12, exact Rice parameters), there is only the FLAC, with both sha256s. Everything a device asks by sha256
 answers a WAV's as its FLAC (`Store.Find`, with an index of `encodedFrom`): `missingMedia` doesn't list it,
 `startUpload` answers `MediaExists`, `media(sha256:)` is the FLAC, and `/verify` re-hashes the FLAC against its own
 sha256. So neither the WAV nor the FLAC is sent again, and a phone freeing space can verify whichever it holds.
