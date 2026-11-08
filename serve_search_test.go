@@ -165,6 +165,16 @@ func TestSearchFindsPhotosByTheirDescription(t *testing.T) {
 	if got := search(tablet, "a plain red picture"); got.Total != 2 || got.Indexed != 2 || len(got.Hits) != 2 || got.Hits[0].Media.Sha256 != darkRed {
 		t.Errorf("tablet found %+v, want the dark red and blue pictures", got)
 	}
+
+	// A tucked file is never found, not even with includePrivate, but still counts as read.
+	env.graphql(t, phone, `mutation($h: [Sha256!]!) { setTucked(sha256s: $h, tucked: true) { sha256 } }`,
+		map[string]any{"h": []string{darkRed}})
+	resp = env.graphql(t, phone, `query($t: String!) { searchMedia(text: $t, limit: 10, includePrivate: true) { total hits { media { sha256 } } } }`,
+		map[string]any{"t": "a plain red picture"})
+	var withTucked result
+	if err := json.Unmarshal(resp.Data["searchMedia"], &withTucked); err != nil || withTucked.Total != 3 || len(withTucked.Hits) != 2 || withTucked.Hits[0].Media.Sha256 != red || withTucked.Hits[1].Media.Sha256 != blue {
+		t.Errorf("with a tucked file: %s %+v, want the red and blue pictures", resp.Data["searchMedia"], resp.Errors)
+	}
 }
 
 // uploadPhotoWith uploads data like uploadPhoto, with more facts for startUpload (takenAt, location).

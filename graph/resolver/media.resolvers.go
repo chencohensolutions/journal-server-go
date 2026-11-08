@@ -108,6 +108,34 @@ func (r *mutationResolver) SetPrivate(ctx context.Context, sha256s []string, pri
 	return result, nil
 }
 
+// SetTucked is the resolver for the setTucked field.
+func (r *mutationResolver) SetTucked(ctx context.Context, sha256s []string, tucked bool) ([]*model.Media, error) {
+	if len(sha256s) > maxHashesPerQuery {
+		return nil, coded(CodeInvalidArgument, "at most %d hashes per call", maxHashesPerQuery)
+	}
+	v, err := r.view(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Only the files the device can see: a hidden or withheld file can't be tucked or brought back from it.
+	for _, sha := range sha256s {
+		if v.hidesSha(sha) {
+			return nil, fmt.Errorf("%s isn't on the server", sha)
+		}
+	}
+	changed, err := v.store.SetTucked(sha256s, tucked, auth.DeviceNameFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	result := []*model.Media{}
+	for _, item := range changed {
+		if !v.hides(item) {
+			result = append(result, v.toMedia(item))
+		}
+	}
+	return result, nil
+}
+
 // MissingMedia is the resolver for the missingMedia field.
 func (r *queryResolver) MissingMedia(ctx context.Context, hashes []string) ([]string, error) {
 	if len(hashes) > maxHashesPerQuery {

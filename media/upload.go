@@ -426,6 +426,7 @@ func (s *Store) place(from string, req UploadRequest) (*Item, error) {
 			Camera:       req.Camera,
 		},
 		Privacy: s.inheritedPrivacy(req),
+		Tucked:  s.inheritedTuck(req),
 	}
 	// The one rule decides the source, after SentFrom keeps what was sent.
 	kinds := req.FolderKinds

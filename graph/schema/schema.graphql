@@ -48,6 +48,8 @@ type ServerInfo {
   similar: Boolean!
   "Photos get aesthetic scores (Media.aesthetic)."
   aesthetic: Boolean!
+  "Files can be tucked away (setTucked, Media.tucked)."
+  tuckedAway: Boolean!
 }
 
 type Mutation {

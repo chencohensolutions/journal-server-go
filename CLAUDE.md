@@ -15,8 +15,9 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/media.md](docs/media.md): the data folder and sidecar format, resumable `PUT /upload/{sha256}`,
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, sources (the one rule; folder kinds in lower
   case, named by `folderNames`), cameras and sound folders, the change feed, nudity scores, private
-  files, hidden collections, sound recordings (recordings, calls, voice messages; hidden until shown), JPEG photos
-  kept as JPEG XL losslessly (`journal-server jxl`), imports, turns between processes.
+  files, tucked-away files (search never finds them), hidden collections, sound recordings (recordings, calls,
+  voice messages; hidden until shown), JPEG photos kept as JPEG XL losslessly (`journal-server jxl`), imports, turns
+  between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
   "On the phone": the indexes a phone may keep and search itself (`localIndexes`, `/index/{name}` streams,
   `/index/people`, `/models/…`).

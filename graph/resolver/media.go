@@ -140,6 +140,7 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		UploadedAt:    facts.UploadedAt,
 		UploadedBy:    facts.UploadedBy,
 		Private:       item.Sidecar.IsPrivate(),
+		Tucked:        item.Sidecar.IsTucked(),
 		URL:           "/media/" + item.Sha256(),
 	}
 	switch facts.Kind {

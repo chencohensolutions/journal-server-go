@@ -3,6 +3,7 @@ package media
 import (
 	"fmt"
 	"sort"
+	"time"
 )
 
 // SetPrivate marks files private, or no longer private, in their sidecars, together with every file that goes with
@@ -11,6 +12,19 @@ import (
 // sidecars are rewritten; originals are never touched. Each changed file comes again in the change feed (SetAt is
 // now, taken during the turn). Files already as asked are left as they are. It returns the files it changed.
 func (s *Store) SetPrivate(hashes []string, private bool, by string) (changed []Item, err error) {
+	return s.setMark(hashes, func(sidecar *Sidecar, now time.Time) bool {
+		if sidecar.IsPrivate() == private {
+			return false
+		}
+		sidecar.Privacy = &Privacy{Private: private, SetAt: now, SetBy: by}
+		return true
+	})
+}
+
+// setMark sets one of the user's marks (private, tucked) on the files in hashes and every file that goes with them
+// (groupOf), in one turn. mark changes a copy of each sidecar and says whether it changed; only those are rewritten
+// and returned. now is taken during the turn.
+func (s *Store) setMark(hashes []string, mark func(sidecar *Sidecar, now time.Time) bool) (changed []Item, err error) {
 	err = s.Turn(func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -25,11 +39,10 @@ func (s *Store) SetPrivate(hashes []string, private bool, by string) (changed []
 		}
 		now := s.now().UTC()
 		for _, item := range s.groupOf(hashes) {
-			if item.Sidecar.IsPrivate() == private {
+			sidecar := item.Sidecar
+			if !mark(&sidecar, now) {
 				continue
 			}
-			sidecar := item.Sidecar
-			sidecar.Privacy = &Privacy{Private: private, SetAt: now, SetBy: by}
 			if err := s.rewriteSidecar(item, sidecar); err != nil {
 				return err
 			}

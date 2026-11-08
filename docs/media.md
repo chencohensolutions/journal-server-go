@@ -112,7 +112,8 @@ evidence of its source, as `importedFrom` is the import's, so the server can tel
 models found in the file (see [Nudity scan](#nudity-scan)). Files brought in
 by the import script have `"uploadedBy": "import"` and `importedFrom`, the path they were found at. `correctedAt`
 is set when the server later corrects a fact clients show (see [Fixing sources](#fixing-sources)). `privacy` is
-there once the user marked the file private (see [Private files](#private-files)). `kind` is `photo`, `video` or
+there once the user marked the file private (see [Private files](#private-files)), and `tucked` once they tucked it
+away (see [Tucked away](#tucked-away)). `kind` is `photo`, `video` or
 `audio`; a sound recording may have `call` and `encodedFrom` (see [Sound recordings](#sound-recordings)).
 
 ### Sources
@@ -425,7 +426,8 @@ changes come after the page, for a progress count). A new device starts without 
 page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed since (an empty page
 returns the same cursor). A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
 (see [Nudity scan](#nudity-scan)), its source is corrected (see [Fixing sources](#fixing-sources)) or it is marked
-private or unmarked (see [Private files](#private-files)): it then comes again, whole. To a device the server keeps
+private or unmarked (see [Private files](#private-files)), or tucked away or brought back (see
+[Tucked away](#tucked-away)): it then comes again, whole. To a device the server keeps
 from private files, a private file comes as `deleted`, and so does a file the user hides (one of the
 [hidden collections](#hidden-collections), or nudity) to every device, with `hidden` set, so the device leaves out its
 own copy too. A JPEG kept as JPEG XL comes as `deleted` (its JPEG's sha256) right before its JPEG XL, whose
@@ -510,6 +512,29 @@ from them entirely, for example a tablet others use: `journal-server private <se
 
 Withholding protects what a lost device holds better than the apps' hiding, since nothing private reaches it. Revoke a
 lost device in any case (see [authentication.md](authentication.md)).
+
+## Tucked away
+
+A lighter hiding than private, asked for by the owner on Nov 8, 2026: the user tucks files away from the apps'
+feeds without making them private. `mutation setTucked(sha256s: [Sha256!]!, tucked: Boolean!)`, at most 1000 per
+call, returns the files that changed (`serverInfo.tuckedAway` says the server has it). The mark sits in the sidecar
+beside `privacy`:
+
+```json
+"tucked": { "tucked": true, "setAt": "2026-11-08T19:02:11Z", "setBy": "Pixel 9 Pro" }
+```
+
+- As with private, it is the user's choice (never in `detected`), bringing a file back keeps the field with
+  `"tucked": false` and a new `setAt` so the change comes in the change feed, and a file is tucked with everything
+  that goes with it (`versionOf`, `pairedWith`); an edit or paired file uploaded later of a tucked file is tucked from
+  the start. Private and tucked are separate marks; a file may have both.
+- The API gives it as `Media.tucked`. **Search never finds a tucked file**: `searchMedia`, `similarMedia`,
+  `duplicates`, `people` and `similarFaces` leave it out, even with `includePrivate`. It still counts as read in their
+  `indexed` and `total`.
+- **Everything else treats it as any file.** It is not part of a device's view: every device gets it in the change
+  feed (flagged), with `/media`, its preview and the copies, also a device kept from private files. The apps hide it
+  from their feeds until the user reveals it (behind the phone's lock), and leave it out of the search they do on the
+  phone (from the flag in the feed), so the [local indexes](search.md) keep it.
 
 ## Hidden collections
 
