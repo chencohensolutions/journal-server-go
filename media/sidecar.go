@@ -41,7 +41,7 @@ type Facts struct {
 	DurationMs *int64     `json:"durationMs"`
 	Location   *GeoPoint  `json:"location"`
 	Source     *string    `json:"source"`
-	// The source as the device, or scripts/import, gave it when the file arrived, kept as it was when the server's
+	// The source as the device, or journal-server import, gave it when the file arrived, kept as it was when the server's
 	// rules change Source (SourceOf, Relabel, SetLabels), so nothing it said is lost. Absent when it gave none, and
 	// on files placed before Oct 27, 2026 until their source is changed.
 	SentFrom *string `json:"sentFrom,omitempty"`
@@ -61,9 +61,9 @@ type Facts struct {
 	PairedWith *string   `json:"pairedWith"`
 	UploadedAt time.Time `json:"uploadedAt"`
 	UploadedBy string    `json:"uploadedBy"`
-	// Where scripts/import found the file on the server's disk; absent on uploads from devices.
+	// Where journal-server import found the file on the server's disk; absent on uploads from devices.
 	ImportedFrom *string `json:"importedFrom,omitempty"`
-	// Every folder scripts/import found this file in, from the searched folder down ("phone DCIM/Flowers"):
+	// Every folder journal-server import found this file in, from the searched folder down ("phone DCIM/Flowers"):
 	// the albums it was kept in, as clues. Copies found later add theirs.
 	Folders []string `json:"folders,omitempty"`
 	// Who a phone call was with, as the recorder named the file; set only on calls (audio), and the user may correct it (SetCall).
@@ -92,7 +92,7 @@ func (f *Facts) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Imported reports whether scripts/import placed the file, rather than a device uploading it.
+// Imported reports whether journal-server import placed the file, rather than a device uploading it.
 func (f Facts) Imported() bool {
 	return f.UploadedBy == "import"
 }

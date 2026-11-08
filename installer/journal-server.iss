@@ -1,7 +1,7 @@
 ; Inno Setup script for the journal server on Windows (docs/install.md). Built by scripts/release.sh, or on
 ; Windows with: ISCC.exe /DAppVersion=<version> installer\journal-server.iss (after building dist\*.exe).
 ;
-; The installer copies the three programs, then runs `journal-server setup`, which writes config.json and the
+; The installer copies the program, then runs `journal-server setup`, which writes config.json and the
 ; certificates and downloads ONNX Runtime, the models, libvips and ffmpeg (so the installer stays small), and
 ; `journal-server service install`, which sets up the service that starts the server at boot and the firewall rule.
 ; Uninstalling removes the programs and what was downloaded, never config.json, the certificates, devices.json or
@@ -35,11 +35,14 @@ UninstallDisplayName=Journal server
 
 [Files]
 Source: "{#Dist}\journal-server.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Dist}\journal-import.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Dist}\journal-jxl.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[InstallDelete]
+; Before 1.2 the import and jxl were programs of their own; they are journal-server import and jxl now.
+Type: files; Name: "{app}\journal-import.exe"
+Type: files; Name: "{app}\journal-jxl.exe"
 
 [Icons]
-Name: "{autoprograms}\Journal server folder"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}"" && journal-server"; WorkingDir: "{app}"; Comment: "A console in the server's folder, for journal-server, journal-import and journal-jxl"
+Name: "{autoprograms}\Journal server folder"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}"" && journal-server"; WorkingDir: "{app}"; Comment: "A console in the server's folder, for journal-server and its commands"
 Name: "{autoprograms}\Journal server log"; Filename: "{app}\server.log"
 
 [UninstallRun]
@@ -52,6 +55,10 @@ Type: filesandordirs; Name: "{app}\models"
 Type: filesandordirs; Name: "{app}\vips"
 Type: filesandordirs; Name: "{app}\ffmpeg"
 Type: files; Name: "{app}\admin.token"
+; What updates leave beside the program (docs/install.md, "Updates").
+Type: files; Name: "{app}\journal-server.exe.old"
+Type: files; Name: "{app}\journal-server.exe.new"
+Type: files; Name: "{app}\journal-server.exe.rollback"
 
 [Code]
 var

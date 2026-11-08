@@ -16,7 +16,7 @@ the upload and sync design agreed with the owner. The docs here describe what is
   `GET /media/{sha256}` with Range, previews and video posters, `/verify`, sources (the one rule; folder kinds in lower
   case, named by `folderNames`), cameras and sound folders, the change feed, nudity scores, private
   files, hidden collections, sound recordings (recordings, calls, voice messages; hidden until shown), JPEG photos
-  kept as JPEG XL losslessly (`scripts/jxl`), imports, turns between processes.
+  kept as JPEG XL losslessly (`journal-server jxl`), imports, turns between processes.
 - [docs/search.md](docs/search.md): text search (`searchMedia`) with SigLIP 2 on ONNX Runtime inside the server, and
   "On the phone": the indexes a phone may keep and search itself (`localIndexes`, `/index/{name}` streams,
   `/index/people`, `/models/…`).
@@ -36,8 +36,9 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/install.md](docs/install.md): the Windows installer (`installer/journal-server.iss`, `scripts/release.sh`),
   `journal-server setup` (config, certificates through package `certs`, downloads through package `bundle`;
   `--move-from` only reads the old server), the JournalServer service and firewall rule (`service_windows.go`),
-  `journal-import.exe` / `journal-jxl.exe` beside the server, why a new server imports the apps' CA, and versions
-  (`version/VERSION`, raised by the pre-commit hook and `scripts/bump-version.sh`).
+  the import and jxl as commands of the one program, why a new server imports the apps' CA, versions
+  (`version/VERSION`, raised by the pre-commit hook and `scripts/bump-version.sh`), releases
+  (`.github/workflows/release.yml`, signed with `scripts/sign-release`) and updates (package `update`, `selfupdate.go`).
 
 Not built yet: stories and notes in the change feed, the story trash. Certificates renew in their last 30 days
 (`renewCertificate` for devices, `POST /peer/renew` for peers; docs/authentication.md, docs/peers.md).
@@ -65,6 +66,8 @@ go run ./scripts/bundle-vips               # portable libvips for Windows into v
 go run . setup --dir <folder> ...          # make a server folder: config, certs, downloads (docs/install.md); writes only in --dir
 scripts/release.sh                         # Windows programs + installer into dist/ (Inno Setup in Docker: colima start first)
 scripts/bump-version.sh minor|major        # version/VERSION; patch goes up by itself (git config core.hooksPath .githooks, once per clone)
+                                           # publish a release: Actions tab, "Release", Run workflow (docs/install.md "Releases")
+go run . update [--check | --rollback]     # a release build: install the latest release now (it also does so daily)
 go run . enroll-code <user> | devices [user] | revoke <serial>   # admin commands; the server must be running
 go run . private <serial> withhold|allow   # keep the user's private files from a device (default: sent, flagged)
 go run . copy [user] | copy report [user] [--list]   # start the copies' full pass now; what each copy lacks
@@ -73,9 +76,9 @@ go run . peer invite --name <n> --quota 2TB | peer add <name> <url> <code> [--tr
 go run . copy-key new <user> (--out <file> [--passphrase] | --from-passphrase)   # the key that encrypts copies on peers
 go run . restore <user> (--from <peer> | --from-folder <dir>) --to <empty dir> [--key <file> | --passphrase] [--as-of <day>]
 go run . index [--user name] [--progress]  # read new files for the indexes once and exit ("index": "daily" runs it per user at "index_at")
-go run ./scripts/import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--delete-duplicates] <folder>...
+go run . import --user <name> --imported <folder> --not-imported <folder> [--dry-run] [--delete-duplicates] <folder>...
 go run ./scripts/scan-nudity --user <name> [--rescan]     # NudeNet on ONNX Runtime; the server scans new files itself
-go run ./scripts/jxl --user <name> [--dry-run | --report] [--until 07:00]   # keep JPEGs as JPEG XL losslessly; the server does uploads itself
+go run . jxl --user <name> [--dry-run | --report] [--until 07:00]   # keep JPEGs as JPEG XL losslessly; the server does uploads itself
 go run ./scripts/read-cameras --user <name> [--dry-run]   # facts.camera for files placed before it was read; lists camera models
 go run ./scripts/fix-sources --user <name> [--dry-run] [--list <before>:<after>]   # relabel by media.SourceOf, journaled in relabels/
 go run ./scripts/fix-sources --user <name> --undo <journal> | --to-old-ids        # put a journal back; ids for an older server
@@ -149,8 +152,8 @@ That default is the owner's choice (Oct 22, 2026): the server has several users,
 and a user's phone keeps every preview it asks for and is usually the only device reading that folder, so a server
 cache would hold copies of what the phone already has. Don't propose turning it on.
 
-**Multi-process writes go through turns** (`media/turns.go`). The server, one or more `scripts/import` runs,
-`scripts/scan-nudity`, `scripts/read-cameras`, `scripts/fix-sources` and `scripts/jxl` may share a data folder. Each holds an exclusive file lock on
+**Multi-process writes go through turns** (`media/turns.go`). The server, one or more `journal-server import` runs,
+`scripts/scan-nudity`, `scripts/read-cameras`, `scripts/fix-sources` and `journal-server jxl` may share a data folder. Each holds an exclusive file lock on
 `.cache/write.lock` only for the milliseconds it takes to place a file or rewrite a sidecar, and appends to
 `.cache/write-journal.tsv` so the others can catch up (`Store.CatchUp`, `OnCatchUp`). Copying and hashing happen
 before the turn. Anything that writes into the data folder from outside the store's own methods must run inside
@@ -182,7 +185,7 @@ one writer at a time. Packages `ocr` (Hebrew and English text in photos, found b
 answer an error). Package `localindex` gives phones the indexes to keep (`newLocal` in `library.go`): each cache file
 as a stream of what was added since a cursor, filtered by the device's `View`, with records of files whose visibility
 changed dropped or sent again from the index's memory (`Cache.Record`); the people whole; and the text half's files. The resolver's `Library` field is the `media.Library` (`Media` is gqlgen's resolver for
-`Media.faces`). `scripts/import` is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
+`Media.faces`). `importcmd` (`journal-server import`; `jxlcmd` is `journal-server jxl`) is split by concern: `main.go` (flags and the run), `pipeline.go` (walk, examine, decide),
 `facts.go` (dates, size, GPS from EXIF/ffprobe), `audio.go` (sound recordings: dates, calls, WAV to FLAC), `near.go` (dHash near-duplicates), `same.go` (the same-picture check), `recheck.go` (`--recheck`), `outcomes.go` (moving files,
 progress, reports), `review.go` (the browser review page), `cloud.go` (Google Drive / OneDrive through rclone).
 

@@ -1,5 +1,5 @@
-// Package version is the server's version: version/VERSION (major.minor.patch), embedded in every program built
-// from this module (journal-server, journal-import, journal-jxl) and in the installer's name. The pre-commit hook in
+// Package version is the server's version: version/VERSION (major.minor.patch), embedded
+// in journal-server (which also runs the import and jxl) and in the installer's name. The pre-commit hook in
 // .githooks raises the patch number on every commit that changes Go code; scripts/bump-version.sh raises the minor
 // or major number. See docs/install.md "Versions".
 package version
@@ -15,6 +15,13 @@ var file string
 
 // Number is the version in VERSION, e.g. "1.4.2".
 var Number = strings.TrimSpace(file)
+
+// Build is "release" in the programs .github/workflows/release.yml publishes (set with -ldflags -X), and empty in
+// a build from source. Only a release build replaces itself with a newer release (package update).
+var Build string
+
+// Released reports whether this is a published release build.
+func Released() bool { return Build == "release" }
 
 // String is the version with the build's commit and time from the Go build info: "1.4.2 (3f2a9c1 2026-10-23)",
 // with "dirty" when built with uncommitted changes, or just "1.4.2" when built without version control.

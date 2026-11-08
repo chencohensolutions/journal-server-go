@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-// Several processes may have the same data folder open at once: the server, scripts/import (one or
+// Several processes may have the same data folder open at once: the server, journal-server import (one or
 // more), scripts/scan-nudity. Each keeps the index in memory, so they take turns at the few steps that
 // change it (placing a file, rewriting a sidecar), holding the exclusive lock on .cache/write.lock. Each
 // turn first catches up with what the others did, from .cache/write-journal.tsv ("<sha256>\t<path>" per
@@ -58,7 +58,7 @@ func (s *Store) writeHook() func([]Item) {
 
 // Turn runs fn while this process alone changes the data folder, after catching up with the others. The
 // store's own writes (Import, AddFolders, SetNudity, uploads) take their turn themselves; Turn is for a
-// caller's own files that several processes share, such as scripts/import's review list. Not reentrant.
+// caller's own files that several processes share, such as the import's review list. Not reentrant.
 func (s *Store) Turn(fn func() error) error {
 	if s.readOnly {
 		return fmt.Errorf("%s was opened only to read", s.root)

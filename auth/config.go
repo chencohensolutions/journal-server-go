@@ -104,6 +104,12 @@ type AppConfig struct {
 	Index string `json:"index"`
 	// The local time of the daily run, "15:04" (default "03:00"); for Index "daily".
 	IndexAt string `json:"index_at"`
+	// Whether a release build of the server installs newer releases by itself (docs/install.md, "Updates"): "auto"
+	// (the default) checks every day at UpdateAt, installs a newer release of the same major version and restarts;
+	// "notify" only writes to the log that one is out; "off" doesn't look. A build from source never updates itself.
+	Update string `json:"update"`
+	// The local time of the daily update check, "15:04" (default "04:00").
+	UpdateAt string `json:"update_at"`
 	// Path of the ffmpeg program, used for video posters (ffprobe beside it); found on the PATH or in Homebrew when empty.
 	FFmpeg string `json:"ffmpeg"`
 	// Most space the previews of one user may take before the least recently used are deleted (default 50).
@@ -149,6 +155,9 @@ const (
 	DefaultAestheticModel = "models/clip-vit-large-patch14-laion"
 	IndexInServer         = "server"
 	IndexDaily            = "daily"
+	UpdateAuto            = "auto"
+	UpdateNotify          = "notify"
+	UpdateOff             = "off"
 	DefaultCopyAt         = "03:30"
 	DefaultPeersDir       = "certs/peers"
 	DefaultPeersFile      = "peers.json"
@@ -182,6 +191,12 @@ func LoadConfig(path string) (AppConfig, error) {
 	}
 	if _, err := time.Parse("15:04", config.IndexAt); err != nil {
 		return AppConfig{}, fmt.Errorf("%s: index_at is a time like \"03:00\", not %q", path, config.IndexAt)
+	}
+	if config.Update != UpdateAuto && config.Update != UpdateNotify && config.Update != UpdateOff {
+		return AppConfig{}, fmt.Errorf("%s: update is %q, %q or %q, not %q", path, UpdateAuto, UpdateNotify, UpdateOff, config.Update)
+	}
+	if _, err := time.Parse("15:04", config.UpdateAt); err != nil {
+		return AppConfig{}, fmt.Errorf("%s: update_at is a time like \"04:00\", not %q", path, config.UpdateAt)
 	}
 	for _, user := range config.Users {
 		if err := user.checkCopies(); err != nil {
@@ -240,6 +255,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.IndexAt == "" {
 		c.IndexAt = "03:00"
+	}
+	if c.Update == "" {
+		c.Update = UpdateAuto
+	}
+	if c.UpdateAt == "" {
+		c.UpdateAt = "04:00"
 	}
 	if c.ReaderPrepare <= 0 {
 		c.ReaderPrepare = 2

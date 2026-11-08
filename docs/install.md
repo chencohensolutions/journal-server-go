@@ -1,8 +1,11 @@
 # Installing the server on Windows
 
-`journal-server-setup-<version>.exe` installs the server on a Windows PC: a 10 MB installer that holds only the
-three programs and downloads the rest while it installs. Built by `scripts/release.sh` (Inno Setup in Docker, from
-`installer/journal-server.iss`).
+`journal-server-setup-<version>.exe` installs the server on a Windows PC: a small installer that holds only the
+program and downloads the rest while it installs. Each release on GitHub has it (Releases, below), built from
+`installer/journal-server.iss` with Inno Setup.
+
+Linux and macOS have no installer yet: each release has `journal-server-linux-amd64`, `-linux-arm64`,
+`-darwin-amd64` and `-darwin-arm64`, run with launchd or systemd, and `journal-server setup` makes the folder.
 
 ## What it installs
 
@@ -10,17 +13,16 @@ In the folder chosen (`C:\JournalServer` by default; not Program Files, because 
 
 | | |
 |---|---|
-| `journal-server.exe` | the server, and its admin commands (`enroll-code`, `devices`, `copy`, …) |
-| `journal-import.exe` | `scripts/import`: brings photos from folders or the cloud into a user's data folder |
-| `journal-jxl.exe` | `scripts/jxl`: keeps a user's JPEG photos as JPEG XL, losslessly |
+| `journal-server.exe` | the server, its admin commands (`enroll-code`, `devices`, `copy`, …), `journal-server import` (brings photos from folders or the cloud into a user's data folder; package `importcmd`) and `journal-server jxl` (keeps a user's JPEG photos as JPEG XL, losslessly; package `jxlcmd`) |
 | `onnxruntime\`, `models\` | downloaded: ONNX Runtime and every index's model (`bundle.ONNX`) |
 | `vips\` | downloaded: libvips with HEIC and libjxl, from MSYS2's packages (`bundle.Vips`) |
 | `ffmpeg\bin\` | downloaded: ffmpeg and ffprobe (`bundle.FFmpeg`, a pinned release of Gyan's build) |
 | `config.json`, `certs\`, `devices.json` | the server's own: made by setup, or copied from the server it replaces |
 
-The folder is added to the PATH, so `journal-server`, `journal-import` and `journal-jxl` run from any console. Each
-changes to its own folder when the current one has no `config.json` (`auth.UseInstallFolder`); folders given to
-`journal-import` are taken from where it was started. `journal-import --cloud` needs rclone
+The folder is added to the PATH, so `journal-server` runs from any console. It changes to its own folder when the
+current one has no `config.json` (`auth.UseInstallFolder`); folders given to `journal-server import` are taken from
+where it was started. Until 1.2 the import and jxl were programs of their own (`journal-import.exe`,
+`journal-jxl.exe`); installing over such an install removes them. `journal-server import --cloud` needs rclone
 (`winget install Rclone.Rclone`), which isn't bundled.
 
 Every download is checked against a sha256 its source publishes (or one kept in `bundle/`), and is kept between
@@ -76,8 +78,8 @@ Uninstalling removes the service, the firewall rule, the programs and what was d
 
 ## Versions
 
-The version is `version/VERSION` (major.minor.patch), embedded in all three programs by package `version`.
-`journal-server version`, `journal-import --version` and `journal-jxl --version` print it with the build's commit
+The version is `version/VERSION` (major.minor.patch), embedded in the program by package `version`.
+`journal-server version` prints it with the build's commit
 (`1.4.2 (3f2a9c1 2026-10-23)`), and so do `serverInfo.version` and the installer's name.
 
 - **Patch** goes up by itself: the pre-commit hook (`.githooks/pre-commit`) runs `scripts/bump-version.sh patch` on
@@ -93,9 +95,84 @@ The version is `version/VERSION` (major.minor.patch), embedded in all three prog
 ## Building it
 
 ```bash
-scripts/release.sh               # dist/journal-server.exe, journal-import.exe, journal-jxl.exe and the installer
+scripts/release.sh               # dist/journal-server.exe and the installer, on this machine
 ```
 
-It cross-compiles the three programs (no cgo) and compiles `installer/journal-server.iss` with Inno Setup 6 in
+That is for trying the installer out; published releases come from GitHub (below), and only they update themselves.
+It cross-compiles the program (no cgo) and compiles `installer/journal-server.iss` with Inno Setup 6 in
 Docker (`amake/innosetup`). On Windows: build the programs into `dist\` and run
 `ISCC.exe /DAppVersion=<version in version\VERSION> installer\journal-server.iss`.
+
+## Releases
+
+`.github/workflows/release.yml` publishes a release on GitHub. Start it from the repository's Actions tab
+("Release", Run workflow), which releases the version in `version/VERSION` as the tag `v<version>`, or push that tag
+yourself. It refuses a version that already has a release, and a tag that isn't `version/VERSION`. It runs the
+tests, then builds:
+
+- `journal-server-windows-amd64.exe`, `-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`: the program
+  for each system, marked as a release build (`version.Build` is `release`; only these update themselves),
+- `journal-server-setup-<version>.exe`, the Windows installer, with Inno Setup in Docker,
+- `SHA256SUMS`: `# journal-server <version>`, then the sha256 of every file,
+- `SHA256SUMS.sig`: an ed25519 signature of `SHA256SUMS` by the release key.
+
+Releases cost nothing: GitHub Actions and Releases are free for a public repository.
+
+**The release key.** The workflow signs with the repository secret `RELEASE_SIGNING_KEY`, and every server checks the
+signature against the public keys compiled into it (`update/release-keys.txt`). To make one, once:
+
+```bash
+go run ./scripts/sign-release new-key ~/journal-release.key   # prints the public key
+```
+
+Add the public key as a line of `update/release-keys.txt` and commit it; add the file's contents as the secret
+(repository Settings, Secrets and variables, Actions, `RELEASE_SIGNING_KEY`), then keep the file somewhere offline.
+The signature means a server installs only what this key signed: a file changed on its way, or on GitHub by anyone
+without the key, is refused. Someone who could change the repository's secrets and workflow could still sign; the
+stricter way, signing on the Mac before publishing, isn't built. A new key can take over by listing both in
+`release-keys.txt` for a release or two. `go run ./scripts/sign-release verify dist/SHA256SUMS` checks a signature.
+
+## Updates
+
+A release build looks for a newer release on GitHub (package `update`, `selfupdate.go`), as `"update"` in
+`config.json` says:
+
+| `"update"` | |
+|---|---|
+| `"auto"` (default) | about a minute after start, writes to the log whether a newer release is out; every day at `"update_at"` (`"04:00"` by default) installs a newer release of the same major version and restarts |
+| `"notify"` | only writes to the log, at start and daily, that a newer release is out |
+| `"off"` | doesn't look |
+
+A build from source (`go run .`, `go build`, `scripts/release.sh`) never updates itself, whatever `"update"` says,
+so a server run from a git clone stays on what was built there.
+
+Installing a release:
+
+1. Reads the latest release, then `SHA256SUMS` and its signature. Nothing is used unless the signature is by a key
+   in `update/release-keys.txt`, and the version it names (not the tag) is newer than the one running.
+2. Downloads this system's program beside the running one as `journal-server.exe.new`, checks its sha256 against
+   `SHA256SUMS`, and runs `journal-server.exe.new version`, which must answer that version: a program that doesn't
+   run on this PC is never put in place.
+3. Renames the running program to `journal-server.exe.old` (replacing the one before) and the new one into its place.
+   Windows allows renaming a running program, though not deleting it.
+4. Runs the new program's `setup --dir <install folder>` when `config.json` is there, which downloads anything the new
+   version needs that isn't there yet (a newer ffmpeg, a new model) and changes nothing else.
+5. Stops the server the usual way (the reader finishes its file, index caches are saved) and starts the new program:
+   as the JournalServer service it exits without telling the service manager, which starts it again 10 seconds
+   later (the recovery actions `service install` set); from a console it starts the new program in the same window;
+   on Linux and macOS it replaces itself in the same process, so systemd or launchd see no change. Uploads in
+   progress go on where they stopped once the phone reconnects.
+
+A new major version (2.0 after 1.x) changes something every install must follow, so it is only written to the log;
+install it by hand after reading its release notes.
+
+By hand, in the install folder (as administrator, to restart the service):
+
+```
+journal-server update             # install the latest release now (a new major version too), and restart the service
+journal-server update --check     # only say whether a newer release is out
+journal-server update --rollback  # put journal-server.exe.old back; again to undo that
+```
+
+Outside the service, restart the server yourself after `update` or `--rollback`. Uninstalling removes the `.old`,
+`.new` and `.rollback` programs too.

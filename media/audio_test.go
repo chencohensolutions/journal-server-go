@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// importAudio places a made-up sound recording, as scripts/import does.
+// importAudio places a made-up sound recording, as journal-server import does.
 func (f *fixture) importAudio(data []byte, name string, call *Call, source string) Item {
 	f.t.Helper()
 	path := filepath.Join(f.t.TempDir(), name)

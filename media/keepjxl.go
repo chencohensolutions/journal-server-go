@@ -19,7 +19,7 @@ import (
 // losing a bit (JXL.Keep checks that the very same JPEG comes back), about 20% smaller. The JPEG XL is the file
 // from then on, under its own sha256; its sidecar keeps the JPEG's sha256, size, type and name in encodedFrom, as a
 // WAV kept as FLAC does, so a device or an import holding the JPEG finds it (Store.Find), and the JPEG can be made
-// again (JPEGOf). New uploads are kept so as they arrive (finish), and scripts/jxl does the files already there.
+// again (JPEGOf). New uploads are kept so as they arrive (finish), and journal-server jxl does the files already there.
 
 var (
 	// ErrNotJPEG: only JPEG photos are kept as JPEG XL.

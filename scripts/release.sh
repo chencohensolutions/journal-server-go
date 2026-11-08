@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Builds the Windows installer: journal-server.exe, journal-import.exe and journal-jxl.exe into dist/, then
-# dist/journal-server-setup-<version>.exe with Inno Setup in Docker (docs/install.md). On Windows, build the three
-# programs the same way and run: ISCC.exe /DAppVersion=<version/VERSION> installer\journal-server.iss
+# Builds the Windows installer here: journal-server.exe into dist/, then dist/journal-server-setup-<version>.exe with
+# Inno Setup in Docker (docs/install.md). On Windows, build the program the same way and run:
+# ISCC.exe /DAppVersion=<version/VERSION> installer\journal-server.iss
+# Published releases are built by .github/workflows/release.yml instead: a program built here doesn't update itself.
 #
 # usage: scripts/release.sh               (the version is version/VERSION, raised by the pre-commit hook)
 set -euo pipefail
@@ -21,8 +22,6 @@ build() {
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "dist/$1.exe" "$2"
 }
 build journal-server .
-build journal-import ./scripts/import
-build journal-jxl ./scripts/jxl
 
 if ! command -v docker >/dev/null; then
     echo "Docker is needed to build the installer here (or run ISCC.exe on Windows); the programs are in dist/." >&2

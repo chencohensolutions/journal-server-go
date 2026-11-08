@@ -1,0 +1,2 @@
+# The public halves of the keys that sign releases (base64 ed25519), one per line. A server installs only a release
+# whose SHA256SUMS one of these signed. Made with: go run ./scripts/sign-release new-key <file>

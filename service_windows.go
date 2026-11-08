@@ -65,6 +65,12 @@ func (serverService) Execute(args []string, requests <-chan svc.ChangeRequest, s
 	for {
 		select {
 		case <-stopped:
+			if restarting.Load() {
+				// Ending without telling the service manager it stopped counts as a failure, so it starts the
+				// service again (installService's recovery actions), now with the program the update installed.
+				log.Printf("Updates: exiting for the service manager to start the new program")
+				os.Exit(1)
+			}
 			return false, 0
 		case r := <-requests:
 			switch r.Cmd {
@@ -164,6 +170,26 @@ func installService(m *mgr.Mgr) error {
 		{Type: mgr.ServiceRestart, Delay: time.Minute},
 		{Type: mgr.ServiceRestart, Delay: time.Minute},
 	}, uint32((24 * time.Hour).Seconds()))
+}
+
+// restartService stops and starts the JournalServer service when it is running, and reports whether it did. It
+// needs an administrator's console; elsewhere it reports false.
+func restartService() (bool, error) {
+	m, err := mgr.Connect()
+	if err != nil {
+		return false, nil
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(serviceName)
+	if err != nil {
+		return false, nil
+	}
+	defer s.Close()
+	if status, err := s.Query(); err != nil || status.State != svc.Running {
+		return false, nil
+	}
+	stopService(s)
+	return true, s.Start()
 }
 
 // stopService asks the service to stop and waits up to a minute for it to.

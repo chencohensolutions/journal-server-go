@@ -9,7 +9,7 @@ import (
 )
 
 // Import copies a file from elsewhere on the server's disk into the store, as if a device had uploaded
-// it (scripts/import). req.Sha256 is the source's hash, which the caller read; the copy is hashed again
+// it (journal-server import). req.Sha256 is the source's hash, which the caller read; the copy is hashed again
 // before it is placed. A file the store already has is not copied: its item comes back with existed set.
 // The source is never changed.
 func (s *Store) Import(source string, req UploadRequest) (item Item, existed bool, err error) {
