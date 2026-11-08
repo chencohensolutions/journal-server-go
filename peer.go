@@ -56,6 +56,8 @@ type peerInfo struct {
 	DiscoveryKey string `json:"discovery_key,omitempty"`
 	// The user whose peer it is, added from their phone (joinSwap); "" for one added with peer add, the server's.
 	User string `json:"user,omitempty"`
+	// The host's user whose invite it was (a swap), "" for the host's own (peer invite).
+	HostUser string `json:"host_user,omitempty"`
 	// That user's copy there; config.json's copies name only the server's peers.
 	Copy *swapCopy `json:"copy,omitempty"`
 }
@@ -371,7 +373,7 @@ func enrollPeer(config auth.AppConfig, e peerEnrollment) (peerInfo, peers.Enroll
 	if err != nil {
 		return peerInfo{}, peers.Enrolled{}, err
 	}
-	info.HostName, info.Quota = enrolled.Name, enrolled.Quota
+	info.HostName, info.Quota, info.HostUser = enrolled.Name, enrolled.Quota, enrolled.Owner
 	info.AddedAt, info.ExpiresAt = time.Now().UTC(), cert.NotAfter.UTC()
 	info.Addresses = book.Addresses() // the one that answered first
 	if d := enrolled.Discovery; d != nil {
