@@ -50,6 +50,8 @@ type ServerInfo {
   aesthetic: Boolean!
   "Files can be tucked away (setTucked, Media.tucked)."
   tuckedAway: Boolean!
+  "Notes are kept and synced (setNote, Media.note)."
+  notes: Boolean!
 }
 
 type Mutation {

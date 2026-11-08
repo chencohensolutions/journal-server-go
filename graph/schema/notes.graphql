@@ -1,0 +1,37 @@
+# --- Notes ---------------------------------------------------------------------
+# What the user wrote about a file and how they arranged it in the apps: a title and a paragraph with their earlier
+# versions, tags, crops, Moments sets. Kept in the file's sidecar ("note"), synced through the change feed. The apps
+# own the note's fields (journal-client-kmp docs/design.md "Notes"); the server keeps the object as sent. See
+# docs/media.md "Notes".
+
+extend type Media {
+  """
+  The note, a JSON object as the apps wrote it (setNote); null when there is none. Hidden with its file: a file a
+  device may not see never reaches it, note and all.
+  """
+  note: String
+  "The note's version, for setNote's baseVersion: the sha256 of note, in hex. Null when there is no note."
+  noteVersion: String
+}
+
+extend type Mutation {
+  """
+  Replaces the note of a file (serverInfo.notes). note is a JSON object of at most 256 KB; null or {} deletes it.
+  baseVersion is the noteVersion the device changed (null when it had none). When the file's note has changed since,
+  nothing is written and NoteConflict brings the note now kept: the device merges its change into it and sends again
+  with that version. The file comes again in the change feed. A JPEG kept as JPEG XL is found by either sha256.
+  """
+  setNote(sha256: Sha256!, note: String, baseVersion: String): SetNoteResult!
+}
+
+union SetNoteResult = NoteSaved | NoteConflict
+
+"The note was kept (or was already this one)."
+type NoteSaved {
+  media: Media!
+}
+
+"The file's note changed since baseVersion: media has it as it is now."
+type NoteConflict {
+  media: Media!
+}

@@ -165,6 +165,10 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		score := d.Nudity.Score
 		m.Nudity = &score
 	}
+	if note := item.Sidecar.NoteContent(); note != nil {
+		text, version := string(note), item.Sidecar.NoteVersion()
+		m.Note, m.NoteVersion = &text, &version
+	}
 	return m
 }
 

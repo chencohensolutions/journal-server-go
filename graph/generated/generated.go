@@ -255,6 +255,8 @@ type ComplexityRoot struct {
 		Kind          func(childComplexity int) int
 		Location      func(childComplexity int) int
 		MimeType      func(childComplexity int) int
+		Note          func(childComplexity int) int
+		NoteVersion   func(childComplexity int) int
 		Nudity        func(childComplexity int) int
 		Paired        func(childComplexity int) int
 		PairedWith    func(childComplexity int) int
@@ -313,6 +315,7 @@ type ComplexityRoot struct {
 		SetCall              func(childComplexity int, sha256 string, call model.CallInput) int
 		SetCamera            func(childComplexity int, make string, model string, mine bool) int
 		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
+		SetNote              func(childComplexity int, sha256 string, note *string, baseVersion *string) int
 		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
 		SetSoundFolder       func(childComplexity int, id string, as model.SoundFolderMark) int
 		SetTucked            func(childComplexity int, sha256s []string, tucked bool) int
@@ -334,6 +337,14 @@ type ComplexityRoot struct {
 	NotFound struct {
 		ID     func(childComplexity int) int
 		Reason func(childComplexity int) int
+	}
+
+	NoteConflict struct {
+		Media func(childComplexity int) int
+	}
+
+	NoteSaved struct {
+		Media func(childComplexity int) int
 	}
 
 	NudityHiding struct {
@@ -408,6 +419,7 @@ type ComplexityRoot struct {
 		Indexing          func(childComplexity int) int
 		KeepsJpegAsJxl    func(childComplexity int) int
 		LocalIndexes      func(childComplexity int) int
+		Notes             func(childComplexity int) int
 		NudityScan        func(childComplexity int) int
 		PeerCopies        func(childComplexity int) int
 		Posters           func(childComplexity int) int
@@ -503,6 +515,7 @@ type ComplexityRoot struct {
 
 type MediaResolver interface {
 	Aesthetic(ctx context.Context, obj *model.Media) (*float64, error)
+
 	Faces(ctx context.Context, obj *model.Media) ([]*model.Face, error)
 	Text(ctx context.Context, obj *model.Media) ([]*model.TextLine, error)
 }
@@ -519,6 +532,7 @@ type MutationResolver interface {
 	StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error)
 	SetPrivate(ctx context.Context, sha256s []string, private bool) ([]*model.Media, error)
 	SetTucked(ctx context.Context, sha256s []string, tucked bool) ([]*model.Media, error)
+	SetNote(ctx context.Context, sha256 string, note *string, baseVersion *string) (model.SetNoteResult, error)
 	NamePerson(ctx context.Context, id string, name string) (model.PersonResult, error)
 	MergePeople(ctx context.Context, into string, from []string) (model.PersonResult, error)
 	MoveFace(ctx context.Context, face string, to *string) (model.FaceResult, error)
@@ -1437,6 +1451,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Media.MimeType(childComplexity), true
+	case "Media.note":
+		if e.ComplexityRoot.Media.Note == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.Note(childComplexity), true
+	case "Media.noteVersion":
+		if e.ComplexityRoot.Media.NoteVersion == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Media.NoteVersion(childComplexity), true
 	case "Media.nudity":
 		if e.ComplexityRoot.Media.Nudity == nil {
 			break
@@ -1797,6 +1823,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetHiddenCollections(childComplexity, args["input"].(model.HiddenCollectionsInput)), true
+	case "Mutation.setNote":
+		if e.ComplexityRoot.Mutation.SetNote == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setNote_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetNote(childComplexity, args["sha256"].(string), args["note"].(*string), args["baseVersion"].(*string)), true
 	case "Mutation.setPrivate":
 		if e.ComplexityRoot.Mutation.SetPrivate == nil {
 			break
@@ -1924,6 +1961,20 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.NotFound.Reason(childComplexity), true
+
+	case "NoteConflict.media":
+		if e.ComplexityRoot.NoteConflict.Media == nil {
+			break
+		}
+
+		return e.ComplexityRoot.NoteConflict.Media(childComplexity), true
+
+	case "NoteSaved.media":
+		if e.ComplexityRoot.NoteSaved.Media == nil {
+			break
+		}
+
+		return e.ComplexityRoot.NoteSaved.Media(childComplexity), true
 
 	case "NudityHiding.files":
 		if e.ComplexityRoot.NudityHiding.Files == nil {
@@ -2300,6 +2351,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.LocalIndexes(childComplexity), true
+	case "ServerInfo.notes":
+		if e.ComplexityRoot.ServerInfo.Notes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Notes(childComplexity), true
 	case "ServerInfo.nudityScan":
 		if e.ComplexityRoot.ServerInfo.NudityScan == nil {
 			break
@@ -3479,6 +3536,44 @@ extend type Query {
   changes(since: String, limit: Int = 2000): ChangePage!
 }
 `, BuiltIn: false},
+	{Name: "../schema/notes.graphql", Input: `# --- Notes ---------------------------------------------------------------------
+# What the user wrote about a file and how they arranged it in the apps: a title and a paragraph with their earlier
+# versions, tags, crops, Moments sets. Kept in the file's sidecar ("note"), synced through the change feed. The apps
+# own the note's fields (journal-client-kmp docs/design.md "Notes"); the server keeps the object as sent. See
+# docs/media.md "Notes".
+
+extend type Media {
+  """
+  The note, a JSON object as the apps wrote it (setNote); null when there is none. Hidden with its file: a file a
+  device may not see never reaches it, note and all.
+  """
+  note: String
+  "The note's version, for setNote's baseVersion: the sha256 of note, in hex. Null when there is no note."
+  noteVersion: String
+}
+
+extend type Mutation {
+  """
+  Replaces the note of a file (serverInfo.notes). note is a JSON object of at most 256 KB; null or {} deletes it.
+  baseVersion is the noteVersion the device changed (null when it had none). When the file's note has changed since,
+  nothing is written and NoteConflict brings the note now kept: the device merges its change into it and sends again
+  with that version. The file comes again in the change feed. A JPEG kept as JPEG XL is found by either sha256.
+  """
+  setNote(sha256: Sha256!, note: String, baseVersion: String): SetNoteResult!
+}
+
+union SetNoteResult = NoteSaved | NoteConflict
+
+"The note was kept (or was already this one)."
+type NoteSaved {
+  media: Media!
+}
+
+"The file's note changed since baseVersion: media has it as it is now."
+type NoteConflict {
+  media: Media!
+}
+`, BuiltIn: false},
 	{Name: "../schema/people.graphql", Input: `# --- Faces and people ---------------------------------------------------------
 # Photos found by the people in them, with face models on the server (YuNet and SFace); see docs/faces.md.
 # The server finds the faces in each file and puts alike faces in groups; the user names a group once ("Mom"), and
@@ -3650,6 +3745,8 @@ type ServerInfo {
   aesthetic: Boolean!
   "Files can be tucked away (setTucked, Media.tucked)."
   tuckedAway: Boolean!
+  "Notes are kept and synced (setNote, Media.note)."
+  notes: Boolean!
 }
 
 type Mutation {
@@ -4531,6 +4628,10 @@ func (ec *executionContext) childFields_Media(ctx context.Context, field graphql
 		return ec.fieldContext_Media_url(ctx, field)
 	case "aesthetic":
 		return ec.fieldContext_Media_aesthetic(ctx, field)
+	case "note":
+		return ec.fieldContext_Media_note(ctx, field)
+	case "noteVersion":
+		return ec.fieldContext_Media_noteVersion(ctx, field)
 	case "faces":
 		return ec.fieldContext_Media_faces(ctx, field)
 	case "text":
@@ -4687,6 +4788,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_aesthetic(ctx, field)
 	case "tuckedAway":
 		return ec.fieldContext_ServerInfo_tuckedAway(ctx, field)
+	case "notes":
+		return ec.fieldContext_ServerInfo_notes(ctx, field)
 	case "audio":
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
@@ -5298,6 +5401,36 @@ func (ec *executionContext) field_Mutation_setHiddenCollections_args(ctx context
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setNote_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "sha256",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNSha2562string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sha256"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "note",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["note"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "baseVersion",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["baseVersion"] = arg2
 	return args, nil
 }
 
@@ -9558,6 +9691,52 @@ func (ec *executionContext) fieldContext_Media_aesthetic(_ context.Context, fiel
 	return graphql.NewScalarFieldContext("Media", field, true, true, errors.New("field of type Float does not have child fields"))
 }
 
+func (ec *executionContext) _Media_note(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_note(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Note, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_note(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Media_noteVersion(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Media_noteVersion(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.NoteVersion, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Media_noteVersion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Media", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _Media_faces(ctx context.Context, field graphql.CollectedField, obj *model.Media) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10410,6 +10589,50 @@ func (ec *executionContext) fieldContext_Mutation_setTucked(ctx context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_setNote(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setNote(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetNote(ctx, fc.Args["sha256"].(string), fc.Args["note"].(*string), fc.Args["baseVersion"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.SetNoteResult) graphql.Marshaler {
+			return ec.marshalNSetNoteResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSetNoteResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setNote(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type SetNoteResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setNote_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_namePerson(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -11173,6 +11396,70 @@ func (ec *executionContext) _NotFound_reason(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_NotFound_reason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("NotFound", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _NoteConflict_media(ctx context.Context, field graphql.CollectedField, obj *model.NoteConflict) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_NoteConflict_media(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Media, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_NoteConflict_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "NoteConflict",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _NoteSaved_media(ctx context.Context, field graphql.CollectedField, obj *model.NoteSaved) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_NoteSaved_media(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Media, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Media) graphql.Marshaler {
+			return ec.marshalNMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMedia(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_NoteSaved_media(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "NoteSaved",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Media(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _NudityHiding_hidden(ctx context.Context, field graphql.CollectedField, obj *model.NudityHiding) (ret graphql.Marshaler) {
@@ -12862,6 +13149,29 @@ func (ec *executionContext) _ServerInfo_tuckedAway(ctx context.Context, field gr
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_tuckedAway(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_notes(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_notes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Notes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -15846,6 +16156,33 @@ func (ec *executionContext) _PersonResult(ctx context.Context, sel ast.Selection
 	}
 }
 
+func (ec *executionContext) _SetNoteResult(ctx context.Context, sel ast.SelectionSet, obj model.SetNoteResult) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.NoteSaved:
+		return ec._NoteSaved(ctx, sel, &obj)
+	case *model.NoteSaved:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._NoteSaved(ctx, sel, obj)
+	case model.NoteConflict:
+		return ec._NoteConflict(ctx, sel, &obj)
+	case *model.NoteConflict:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._NoteConflict(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of SetNoteResult must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
 func (ec *executionContext) _StartUploadResult(ctx context.Context, sel ast.SelectionSet, obj model.StartUploadResult) graphql.Marshaler {
 	switch obj := (obj).(type) {
 	case nil:
@@ -17449,6 +17786,10 @@ func (ec *executionContext) _Media(ctx context.Context, sel ast.SelectionSet, ob
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "note":
+			out.Values[i] = ec._Media_note(ctx, field, obj)
+		case "noteVersion":
+			out.Values[i] = ec._Media_noteVersion(ctx, field, obj)
 		case "faces":
 			field := field
 
@@ -17798,6 +18139,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setNote":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setNote(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "namePerson":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_namePerson(ctx, field)
@@ -17993,6 +18341,84 @@ func (ec *executionContext) _NotFound(ctx context.Context, sel ast.SelectionSet,
 			}
 		case "reason":
 			out.Values[i] = ec._NotFound_reason(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var noteConflictImplementors = []string{"NoteConflict", "SetNoteResult"}
+
+func (ec *executionContext) _NoteConflict(ctx context.Context, sel ast.SelectionSet, obj *model.NoteConflict) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, noteConflictImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("NoteConflict")
+		case "media":
+			out.Values[i] = ec._NoteConflict_media(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var noteSavedImplementors = []string{"NoteSaved", "SetNoteResult"}
+
+func (ec *executionContext) _NoteSaved(ctx context.Context, sel ast.SelectionSet, obj *model.NoteSaved) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, noteSavedImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("NoteSaved")
+		case "media":
+			out.Values[i] = ec._NoteSaved_media(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -18870,6 +19296,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "tuckedAway":
 			out.Values[i] = ec._ServerInfo_tuckedAway(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "notes":
+			out.Values[i] = ec._ServerInfo_notes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -20700,6 +21131,16 @@ func (ec *executionContext) marshalNServerInfo2ᚖgithubᚗcomᚋjournalᚋserve
 		return graphql.Null
 	}
 	return ec._ServerInfo(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSetNoteResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSetNoteResult(ctx context.Context, sel ast.SelectionSet, v model.SetNoteResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SetNoteResult(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNSha2562string(ctx context.Context, v any) (string, error) {
