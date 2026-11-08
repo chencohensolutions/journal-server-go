@@ -25,6 +25,13 @@ where it was started. Until 1.2 the import and jxl were programs of their own (`
 `journal-jxl.exe`); installing over such an install removes them. `journal-server import --cloud` needs rclone
 (`winget install Rclone.Rclone`), which isn't bundled.
 
+The server looks for libvips in its own `vips\` first, then on the PATH. A server run from a fresh git clone has
+no `vips\` (it is gitignored) and falls back to whatever libvips is on the PATH, such as the official build that
+`winget install libvips` puts there: the same version, but its libjxl turned down some photos as JPEG XL previews
+(`jxlsave_target: JxlEncoderAddImageFrame error`) and it has no HEVC decoder for iPhone HEIC photos. So on Windows
+the server logs a WARNING at start when the libvips it found is not its own `vips\` and config.json names no
+`"vips"`; `go run ./scripts/bundle-vips` (or copying `vips\` from another server folder) and a restart fix it.
+
 Every download is checked against a sha256 its source publishes (or one kept in `bundle/`), and is kept between
 runs in `%LOCALAPPDATA%\journal-server`.
 

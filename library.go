@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -58,6 +59,8 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 	vips, vipsheader, err := media.FindVips(config.Vips)
 	if err != nil {
 		log.Printf("Previews are off: %v (brew install vips; on Windows go run ./scripts/bundle-vips; or set \"vips\" in config.json)", err)
+	} else if warning := foreignVips(runtime.GOOS, vips, config.Vips); warning != "" {
+		log.Print(warning)
 	}
 	previews := media.NewPreviews(vips, vipsheader)
 	switch {
@@ -80,6 +83,31 @@ func newPreviews(config auth.AppConfig) *media.Previews {
 		previews.WithFFmpeg(ffmpeg, ffprobe)
 	}
 	return previews
+}
+
+// foreignVips warns, on Windows, when the libvips found is not the server's own vips\ folder (bundle.Vips: MSYS2's
+// build) and config.json names none. A fresh clone has no vips\ and falls back to a libvips on the PATH, such as
+// the official build winget installs: the same version, but its libjxl turned down some photos as JPEG XL previews
+// ("jxlsave_target: JxlEncoderAddImageFrame error", Nov 7, 2026), and it can't read iPhone HEIC photos. The server
+// still uses it; the warning says which one it is and how to get the right one. Empty when all is well.
+func foreignVips(goos, found, configured string) string {
+	if goos != "windows" || configured != "" {
+		return ""
+	}
+	own, err := filepath.Abs("vips")
+	if err != nil {
+		return ""
+	}
+	at, err := filepath.Abs(found)
+	if err != nil {
+		return ""
+	}
+	if rel, err := filepath.Rel(own, at); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return fmt.Sprintf("WARNING: libvips is %s, not the server's own %s: some JPEG XL previews may fail and "+
+		"HEIC photos may not open (go run ./scripts/bundle-vips, or journal-server setup, puts the right one there; "+
+		"restart the server after)", found, filepath.Join(own, "bin"))
 }
 
 // loadJXL loads libjxl (config.json "libjxl", else beside the vips program found) and gives it to every store, which

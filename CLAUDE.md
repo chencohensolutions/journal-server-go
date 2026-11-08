@@ -54,7 +54,7 @@ ONNX Runtime, libvips (since Oct 23, 2026; `"vips_as_program": true` keeps libvi
 
 ```bash
 go run .                                   # serve https://0.0.0.0:56398 (needs config.json + certs/)
-go build -o journal-server . && ./journal-server    # what the VS Code task "server: run" does
+go build -o journal-server . && ./journal-server    # what the VS Code task "server: run" does (after fetching a missing vips/, onnxruntime/)
 go test ./...                              # ~10 s; previews/poster/search/face tests skip without libvips/ffmpeg/models
 go test ./media -run TestTurns             # one test
 go test ./search/... .                     # the search package and the root (server) tests

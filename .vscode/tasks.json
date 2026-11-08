@@ -16,11 +16,13 @@
 	"tasks": [
 		{
 			// Builds and starts the server with config.json from this folder; stop it with the trash icon or Ctrl+C.
+			// In a fresh clone it first downloads what is gitignored and missing: ONNX Runtime and the models, and on
+			// Windows the server's own libvips (MSYS2's build, not winget's; docs/install.md). Delete a folder to fetch it again.
 			"label": "server: run",
 			"type": "shell",
-			"command": "go build -o journal-server . && ./journal-server",
+			"command": "([ -d onnxruntime ] || go run ./scripts/bundle-onnx) && go build -o journal-server . && ./journal-server",
 			"windows": {
-				"command": "go build -o journal-server.exe . ; if ($?) { .\\journal-server.exe }"
+				"command": "$ok = $true; if (-not (Test-Path vips)) { go run ./scripts/bundle-vips; $ok = $? }; if ($ok -and -not (Test-Path onnxruntime)) { go run ./scripts/bundle-onnx; $ok = $? }; if ($ok) { go build -o journal-server.exe . ; $ok = $? }; if ($ok) { .\\journal-server.exe }"
 			},
 			"options": { "cwd": "${workspaceFolder}" },
 			"isBackground": true,
