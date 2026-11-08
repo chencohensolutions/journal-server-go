@@ -289,6 +289,7 @@ type ComplexityRoot struct {
 		Name      func(childComplexity int) int
 		Precision func(childComplexity int) int
 		Sha256    func(childComplexity int) int
+		Source    func(childComplexity int) int
 		URL       func(childComplexity int) int
 	}
 
@@ -1585,6 +1586,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ModelFile.Sha256(childComplexity), true
+	case "ModelFile.source":
+		if e.ComplexityRoot.ModelFile.Source == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ModelFile.Source(childComplexity), true
 	case "ModelFile.url":
 		if e.ComplexityRoot.ModelFile.URL == nil {
 			break
@@ -3181,6 +3188,12 @@ type ModelFile {
   sha256: Sha256!
   "Its path on this server, to GET with Range: /models/{index}/{name} (/models/phone/{name} for phoneModels)."
   url: String!
+  """
+  Where the phone may download the same file first, to spare the server's upload: the pinned Hugging Face or Google
+  link it came from. The phone checks what it gets against sha256 and downloads from url when that fails. Null when
+  the server doesn't know (a model downloaded before Nov 8, 2026: run bundle-onnx again).
+  """
+  source: String
 }
 `, BuiltIn: false},
 	{Name: "../schema/media.graphql", Input: `# --- Media --------------------------------------------------------------------
@@ -4509,6 +4522,8 @@ func (ec *executionContext) childFields_ModelFile(ctx context.Context, field gra
 		return ec.fieldContext_ModelFile_sha256(ctx, field)
 	case "url":
 		return ec.fieldContext_ModelFile_url(ctx, field)
+	case "source":
+		return ec.fieldContext_ModelFile_source(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ModelFile", field.Name)
 }
@@ -9762,6 +9777,29 @@ func (ec *executionContext) _ModelFile_url(ctx context.Context, field graphql.Co
 	)
 }
 func (ec *executionContext) fieldContext_ModelFile_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ModelFile_source(ctx context.Context, field graphql.CollectedField, obj *model.ModelFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ModelFile_source(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Source, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ModelFile_source(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ModelFile", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -17473,6 +17511,8 @@ func (ec *executionContext) _ModelFile(ctx context.Context, sel ast.SelectionSet
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "source":
+			out.Values[i] = ec._ModelFile_source(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}

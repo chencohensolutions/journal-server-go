@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -32,7 +33,14 @@ type ModelFile struct {
 	Sha256    string
 	// URL is its path on this server: /models/{index}/{name}.
 	URL string
+	// Source is where the phone may download the same file first (Hugging Face, Google), as the folder's
+	// sourcesFile names it with this sha256; "" to download it only from here.
+	Source string
 }
+
+// sourcesFile, in a model folder, is where each file there was downloaded from (bundle.SourcesFile, written by
+// bundle-onnx): {"<name>": {"url", "sha256"}}.
+const sourcesFile = ".sources.json"
 
 // modelFiles is the model files of every index, and their hashes as they become known.
 type modelFiles struct {
@@ -75,6 +83,7 @@ func (m *modelFiles) hashAll() {
 		m.mu.Unlock()
 	}()
 	saved := map[string]map[string]hashed{} // folder → name → hash
+	sources := map[string]map[string]struct{ URL, Sha256 string }{} // folder → name → where it came from
 	for _, f := range files {
 		info, err := os.Stat(f.path)
 		if err != nil {
@@ -105,8 +114,19 @@ func (m *modelFiles) hashAll() {
 			}
 			log.Printf("Phones may download %s (%d MB, hashed in %s)", f.path, info.Size()>>20, time.Since(started).Round(time.Millisecond))
 		}
+		if sources[folder] == nil {
+			named := map[string]struct{ URL, Sha256 string }{}
+			if data, err := os.ReadFile(filepath.Join(folder, sourcesFile)); err == nil {
+				json.Unmarshal(data, &named)
+			}
+			sources[folder] = named
+		}
+		source := ""
+		if s, ok := sources[folder][f.Name]; ok && s.Sha256 == h.Sha256 && strings.HasPrefix(s.URL, "https://") {
+			source = s.URL
+		}
 		m.mu.Lock()
-		f.Bytes, f.Sha256, f.modTime = h.Size, h.Sha256, h.ModTime
+		f.Bytes, f.Sha256, f.modTime, f.Source = h.Size, h.Sha256, h.ModTime, source
 		m.mu.Unlock()
 	}
 }

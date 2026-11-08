@@ -3,6 +3,7 @@ package bundle
 import (
 	"archive/tar"
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,5 +57,21 @@ func TestExtractTarZstd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "escape.txt")); err == nil {
 		t.Error("a path outside the folder was written")
+	}
+}
+
+// Sources are added to a folder's list, keeping the files it already named.
+func TestWriteSourcesKeepsTheOthers(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeSources(dir, map[string]Source{"a.onnx": {URL: "https://example/a", Sha256: "aa"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSources(dir, map[string]Source{"b.onnx": {URL: "https://example/b", Sha256: "bb"}}); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]Source
+	data, _ := os.ReadFile(filepath.Join(dir, SourcesFile))
+	if err := json.Unmarshal(data, &got); err != nil || len(got) != 2 || got["a.onnx"].URL != "https://example/a" {
+		t.Fatalf("%s: %v", data, err)
 	}
 }

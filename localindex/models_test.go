@@ -73,17 +73,25 @@ func TestPhoneModelsAreOfferedWithoutAnIndex(t *testing.T) {
 	folder := t.TempDir()
 	data := []byte("a photo embedder, made up")
 	os.WriteFile(filepath.Join(folder, "embedder.tflite"), data, 0o644)
-	s := NewWithPhoneModels(nil, nil, folder, []ModelFileSpec{{Name: "embedder.tflite"}, {Name: "missing.tflite"}})
+	os.WriteFile(filepath.Join(folder, "other.tflite"), []byte("another"), 0o644)
+	sum := sha256.Sum256(data)
+	// Where each came from, as bundle-onnx writes it: other.tflite's sha256 is no longer the one written there.
+	os.WriteFile(filepath.Join(folder, sourcesFile), []byte(`{
+		"embedder.tflite": {"url": "https://storage.example/embedder.tflite", "sha256": "`+hex.EncodeToString(sum[:])+`"},
+		"other.tflite": {"url": "https://storage.example/other.tflite", "sha256": "0000"}}`), 0o644)
+	s := NewWithPhoneModels(nil, nil, folder, []ModelFileSpec{{Name: "embedder.tflite"}, {Name: "other.tflite"}, {Name: "missing.tflite"}})
 	if s.On() {
 		t.Error("a server with no index says phones may keep one")
 	}
 	var files []ModelFile
-	for deadline := time.Now().Add(5 * time.Second); len(files) == 0 && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	for deadline := time.Now().Add(5 * time.Second); len(files) < 2 && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		files = s.PhoneModels()
 	}
-	sum := sha256.Sum256(data)
-	if len(files) != 1 || files[0].URL != "/models/phone/embedder.tflite" || files[0].Sha256 != hex.EncodeToString(sum[:]) {
-		t.Fatalf("listed: %+v, want only the file that is there", files)
+	if len(files) != 2 || files[0].URL != "/models/phone/embedder.tflite" || files[0].Sha256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("listed: %+v, want only the files that are there", files)
+	}
+	if files[0].Source != "https://storage.example/embedder.tflite" || files[1].Source != "" {
+		t.Errorf("sources: %q and %q, want only the one whose sha256 still matches", files[0].Source, files[1].Source)
 	}
 	if got := (*Server)(nil).PhoneModels(); got != nil {
 		t.Errorf("a nil server: %+v", got)
