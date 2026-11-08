@@ -5,6 +5,7 @@
   "client_ca_key": "certs/ca-key.pem",
   "index": "daily",
   "index_at": "03:00",
+  "peers_folder": "E:\\archive\\peers",
   "users": [
     {
       "username": "hen",
