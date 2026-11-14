@@ -21,4 +21,6 @@ server keeps answering older apps; an older server lacks what came after it, and
 |---|---|---|
 | 2026.11.14 | 1 | 2026.11.14, and the builds before it |
 
+sha256 of journal-server-setup-2026.11.14.exe: c2864f23177260225de7fd16729483d0163547457aecfca47ab163c5b26e6e09
+
 The app's own table is the mirror of this one, in `journal-client-kmp/releases/README.md`.
