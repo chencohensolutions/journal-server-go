@@ -116,6 +116,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		LocalIndexes:      r.Local.On(),
 		Indexing:          r.IndexRuns != nil,
 		RenewCertificates: true,
+		CaCertificate:     nonEmpty(r.caPEM()),
 		TuckedAway:        true,
 		Notes:             true,
 		Copies:            r.Resolver.Copies != nil,

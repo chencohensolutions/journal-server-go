@@ -637,6 +637,11 @@ type ServerInfo struct {
 	API int `json:"api"`
 	// A device can renew its certificate (renewCertificate) before it expires.
 	RenewCertificates bool `json:"renewCertificates"`
+	// The CA that signs this server's certificates (its server certificate and the devices'), PEM. Each server has its own
+	// (journal-server setup makes one), so an app keeps it once enrolled and trusts this server by it from then on,
+	// whatever address it is reached at, beside the CA built into the app (Nov 14, 2026). Null when the server can't read
+	// it.
+	CaCertificate *string `json:"caCertificate,omitempty"`
 	// The server's version and build: "1.4.2 (3f2a9c1 2026-10-23)", or just the version when built without git.
 	Version string `json:"version"`
 	// Text search (searchMedia) is on.

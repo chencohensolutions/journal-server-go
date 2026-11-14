@@ -38,7 +38,7 @@ the upload and sync design agreed with the owner. The docs here describe what is
 - [docs/install.md](docs/install.md): the Windows installer (`installer/journal-server.iss`, `scripts/release.sh`),
   `journal-server setup` (config, certificates through package `certs`, downloads through package `bundle`;
   `--move-from` only reads the old server), the JournalServer service and firewall rule (`service_windows.go`),
-  the import and jxl as commands of the one program, why a new server imports the apps' CA, versions
+  the import and jxl as commands of the one program, each server's own CA (made by setup, learned by the apps at enrollment), versions
   (`version/VERSION`, raised by the pre-commit hook and `scripts/bump-version.sh`), releases
   (`.github/workflows/release.yml`, signed with `scripts/sign-release`) and updates (package `update`, `selfupdate.go`).
 

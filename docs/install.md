@@ -64,15 +64,33 @@ address> --reissue-server-cert` (the old certificate is kept as `server.pem.bak`
 
 ## A new server, and the CA
 
-`journal-server setup --dir <folder> --user <name> --data-folder <folder> (--import-ca <folder> | --new-ca)`
+`journal-server setup --dir <folder> --user <name> --data-folder <folder> [--import-ca <folder>]`
 writes a `config.json` with that user, makes the data folder if there is none (an existing one is used as it is:
 setup writes nothing into it), and makes the server certificate for `localhost`, the PC's name, each of its private
 IPv4 addresses and every `--address`. `public_url` is the first `--address`, else the first private address.
 
-The apps trust only the CA compiled into them (`SERVER_CA_PEM` in `../journal-client-kmp`, from `syncServerCa`), so
-a new server should **import that CA** (`ca.pem` and `ca-key.pem`). `--new-ca` makes another one (`package certs`,
-the same kind `scripts/generate-ca.sh` makes); the published apps won't connect to such a server until they learn
-each server's CA at enrollment, which is not built yet.
+**Each server has its own CA** (Nov 14, 2026). A new server makes one (`package certs`, the same kind
+`scripts/generate-ca.sh` makes; `--new-ca` says so explicitly, and is what the installer passes by default), so the
+installer needs no key from anyone and two people's servers never trust each other's devices. The apps learn it this
+way:
+
+1. The phone enrolls by scanning the QR code `journal-server enroll-code` prints. The code carries the server
+   certificate key's fingerprint (docs/authentication.md, "Enrolling by id"), so the phone trusts that server from
+   the first connection without knowing its CA.
+2. Once enrolled, the app asks `serverInfo.caCertificate` and keeps the CA. From then on it trusts a server
+   certificate that chains to that CA and is for a server (`serverAuth`), whatever address it is reached at, so a
+   server certificate made again (`--reissue-server-cert`, a new key) keeps working, and the key's fingerprint is
+   updated from `serverInfo.discovery`.
+3. The CA built into the apps (`SERVER_CA_PEM` in `../journal-client-kmp`) is still trusted, so servers set up
+   with it (`--import-ca`, the owner's) and the phones enrolled there keep working as before.
+
+Typing the code by hand only works with a server on the apps' built-in CA: the phone has nothing else to check a
+new server by, so it refuses it. Scan the QR code instead (or open the `journal://enroll?...` link it prints).
+
+`--import-ca <folder>` copies `ca.pem` and `ca-key.pem` from another server instead: for a second server whose
+devices are the same, or a server on the apps' built-in CA. A server that already has a CA keeps it; one whose CA
+went missing is refused rather than given a new one (every device would have to enroll again), unless `--new-ca`
+is given.
 
 ## Running setup again, upgrading, uninstalling
 

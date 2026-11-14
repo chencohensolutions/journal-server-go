@@ -99,10 +99,10 @@ begin
   DataPage.Values[0] := ExpandConstant('{sd}\Journal');
 
   CAPage := CreateInputOptionPage(DataPage.ID, 'Certificates', 'Which certificate authority (CA)?',
-    'The apps trust only the CA they were built with. Use that CA (ca.pem and ca-key.pem) so they connect to this server.',
+    'Each server has its own CA. Phones learn it when they enroll by scanning the QR code the server prints.',
     True, False);
-  CAPage.Add('Use the CA I already have (ca.pem and ca-key.pem)');
-  CAPage.Add('Create a new CA (the published apps won''t connect to this server until they learn it)');
+  CAPage.Add('Create this server''s own CA (recommended)');
+  CAPage.Add('Use a CA I already have (ca.pem and ca-key.pem), so devices of another server keep working');
   CAPage.SelectedValueIndex := 0;
 
   CAFolderPage := CreateInputDirPage(CAPage.ID, 'Certificates', 'Where are ca.pem and ca-key.pem?', '', False, '');
@@ -127,7 +127,7 @@ begin
     Result := (PageID = UserPage.ID) or (PageID = DataPage.ID) or (PageID = CAPage.ID) or (PageID = CAFolderPage.ID) or
       (PageID = ModelPage.ID)
   else
-    Result := (PageID = MovePage.ID) or ((PageID = CAFolderPage.ID) and (CAPage.SelectedValueIndex = 1));
+    Result := (PageID = MovePage.ID) or ((PageID = CAFolderPage.ID) and (CAPage.SelectedValueIndex = 0));
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -176,7 +176,7 @@ begin
   else
   begin
     Result := Result + ' --user ' + Quote(Trim(UserPage.Values[0])) + ' --data-folder ' + Quote(DataPage.Values[0]);
-    if CAPage.SelectedValueIndex = 0 then
+    if CAPage.SelectedValueIndex = 1 then
       Result := Result + ' --import-ca ' + Quote(CAFolderPage.Values[0])
     else
       Result := Result + ' --new-ca';

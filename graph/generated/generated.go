@@ -411,6 +411,7 @@ type ComplexityRoot struct {
 		API               func(childComplexity int) int
 		Aesthetic         func(childComplexity int) int
 		Audio             func(childComplexity int) int
+		CaCertificate     func(childComplexity int) int
 		Cameras           func(childComplexity int) int
 		Copies            func(childComplexity int) int
 		Discovery         func(childComplexity int) int
@@ -2303,6 +2304,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Audio(childComplexity), true
+	case "ServerInfo.caCertificate":
+		if e.ComplexityRoot.ServerInfo.CaCertificate == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.CaCertificate(childComplexity), true
 	case "ServerInfo.cameras":
 		if e.ComplexityRoot.ServerInfo.Cameras == nil {
 			break
@@ -3717,6 +3724,13 @@ type ServerInfo {
   api: Int!
   "A device can renew its certificate (renewCertificate) before it expires."
   renewCertificates: Boolean!
+  """
+  The CA that signs this server's certificates (its server certificate and the devices'), PEM. Each server has its own
+  (journal-server setup makes one), so an app keeps it once enrolled and trusts this server by it from then on,
+  whatever address it is reached at, beside the CA built into the app (Nov 14, 2026). Null when the server can't read
+  it.
+  """
+  caCertificate: String
   "The server's version and build: \"1.4.2 (3f2a9c1 2026-10-23)\", or just the version when built without git."
   version: String!
   "Text search (searchMedia) is on."
@@ -4766,6 +4780,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_api(ctx, field)
 	case "renewCertificates":
 		return ec.fieldContext_ServerInfo_renewCertificates(ctx, field)
+	case "caCertificate":
+		return ec.fieldContext_ServerInfo_caCertificate(ctx, field)
 	case "version":
 		return ec.fieldContext_ServerInfo_version(ctx, field)
 	case "search":
@@ -12899,6 +12915,29 @@ func (ec *executionContext) fieldContext_ServerInfo_renewCertificates(_ context.
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_caCertificate(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_caCertificate(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CaCertificate, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_caCertificate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_version(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -19244,6 +19283,8 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "caCertificate":
+			out.Values[i] = ec._ServerInfo_caCertificate(ctx, field, obj)
 		case "version":
 			out.Values[i] = ec._ServerInfo_version(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

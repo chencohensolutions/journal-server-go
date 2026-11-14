@@ -161,10 +161,15 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
   or another failure).
 - The code field accepts pasted text: it keeps the first code-shaped word (e.g. from a whole
   `Code  K7QM-4XPD` line) and drops anything that isn't a letter, digit or dash.
-- Enrollment requests go out without a client certificate, but still verify the server against the
-  CA bundled in the app (`sharedLogic/src/commonMain/certs/server-ca.pem`, compiled into
-  `SERVER_CA_PEM`). **Keep it in sync with `certs/ca.pem`:** run
-  `./gradlew :sharedLogic:syncServerCa` in the client repo and ship a new build whenever the CA changes.
+- Enrollment requests go out without a client certificate, but still verify the server: against the key
+  fingerprint in the QR code when there is one, else against the CA bundled in the app
+  (`sharedLogic/src/commonMain/certs/server-ca.pem`, compiled into `SERVER_CA_PEM`).
+- **Each server's own CA** (Nov 14, 2026): once enrolled, the app keeps the server's CA from
+  `serverInfo.caCertificate` and from then on accepts a server certificate that chains to it and is for a server
+  (`serverAuth`), at any address, beside the key pin and the bundled CA. A server set up with a new CA
+  (docs/install.md, "A new server, and the CA") is reached only by enrolling with its QR code. The bundled CA stays
+  for servers that use it: **keep it in sync with their `certs/ca.pem`**, with `./gradlew :sharedLogic:syncServerCa`
+  in the client repo.
 - The app has no screen for certificate files any more; enrollment is the only way to get an identity.
   The `.p12` import and Android KeyChain code paths still exist in `sharedLogic` but are unused.
 
@@ -195,8 +200,9 @@ that runs the server.
 ## CA and server certificate
 
 One CA (`certs/ca.pem` + `certs/ca-key.pem`) signs both the server's HTTPS certificate and the
-enrolled devices' certificates. Generate them with the scripts in `scripts/` (PowerShell on Windows,
-Bash on macOS/Linux):
+enrolled devices' certificates. Each server has its own: `journal-server setup` makes it (docs/install.md), and the
+apps keep it at enrollment. The scripts in `scripts/` make them by hand (PowerShell on Windows, Bash on
+macOS/Linux):
 
 ```bash
 scripts/generate-ca.sh            # .ps1 on Windows; the Bash version needs --force to replace a CA
@@ -223,9 +229,9 @@ The Bash scripts write private keys with mode `0600`.
 device and every `.p12`. Afterwards:
 
 1. Issue a new server certificate with the new CA and restart the server.
-2. In the client repo, run `./gradlew :sharedLogic:syncServerCa` and reinstall the apps. An app built
-   with the old CA rejects the server (`unknown certificate` in the server log).
-3. Enroll every device again.
+2. Enroll every device again, by the QR code: the apps keep the new CA then. (For the CA bundled in the apps, run
+   `./gradlew :sharedLogic:syncServerCa` in the client repo and reinstall them instead; an app that doesn't know
+   the CA rejects the server, `unknown certificate` in the server log.)
 
 Renewing only the server certificate (same CA) needs none of this; just restart the server.
 
@@ -233,8 +239,9 @@ Renewing only the server certificate (same CA) needs none of this; just restart 
 
 - **Stolen enrollment code:** usable once, for at most 10 minutes, and only for the user it was made
   for. If a code may have leaked, check `journal-server devices` and revoke any device you don't recognize.
-- **Network attacker during enrollment:** the device pins the server CA (`SERVER_CA_PEM`), so it
-  cannot be tricked into sending the code to another server.
+- **Network attacker during enrollment:** the device pins the server key from the QR code, or the server CA
+  bundled in the app (`SERVER_CA_PEM`), so it cannot be tricked into sending the code to another server. The CA it
+  keeps afterwards comes over that checked connection.
 - **Lost or stolen phone:** `journal-server revoke <serial>`. The key cannot be extracted from the
   phone's secure hardware. Revoking stops new access only: what the app already holds (cached previews,
   downloaded originals, the media list) stays on the phone. A device kept from private files
