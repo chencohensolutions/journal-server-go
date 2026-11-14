@@ -22,8 +22,8 @@ import (
 const setupUsage = `usage:
   journal-server setup --dir <folder> --move-from <old server folder> [options]
       a server moved from another PC: copies its config.json, certificates and devices.json (only reads it)
-  journal-server setup --dir <folder> --user <name> --data-folder <folder> (--import-ca <folder> | --new-ca) [options]
-      a new server with its first user; the CA is ca.pem and ca-key.pem from another server, or a new one
+  journal-server setup --dir <folder> --user <name> --data-folder <folder> [--import-ca <folder>] [options]
+      a new server with its first user and its own new CA; --import-ca uses ca.pem and ca-key.pem from another server
 
 Run it again at any time: what is there is kept, and only what is missing is made or downloaded.
 
@@ -70,8 +70,8 @@ func parseSetupArgs(args []string) (setupOptions, error) {
 	fs.StringVar(&o.moveFrom, "move-from", "", "the folder of the server this one replaces")
 	fs.StringVar(&o.user, "user", "", "a new server's first user")
 	fs.StringVar(&o.dataFolder, "data-folder", "", "the first user's data folder (made if missing; an existing one is used as it is)")
-	fs.StringVar(&o.importCA, "import-ca", "", "folder with ca.pem and ca-key.pem: the CA the apps already trust")
-	fs.BoolVar(&o.newCA, "new-ca", false, "make a new CA (the published apps don't trust it yet)")
+	fs.StringVar(&o.importCA, "import-ca", "", "folder with ca.pem and ca-key.pem: another server's CA, to keep its devices (default: a new CA)")
+	fs.BoolVar(&o.newCA, "new-ca", false, "make a new CA (the default when there is none and no --import-ca)")
 	fs.Func("address", "a name or IP address devices reach the server by, beside this PC's own (repeatable; the first is public_url)", func(s string) error {
 		o.addresses = append(o.addresses, s)
 		return nil
@@ -225,9 +225,6 @@ func writeNewConfig(o setupOptions) error {
 	if o.user == "" || o.dataFolder == "" {
 		return errors.New("a new server needs --user and --data-folder (or --move-from an old server)")
 	}
-	if o.importCA == "" && !o.newCA {
-		return errors.New("a new server needs --import-ca <folder> (the CA the apps trust) or --new-ca")
-	}
 	if strings.ContainsAny(o.user, `/\:*?"<>| `) {
 		return fmt.Errorf("user name %q: use letters and digits only", o.user)
 	}
@@ -286,15 +283,18 @@ func setupCertificates(o setupOptions, config auth.AppConfig) error {
 			}
 		}
 		fmt.Printf("CA: copied from %s\n", o.importCA)
-	case o.newCA:
+	case o.moveFrom != "" || (o.user == "" && !o.newCA):
+		// A server that has devices keeps the CA they trust: a new one would lock them all out.
+		return fmt.Errorf("no CA at %s: put back ca.pem and ca-key.pem, or give --import-ca <folder> (--new-ca makes "+
+			"a new one, and every device must enroll again)", config.ClientCA)
+	default:
+		// Each server has its own CA: the apps learn it when they enroll by the QR code (docs/install.md).
 		if ca, err = certs.NewCA(config.ClientCA, config.ClientCAKey); err != nil {
 			return err
 		}
-		fmt.Printf("CA: made a new one.\n" +
-			"  ! The published apps trust only the CA they were built with, so they won't connect to this server\n" +
-			"    until they learn its CA. Keep certs/ca-key.pem private and backed up.\n")
-	default:
-		return fmt.Errorf("no CA at %s: give --import-ca <folder> or --new-ca", config.ClientCA)
+		fmt.Printf("CA: made this server's own.\n" +
+			"  Phones enroll by scanning the QR code journal-server enroll-code prints, which tells them this\n" +
+			"  server's key; they keep its CA from then on. Keep certs/ca-key.pem private and backed up.\n")
 	}
 
 	// The names devices may use: this PC's own, and the ones asked for.

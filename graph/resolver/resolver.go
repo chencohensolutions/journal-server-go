@@ -1,6 +1,8 @@
 package resolver
 
 import (
+	"encoding/pem"
+
 	"github.com/journal/server-go/aesthetic"
 	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/faces"
@@ -49,3 +51,20 @@ type Resolver struct {
 
 // APIVersion is serverInfo.api: raised when a change needs newer apps.
 const APIVersion = 1
+
+// caPEM is the CA that signs this server's certificates, PEM, for the apps to keep (EnrolledDevice.caCertificate,
+// serverInfo.caCertificate); "" when there is no issuer.
+func (r *Resolver) caPEM() string {
+	if r.Enrollment == nil || r.Enrollment.Issuer == nil {
+		return ""
+	}
+	ca, _ := r.Enrollment.Issuer.CA()
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
+}
+
+func nonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

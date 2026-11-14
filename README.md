@@ -103,8 +103,8 @@ Requirements:
 git clone https://github.com/chencohensolutions/journal-server-go.git
 cd journal-server-go
 
-# Make a server folder with a config, a CA and a server certificate
-go run . setup --dir ../my-journal --user alice --data-folder ../my-journal/alice --new-ca --address localhost
+# Make a server folder with a config, its own CA and a server certificate
+go run . setup --dir ../my-journal --user alice --data-folder ../my-journal/alice --address localhost
 
 # Or by hand: copy config.example.json to config.json, then
 scripts/generate-ca.sh

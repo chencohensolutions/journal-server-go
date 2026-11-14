@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/journal/server-go/auth"
@@ -164,5 +165,37 @@ func TestSetupRefusesUnclearRequests(t *testing.T) {
 		if _, err := parseSetupArgs(args); err == nil {
 			t.Errorf("%v: no error", args)
 		}
+	}
+}
+
+// A new server gets its own CA without being asked; a server that has one never gets another by itself.
+func TestSetupMakesEachServerItsOwnCA(t *testing.T) {
+	t.Chdir(t.TempDir())
+	base := t.TempDir()
+	dir := filepath.Join(base, "server")
+	runSetupIn(t, "--dir", dir, "--user", "hen", "--data-folder", filepath.Join(base, "journal"))
+	for _, f := range []string{"ca.pem", "ca-key.pem", "server.pem"} {
+		if _, err := os.Stat(filepath.Join(dir, "certs", f)); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+	}
+	other := filepath.Join(base, "other")
+	runSetupIn(t, "--dir", other, "--user", "dana", "--data-folder", filepath.Join(base, "journal2"))
+	mine, _ := os.ReadFile(filepath.Join(dir, "certs", "ca.pem"))
+	theirs, _ := os.ReadFile(filepath.Join(other, "certs", "ca.pem"))
+	if string(mine) == string(theirs) {
+		t.Fatal("two servers have the same CA")
+	}
+
+	// The CA lost from a server with devices: setup (the installer's upgrade) refuses rather than make another.
+	if err := os.Remove(filepath.Join(dir, "certs", "ca.pem")); err != nil {
+		t.Fatal(err)
+	}
+	o, err := parseSetupArgs([]string{"--dir", dir, "--no-downloads"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setup(context.Background(), o); err == nil || !strings.Contains(err.Error(), "no CA") {
+		t.Fatalf("setup without the CA: %v", err)
 	}
 }

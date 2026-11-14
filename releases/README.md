@@ -19,7 +19,11 @@ server keeps answering older apps; an older server lacks what came after it, and
 
 | Server | API | Works with apps |
 |---|---|---|
+| 2026.11.14.2 | 1 | every build; apps after 2026.11.14 keep this server's own CA (`serverInfo.caCertificate`) |
 | 2026.11.14 | 1 | 2026.11.14, and the builds before it |
+
+From 2026.11.14.2 each new server makes its own CA. Apps up to 2026.11.14 reach such a server, enrolled by the QR code, only while its
+server certificate keeps the key they pinned from the enrollment QR code; newer apps keep the CA too.
 
 sha256 of journal-server-setup-2026.11.14.exe: c2864f23177260225de7fd16729483d0163547457aecfca47ab163c5b26e6e09
 
