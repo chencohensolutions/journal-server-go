@@ -135,9 +135,12 @@ Docker (`amake/innosetup`). On Windows: build the programs into `dist\` and run
 
 ## Releases
 
-`.github/workflows/release.yml` publishes a release on GitHub. Start it from the repository's Actions tab
-("Release", Run workflow), which releases the version in `version/VERSION` as the tag `v<version>`, or push that tag
-yourself. It refuses a version that already has a release, and a tag that isn't `version/VERSION`. It runs the
+`.github/workflows/release.yml` publishes a release on GitHub. It runs by itself when a push to main changes
+`version/VERSION` (a merge of a pull request that changed Go code does, since the hook sets the day's date), and
+releases that version as the tag `v<version>`; a version that already has a release is skipped. It can also be
+started from the repository's Actions tab ("Release", Run workflow), or by pushing the tag yourself; those refuse a
+version that already has a release, and a tag that isn't `version/VERSION`. Binaries go only on the release, never
+into git (the two 2026.11.14 files in `releases/` were the last). It runs the
 tests, then builds:
 
 - `journal-server-windows-amd64.exe`, `-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`: the program

@@ -1,5 +1,8 @@
 # Releases kept in the repository
 
+From 2026.11.14.2 on, releases are on the repository's Releases page only (published by
+`.github/workflows/release.yml`), not in git. The files below are the last ones kept here.
+
 `windows/journal-server-setup-<version>.exe` is the Windows installer, kept in git LFS. Download it from the file's
 page on GitHub ("Download raw file"), or clone with git LFS installed (`git lfs install`).
 

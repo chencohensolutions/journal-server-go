@@ -1,14 +1,21 @@
 # Publishes a release (docs/install.md, "Releases"): journal-server for Windows, Linux and macOS, the Windows
 # installer, and SHA256SUMS signed with the release key, which servers check before they update themselves.
 #
-# Start it from the Actions tab ("Run workflow"), which releases version/VERSION as tag v<version>, or by pushing
-# that tag. Needs the repository secret RELEASE_SIGNING_KEY (go run ./scripts/sign-release new-key <file>).
+# It runs by itself when a push to main changes version/VERSION (the pre-commit hook sets it to the day's date on every
+# commit that changes Go code), and releases that version as tag v<version>; a version already released is skipped.
+# It can also be started from the Actions tab ("Run workflow") or by pushing the tag. Needs the repository secret
+# RELEASE_SIGNING_KEY (go run ./scripts/sign-release new-key <file>).
 name: Release
 
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths: [version/VERSION]
   workflow_dispatch:
+
+# One release at a time: two merges in a row release in order.
+concurrency: release
 
 permissions:
   contents: write
@@ -32,6 +39,11 @@ jobs:
             exit 1
           fi
           if gh release view "v$version" >/dev/null 2>&1; then
+            if [ "$GITHUB_REF_TYPE" = branch ] && [ "$GITHUB_EVENT_NAME" = push ]; then
+              echo "Release v$version exists already: nothing to do"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "Release v$version exists already: raise version/VERSION first (scripts/bump-version.sh)" >&2
             exit 1
           fi
@@ -40,9 +52,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Test
+        if: steps.version.outputs.skip != 'true'
         run: go test ./...
 
       - name: Build
+        if: steps.version.outputs.skip != 'true'
         run: |
           mkdir -p dist
           for target in windows/amd64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
@@ -55,6 +69,7 @@ jobs:
           done
 
       - name: Installer
+        if: steps.version.outputs.skip != 'true'
         run: |
           mkdir -p dist/installer
           cp dist/journal-server-windows-amd64.exe dist/installer/journal-server.exe
@@ -65,6 +80,7 @@ jobs:
           rm -r dist/installer
 
       - name: Sign
+        if: steps.version.outputs.skip != 'true'
         run: |
           cd dist
           { echo "# journal-server ${{ steps.version.outputs.version }}"; sha256sum -- *; } > SHA256SUMS
@@ -76,6 +92,7 @@ jobs:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
 
       - name: Publish
+        if: steps.version.outputs.skip != 'true'
         run: |
           gh release create "v${{ steps.version.outputs.version }}" dist/* \
             --target "$GITHUB_SHA" --title "journal-server ${{ steps.version.outputs.version }}" --generate-notes
