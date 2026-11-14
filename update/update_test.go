@@ -186,6 +186,26 @@ func TestVersionsAreComparedByNumber(t *testing.T) {
 	}
 }
 
+func TestDateVersions(t *testing.T) {
+	cases := []struct {
+		current, version string
+		newer, major     bool
+	}{
+		{"1.2.8", "2026.11.14", true, false},
+		{"2026.11.14", "2026.11.14.2", true, false},
+		{"2026.11.14.2", "2026.11.15", true, false},
+		{"2026.12.31", "2027.1.2", true, false},
+		{"2026.11.14.2", "2026.11.14", false, false},
+		{"2026.11.14", "1.9.0", false, false},
+	}
+	for _, c := range cases {
+		newer, major := (&Updater{Current: c.current}).Newer(&Release{Version: c.version})
+		if newer != c.newer || major != c.major {
+			t.Errorf("%s: Newer(%s) = %v, %v; want %v, %v", c.current, c.version, newer, major, c.newer, c.major)
+		}
+	}
+}
+
 func TestSumsMustNameTheVersion(t *testing.T) {
 	if _, _, err := ParseSums([]byte(strings.Repeat("a", 64) + "  journal-server-linux-amd64\n")); err == nil {
 		t.Error("SHA256SUMS without its version line was read")

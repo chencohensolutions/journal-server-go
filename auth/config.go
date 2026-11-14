@@ -105,7 +105,7 @@ type AppConfig struct {
 	// The local time of the daily run, "15:04" (default "03:00"); for Index "daily".
 	IndexAt string `json:"index_at"`
 	// Whether a release build of the server installs newer releases by itself (docs/install.md, "Updates"): "auto"
-	// (the default) checks every day at UpdateAt, installs a newer release of the same major version and restarts;
+	// (the default) checks every day at UpdateAt, installs a newer release and restarts;
 	// "notify" only writes to the log that one is out; "off" doesn't look. A build from source never updates itself.
 	Update string `json:"update"`
 	// The local time of the daily update check, "15:04" (default "04:00").

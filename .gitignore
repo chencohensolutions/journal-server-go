@@ -55,3 +55,6 @@ devices.json
 # Output of "go run . > server.log"
 /server.log
 peers.json
+
+# Installers kept in git LFS (releases/)
+!releases/**/*.exe

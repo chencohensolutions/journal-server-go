@@ -198,34 +198,40 @@ func ParseSums(text []byte) (string, map[string]string, error) {
 }
 
 // Newer reports whether r is newer than the running version, and whether its major version is another one (a
-// change every install must follow, which isn't installed by itself).
+// change every install must follow, which isn't installed by itself). Versions are dates since Nov 14, 2026
+// (2026.11.14, then 2026.11.14.2 for a second build that day; docs/install.md "Versions"): a date is newer than any
+// old 1.x version, and a new year is not a major change, so only two old-style versions can differ in major.
 func (u *Updater) Newer(r *Release) (newer, major bool) {
 	have, err1 := parseVersion(u.Current)
 	got, err2 := parseVersion(r.Version)
 	if err1 != nil || err2 != nil {
 		return false, false
 	}
-	for i := range 3 {
+	for i := range 4 {
 		if got[i] != have[i] {
 			if got[i] < have[i] {
 				return false, false
 			}
-			return true, got[0] != have[0]
+			return true, got[0] != have[0] && got[0] < firstDateYear
 		}
 	}
 	return false, false
 }
 
-func parseVersion(v string) ([3]int, error) {
-	var n [3]int
+// firstDateYear: a version whose first number is this or more is a date.
+const firstDateYear = 2000
+
+// parseVersion reads 1.4.2, 2026.11.14 or 2026.11.14.2; a missing fourth number is 0.
+func parseVersion(v string) ([4]int, error) {
+	var n [4]int
 	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
-	if len(parts) != 3 {
-		return n, fmt.Errorf("%q is not a version like 1.4.2", v)
+	if len(parts) != 3 && len(parts) != 4 {
+		return n, fmt.Errorf("%q is not a version like 2026.11.14 or 1.4.2", v)
 	}
 	for i, p := range parts {
 		x, err := strconv.Atoi(p)
 		if err != nil || x < 0 {
-			return n, fmt.Errorf("%q is not a version like 1.4.2", v)
+			return n, fmt.Errorf("%q is not a version like 2026.11.14 or 1.4.2", v)
 		}
 		n[i] = x
 	}
