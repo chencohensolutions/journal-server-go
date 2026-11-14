@@ -38,7 +38,7 @@ func executablePath() (string, error) {
 var restarting atomic.Bool
 
 // updateDaily looks for a newer release once soon after start, to write to the log whether one is out, and every
-// day at config.UpdateAt, when with "update": "auto" it installs one of the same major version and calls restart.
+// day at config.UpdateAt, when with "update": "auto" it installs it (any date version; among old 1.x versions only one of the same major) and calls restart.
 func updateDaily(ctx context.Context, config auth.AppConfig, restart func()) {
 	if config.Update == auth.UpdateOff {
 		return

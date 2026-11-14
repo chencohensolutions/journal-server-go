@@ -85,15 +85,20 @@ Uninstalling removes the service, the firewall rule, the programs and what was d
 
 ## Versions
 
-The version is `version/VERSION` (major.minor.patch), embedded in the program by package `version`.
-`journal-server version` prints it with the build's commit
-(`1.4.2 (3f2a9c1 2026-10-23)`), and so do `serverInfo.version` and the installer's name.
+The app and the server share one scheme since Nov 14, 2026: a version is the day it was made, `YYYY.MM.DD`
+(`2026.11.14`), with `.2`, `.3`, ... for a second or third one the same day (`2026.11.14.2`). The date says how old a
+build is and which app and server belong together; whether they work together is the server's API number
+(`serverInfo.api`, `APIVersion` in `graph/resolver/resolver.go`, raised when a change needs newer apps) and the
+features `serverInfo` lists, which the app checks itself. The table of which app works with which server is in
+`releases/README.md`. Versions before that day were `1.x.y` (the last was 1.2.8); a date is newer than all of them.
 
-- **Patch** goes up by itself: the pre-commit hook (`.githooks/pre-commit`) runs `scripts/bump-version.sh patch` on
-  every commit that changes Go code (not only `_test.go` files) or `go.mod`/`go.sum`, and adds VERSION to the commit.
-- **Minor** (new features) and **major** (changes every device or install must follow): run
-  `scripts/bump-version.sh minor` (or `major`, or an exact `1.5.0`) before committing; the hook keeps a version
-  that the commit already changes.
+The version is `version/VERSION`, embedded in the program by package `version`. `journal-server version` prints it
+with the build's commit (`2026.11.14 (3f2a9c1 2026-11-14)`), and so do `serverInfo.version` and the installer's name.
+
+- It changes by itself: the pre-commit hook (`.githooks/pre-commit`) runs `scripts/bump-version.sh` on every commit
+  that changes Go code (not only `_test.go` files) or `go.mod`/`go.sum`, which sets today's date (or today's next
+  `.N`) and adds VERSION to the commit. So the version is the day of the last change to the program.
+- `scripts/bump-version.sh 2026.11.20` sets an exact one; the hook keeps a version that the commit already changes.
 - `SKIP_VERSION_BUMP=1 git commit ...` leaves it as it is, for example when amending (an amend otherwise bumps again).
 - The hook is on per clone: `git config core.hooksPath .githooks` (Git for Windows runs it too).
 
@@ -146,7 +151,7 @@ A release build looks for a newer release on GitHub (package `update`, `selfupda
 
 | `"update"` | |
 |---|---|
-| `"auto"` (default) | about a minute after start, writes to the log whether a newer release is out; every day at `"update_at"` (`"04:00"` by default) installs a newer release of the same major version and restarts |
+| `"auto"` (default) | about a minute after start, writes to the log whether a newer release is out; every day at `"update_at"` (`"04:00"` by default) installs a newer release and restarts |
 | `"notify"` | only writes to the log, at start and daily, that a newer release is out |
 | `"off"` | doesn't look |
 
@@ -170,13 +175,13 @@ Installing a release:
    on Linux and macOS it replaces itself in the same process, so systemd or launchd see no change. Uploads in
    progress go on where they stopped once the phone reconnects.
 
-A new major version (2.0 after 1.x) changes something every install must follow, so it is only written to the log;
-install it by hand after reading its release notes.
+Every newer date version installs by itself. Among the old `1.x.y` versions only, a new major version (2.0 after
+1.x) was only written to the log, to be installed by hand.
 
 By hand, in the install folder (as administrator, to restart the service):
 
 ```
-journal-server update             # install the latest release now (a new major version too), and restart the service
+journal-server update             # install the latest release now and restart the service
 journal-server update --check     # only say whether a newer release is out
 journal-server update --rollback  # put journal-server.exe.old back; again to undo that
 ```
