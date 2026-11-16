@@ -15,6 +15,7 @@ import (
 	"github.com/anacrolix/dht/v2/krpc"
 	alog "github.com/anacrolix/log"
 	"github.com/anacrolix/torrent/bencode"
+	"golang.org/x/time/rate"
 )
 
 // quiet keeps the DHT library's chatter (nodes that don't answer, refused puts) out of the server's log.
@@ -27,7 +28,11 @@ type Node struct {
 	Bootstrap func() ([]dht.Addr, error)
 	// Answer other nodes too (tests run a small DHT of their own on loopback).
 	Active bool
-	listen string // the UDP address to listen on; any port when empty
+	listen string         // the UDP address to listen on; any port when empty
+	conn   net.PacketConn // a socket already listening, used instead of listen (tests)
+	// What it may send; the DHT library's one limiter for the whole process when nil. Several nodes in one process
+	// (tests) each need their own, or they spend one another's and drop their answers.
+	limiter *rate.Limiter
 
 	mu     sync.Mutex
 	server *dht.Server
@@ -44,14 +49,21 @@ func (n *Node) started(ctx context.Context) (*dht.Server, error) {
 	if listen == "" {
 		listen = ":0"
 	}
-	conn, err := net.ListenPacket("udp", listen)
-	if err != nil {
-		return nil, fmt.Errorf("the DHT needs a UDP socket: %w", err)
+	conn := n.conn
+	if conn == nil {
+		c, err := net.ListenPacket("udp", listen)
+		if err != nil {
+			return nil, fmt.Errorf("the DHT needs a UDP socket: %w", err)
+		}
+		conn = c
 	}
 	config := dht.NewDefaultServerConfig()
 	config.Conn = conn
 	config.Passive = !n.Active
 	config.Logger = quiet
+	if n.limiter != nil {
+		config.SendLimiter = n.limiter
+	}
 	if n.Bootstrap != nil {
 		config.StartingNodes = n.Bootstrap
 	}
