@@ -110,13 +110,21 @@ and expiry dates, the revocation date, and whether private files are kept from t
 
 ```
 $ journal-server devices hen
-USER   DEVICE        KEY              REGISTERED   EXPIRES      STATUS   PRIVATE    SERIAL
-hen    Pixel 9 Pro   STRONGBOX        2026-10-17   2027-10-17   active   sent       4fa107…
-hen    iPad          SECURE_ENCLAVE   2026-09-02   2027-09-02   active   withheld   9c3e52…
+USER   DEVICE        APP          KEY              REGISTERED   EXPIRES      STATUS   PRIVATE    SERIAL
+hen    Pixel 9 Pro   journal      STRONGBOX        2026-10-17   2027-10-17   active   sent       4fa107…
+hen    Pixel 9 Pro   audio-logs   STRONGBOX        2026-11-16   2027-11-16   active   sent       7d20b9…
+hen    iPad          journal      SECURE_ENCLAVE   2026-09-02   2027-09-02   active   withheld   9c3e52…
 
 $ journal-server private 9c3e52… withhold     # or allow
 $ journal-server revoke 9c3e52…
 ```
+
+**Apps** (Nov 16, 2026): `enrollDevice` takes the app enrolling (`EnrollDeviceInput.app`, kept as `app` in the
+registry and shown as APP by `journal-server devices`): `journal` when it names none, or `audio-logs` (Audio Logs,
+the recording app, through the shared `shed` library). Two apps on one phone are two devices, each with its own key
+and certificate, so either can be revoked alone. A device of `audio-logs` sees the user's sound recordings whatever
+the user hides ([Hidden collections](media.md#hidden-collections)); renewal keeps the app. `serverInfo.deviceApps` says
+a server takes the field; an older one refuses it as an unknown input field, and an app enrolls again without it.
 
 A user can have any number of devices. Each one enrolls with its own code (codes are single use)
 and gets its own key and certificate, all with `CN = <user>`, so they share the same data. Revoking

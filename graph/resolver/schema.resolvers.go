@@ -28,6 +28,7 @@ func (r *mutationResolver) EnrollDevice(ctx context.Context, input model.EnrollD
 		DeviceName:    input.DeviceName,
 		CSR:           csr,
 		KeyProtection: input.KeyProtection.String(),
+		App:           appOf(input.App),
 	})
 	if err != nil {
 		log.Printf("Enrollment failed from %s: %v", auth.ClientIPFromContext(ctx), err)
@@ -38,7 +39,7 @@ func (r *mutationResolver) EnrollDevice(ctx context.Context, input model.EnrollD
 		return model.EnrollmentRejected{Reason: model.EnrollmentRejectedReason(rejection)}, nil
 	}
 	device := enrolled.Device
-	log.Printf("Enrolled device %q for user %s (serial %s, key %s)", device.Name, device.User, device.Serial, device.KeyProtection)
+	log.Printf("Enrolled device %q of %s for user %s (serial %s, key %s)", device.Name, device.AppName(), device.User, device.Serial, device.KeyProtection)
 	return model.EnrolledDevice{
 		User:        device.User,
 		DeviceName:  device.Name,
@@ -119,6 +120,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		CaCertificate:     nonEmpty(r.caPEM()),
 		TuckedAway:        true,
 		Notes:             true,
+		DeviceApps:        true,
 		Copies:            r.Resolver.Copies != nil,
 		PeerCopies:        r.Resolver.Copies != nil,
 		Audio:             true,

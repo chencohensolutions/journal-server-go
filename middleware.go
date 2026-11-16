@@ -67,6 +67,9 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 			if device.WithholdPrivate {
 				ctx = auth.WithWithholdPrivate(ctx)
 			}
+			if device.SeesSoundRecordings() {
+				ctx = auth.WithShowAudio(ctx)
+			}
 		}
 		log.Printf("Client connected: username=%s from %s (%s %s)", currentUser.Username, r.RemoteAddr, r.Method, r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(auth.WithUser(ctx, currentUser)))
@@ -79,7 +82,7 @@ func hideFromDevice(lookup media.StoreLookup, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if store := lookup(r); store != nil {
 			// Find: a JPEG kept as JPEG XL, asked for by the JPEG's sha256, is hidden as its JPEG XL is.
-			if item, ok := store.Find(r.PathValue("sha256")); ok && store.Hides(store.ViewFor(auth.WithholdPrivateFromContext(r.Context())), item) {
+			if item, ok := store.Find(r.PathValue("sha256")); ok && store.Hides(store.ViewFor(auth.WithholdPrivateFromContext(r.Context()), auth.ShowAudioFromContext(r.Context())), item) {
 				http.NotFound(w, r)
 				return
 			}

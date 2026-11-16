@@ -43,7 +43,7 @@ func TestAudioIsHiddenUntilShown(t *testing.T) {
 	}
 
 	// A data folder without settings.json hides all three, and nothing else.
-	view := f.store.ViewFor(false)
+	view := f.store.ViewFor(false, false)
 	items, cursor, _, _ := f.store.Changes("", 10, view)
 	if len(items) != 4 || countShown(f.store, view, items) != 1 || f.store.Hides(view, photo) {
 		t.Fatalf("by default: %d items, %d shown", len(items), countShown(f.store, view, items))
@@ -71,7 +71,7 @@ func TestAudioIsHiddenUntilShown(t *testing.T) {
 	if err := f.store.SetHidden(h); err != nil {
 		t.Fatal(err)
 	}
-	view = f.store.ViewFor(false)
+	view = f.store.ViewFor(false, false)
 	items, _, _, _ = f.store.Changes(cursor, 10, view)
 	if len(items) != 1 || items[0].Sha256() != call.Sha256() || f.store.Hides(view, items[0]) {
 		t.Fatalf("calls shown: %v", items)

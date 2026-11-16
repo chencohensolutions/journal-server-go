@@ -43,7 +43,7 @@ func (r *Resolver) view(ctx context.Context) (view, error) {
 	if err != nil {
 		return view{}, err
 	}
-	return view{store, store.ViewFor(auth.WithholdPrivateFromContext(ctx))}, nil
+	return view{store, store.ViewFor(auth.WithholdPrivateFromContext(ctx), auth.ShowAudioFromContext(ctx))}, nil
 }
 
 // hides reports whether the device may not see item.

@@ -9,6 +9,7 @@ const (
 	clientIPContextKey contextKey = "client_ip"
 	deviceContextKey   contextKey = "device"
 	withholdContextKey contextKey = "withhold_private"
+	showAudioContextKey contextKey = "show_audio"
 	serialContextKey   contextKey = "serial"
 )
 
@@ -52,6 +53,17 @@ func WithDeviceName(ctx context.Context, name string) context.Context {
 func DeviceNameFromContext(ctx context.Context) string {
 	name, _ := ctx.Value(deviceContextKey).(string)
 	return name
+}
+
+// WithShowAudio records that the device always sees the user's sound recordings (enroll.Device.SeesSoundRecordings).
+func WithShowAudio(ctx context.Context) context.Context {
+	return context.WithValue(ctx, showAudioContextKey, true)
+}
+
+// ShowAudioFromContext reports whether the device always sees sound recordings, whatever the user hides.
+func ShowAudioFromContext(ctx context.Context) bool {
+	show, _ := ctx.Value(showAudioContextKey).(bool)
+	return show
 }
 
 // WithWithholdPrivate records that the device is kept from the files the user marked private.

@@ -223,6 +223,11 @@ type EnrollDeviceInput struct {
 	// PKCS#10 certificate request for an EC P-256 key, base64-encoded DER.
 	Csr           string        `json:"csr"`
 	KeyProtection KeyProtection `json:"keyProtection"`
+	// The app enrolling, in lower case: journal (the default when null) or audio-logs (Audio Logs, which records and
+	// transcribes). Two apps on one phone enroll as two devices, each with its own key. A device of audio-logs sees the
+	// user's sound recordings whatever the user hides (hiddenCollections.recordings, calls, voiceMessages): it uploads
+	// them and plays them back. Servers before Nov 16, 2026 (serverInfo.deviceApps false) refuse this field.
+	App *string `json:"app,omitempty"`
 }
 
 type EnrolledDevice struct {
@@ -668,6 +673,8 @@ type ServerInfo struct {
 	TuckedAway bool `json:"tuckedAway"`
 	// Notes are kept and synced (setNote, Media.note).
 	Notes bool `json:"notes"`
+	// enrollDevice takes the app enrolling (EnrollDeviceInput.app), and devices of audio-logs see sound recordings.
+	DeviceApps bool `json:"deviceApps"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.

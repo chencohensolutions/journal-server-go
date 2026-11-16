@@ -48,13 +48,13 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 	if result, err := f.chunk([]byte("bumble edit"), 0, 11); err != nil || result.Item == nil {
 		t.Fatal(result, err)
 	}
-	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false))
+	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false, false))
 
 	f.now = f.now.Add(time.Hour)
 	if err := f.store.SetHidden(Hidden{ScreenshotApps: []string{"BUMBLE", "bumble", "OkCupid"}}); err != nil {
 		t.Fatal(err)
 	}
-	view := f.store.ViewFor(false)
+	view := f.store.ViewFor(false, false)
 
 	// A device that had them gets only the hidden ones again, to send as deleted (the edit with its photo).
 	items, hiddenCursor, _, _ := f.store.Changes(cursor, 10, view)
@@ -102,7 +102,7 @@ func TestHiddenCollectionsInTheFeed(t *testing.T) {
 	if err := f.store.SetHidden(Hidden{}); err != nil {
 		t.Fatal(err)
 	}
-	view = f.store.ViewFor(false)
+	view = f.store.ViewFor(false, false)
 	items, _, _, _ = f.store.Changes(shownCursor, 10, view)
 	if len(items) != 2 || items[0].Sha256() != bumble.Sha256() || f.store.Hides(view, items[1]) {
 		t.Fatalf("shown again: %v", items)
@@ -165,14 +165,14 @@ func TestHidingApps(t *testing.T) {
 	if *wa.Sidecar.Facts.Source != SourceWhatsApp || *tg.Sidecar.Facts.Source != "folder:telegram" || *pet.Sidecar.Facts.Source != "folder:petcube" {
 		t.Fatalf("sources: %s %s", *wa.Sidecar.Facts.Source, *tg.Sidecar.Facts.Source)
 	}
-	view := f.store.ViewFor(false)
+	view := f.store.ViewFor(false, false)
 	if !f.store.Hides(view, wa) || f.store.Hides(view, tg) {
 		t.Fatal("WhatsApp hidden from the old settings")
 	}
 	if err := f.store.SetHidden(Hidden{Sources: []string{"folder:TELEGRAM", "folder:petcube"}}); err != nil {
 		t.Fatal(err)
 	}
-	view = f.store.ViewFor(false)
+	view = f.store.ViewFor(false, false)
 	if f.store.Hides(view, wa) || !f.store.Hides(view, tg) || !f.store.Hides(view, pet) || !f.store.Hides(view, pet2) {
 		t.Fatal("hidden ignoring case")
 	}
@@ -221,13 +221,13 @@ func TestViewChangeOverIsPagedAndGoesOn(t *testing.T) {
 	}
 	f.now = f.now.Add(time.Second)
 	photo := f.upload([]byte("photo"), "20251101_110819.heic")
-	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false))
+	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false, false))
 
 	f.now = f.now.Add(time.Hour)
 	if err := f.store.SetHidden(Hidden{ScreenshotApps: []string{"Bumble"}}); err != nil {
 		t.Fatal(err)
 	}
-	view := f.store.ViewFor(false)
+	view := f.store.ViewFor(false, false)
 	items, next, remaining, _ := f.store.Changes(cursor, 2, view)
 	if len(items) != 2 || remaining != 1 || items[0].Sha256() != shots[0].Sha256() || items[1].Sha256() != shots[1].Sha256() {
 		t.Fatalf("first page of the change-over: %v, %d remaining", items, remaining)
@@ -244,15 +244,15 @@ func TestViewChangeOverIsPagedAndGoesOn(t *testing.T) {
 	}
 
 	// The view changes again while a change-over is under way: everything again, since what the device has is unknown.
-	_, cursor, _, _ = f.store.Changes("", 10, f.store.ViewFor(false))
+	_, cursor, _, _ = f.store.Changes("", 10, f.store.ViewFor(false, false))
 	if err := f.store.SetHidden(Hidden{}); err != nil {
 		t.Fatal(err)
 	}
-	_, midway, _, _ := f.store.Changes(cursor, 1, f.store.ViewFor(false))
+	_, midway, _, _ := f.store.Changes(cursor, 1, f.store.ViewFor(false, false))
 	if err := f.store.SetHidden(Hidden{ScreenshotApps: []string{"Bumble"}, ScreenshotsWithoutApp: true}); err != nil {
 		t.Fatal(err)
 	}
-	if items, _, _, _ := f.store.Changes(midway, 10, f.store.ViewFor(false)); len(items) != 5 {
+	if items, _, _, _ := f.store.Changes(midway, 10, f.store.ViewFor(false, false)); len(items) != 5 {
 		t.Fatalf("view changed twice: %d items", len(items))
 	}
 
@@ -261,7 +261,7 @@ func TestViewChangeOverIsPagedAndGoesOn(t *testing.T) {
 	if items, _, _, _ := f.store.Changes(old, 10, View{}); len(items) != 1 || items[0].Sha256() != later.Sha256() {
 		t.Fatalf("old cursor: %v", items)
 	}
-	if items, _, _, _ := f.store.Changes(old, 10, f.store.ViewFor(false)); len(items) != 5 {
+	if items, _, _, _ := f.store.Changes(old, 10, f.store.ViewFor(false, false)); len(items) != 5 {
 		t.Fatalf("old cursor for another view: %d items", len(items))
 	}
 }
@@ -278,7 +278,7 @@ func TestHiddenFeedPages(t *testing.T) {
 	}
 	cursor, seen := "", 0
 	for range 5 {
-		items, next, remaining, err := f.store.Changes(cursor, 1, f.store.ViewFor(false))
+		items, next, remaining, err := f.store.Changes(cursor, 1, f.store.ViewFor(false, false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -312,7 +312,7 @@ func TestHiddenNudity(t *testing.T) {
 	if f.store.Hidden().NudityFrom != DefaultNudityFrom {
 		t.Fatalf("without settings.json: %+v", f.store.Hidden())
 	}
-	view := f.store.ViewFor(false)
+	view := f.store.ViewFor(false, false)
 	items, _, _, _ := f.store.Changes("", 10, view)
 	if len(items) != 3 || countShown(f.store, view, items) != 1 || f.store.Hides(view, *f.store.mustGet(t, unscanned.Sha256())) {
 		t.Fatalf("hidden with its edit: %v", items)
@@ -381,7 +381,7 @@ func TestHidingSentToYou(t *testing.T) {
 	if c := f.store.SentToYouCollection(); c != (Collection{"Sent to you", 1, 0, false}) {
 		t.Fatalf("before hiding: %+v", c)
 	}
-	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false))
+	_, cursor, _, _ := f.store.Changes("", 10, f.store.ViewFor(false, false))
 
 	f.now = f.now.Add(time.Hour)
 	if err := f.store.SetHidden(Hidden{Sources: []string{" Received "}}); err != nil {
@@ -390,7 +390,7 @@ func TestHidingSentToYou(t *testing.T) {
 	if h := f.store.Hidden(); len(h.Sources) != 1 || h.Sources[0] != SourceReceived {
 		t.Fatalf("kept as: %+v", h.Sources)
 	}
-	view := f.store.ViewFor(false)
+	view := f.store.ViewFor(false, false)
 	if !f.store.Hides(view, sent) || f.store.Hides(view, mine) {
 		t.Fatal("only what was sent is hidden")
 	}

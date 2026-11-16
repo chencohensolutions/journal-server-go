@@ -67,6 +67,8 @@ type Request struct {
 	DeviceName    string
 	CSR           []byte // PKCS#10, DER
 	KeyProtection string
+	// The app enrolling ("journal", "audio-logs"); empty for journal.
+	App string
 }
 
 type Enrolled struct {
@@ -101,6 +103,7 @@ func (s *Service) Enroll(clientIP string, req Request) (Enrolled, Rejection, err
 		KeyProtection: req.KeyProtection,
 		RegisteredAt:  s.now().UTC(),
 		ExpiresAt:     cert.NotAfter.UTC(),
+		App:           cleanAppName(req.App),
 	}
 	if err := s.Registry.Add(device); err != nil {
 		return Enrolled{}, "", err
@@ -136,6 +139,7 @@ func (s *Service) Renew(serial string, csrDER []byte, keyProtection string) (Enr
 		ExpiresAt:       cert.NotAfter.UTC(),
 		WithholdPrivate: old.WithholdPrivate,
 		RenewedFrom:     old.Serial,
+		App:             old.App,
 	}
 	if err := s.Registry.Add(device); err != nil {
 		return Enrolled{}, "", err
@@ -158,4 +162,22 @@ func cleanDeviceName(name string) string {
 		name = name[:len(name)-size]
 	}
 	return name
+}
+
+// cleanAppName keeps an app's name to lower-case letters, digits and dashes, at most 32 of them; "" (journal) when
+// nothing is left, or when it names journal.
+func cleanAppName(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if b.Len() >= 32 {
+			break
+		}
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	if b.String() == AppJournal {
+		return ""
+	}
+	return b.String()
 }

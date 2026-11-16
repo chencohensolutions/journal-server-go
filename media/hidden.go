@@ -253,9 +253,15 @@ type View struct {
 	Hidden          Hidden
 }
 
-// ViewFor is the view of a device that is, or isn't, kept from private files, with what the user hides now.
-func (s *Store) ViewFor(withholdPrivate bool) View {
-	return View{WithholdPrivate: withholdPrivate, Hidden: s.Hidden()}
+// ViewFor is the view of a device that is, or isn't, kept from private files, with what the user hides now. A
+// device that shows audio (an app made for sound recordings, enroll.Device.SeesSoundRecordings) sees every sound
+// recording whatever the user hides; the rest of what they hide stays hidden from it.
+func (s *Store) ViewFor(withholdPrivate, showAudio bool) View {
+	hidden := s.Hidden()
+	if showAudio {
+		hidden.Audio = AudioHiding{}
+	}
+	return View{WithholdPrivate: withholdPrivate, Hidden: hidden}
 }
 
 // key names the view in feed cursors: "w" or "m" (withheld or not), then Hidden.Key.

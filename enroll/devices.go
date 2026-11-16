@@ -27,7 +27,28 @@ type Device struct {
 	// The certificate this one renewed (renewCertificate): the same device with a new key. That one is revoked the
 	// first time this one is used.
 	RenewedFrom string `json:"renewed_from,omitempty"`
+	// The app that enrolled (EnrollDeviceInput.app): "journal" when it said none. Two apps on one phone are two
+	// devices, each with its own key and certificate.
+	App string `json:"app,omitempty"`
 }
+
+// The apps the server knows by name. Any other name is kept as it came, cleaned.
+const (
+	AppJournal   = "journal"
+	AppAudioLogs = "audio-logs"
+)
+
+// AppName is the device's app: "journal" for a device enrolled before apps were named, or that named none.
+func (d Device) AppName() string {
+	if d.App == "" {
+		return AppJournal
+	}
+	return d.App
+}
+
+// SeesSoundRecordings reports whether the device always sees the user's sound recordings, whatever the user hides
+// (media.View.ShowAudio): an app made for them, Audio Logs, which uploads recordings and plays them back.
+func (d Device) SeesSoundRecordings() bool { return d.AppName() == AppAudioLogs }
 
 var ErrDeviceNotFound = errors.New("device not found")
 

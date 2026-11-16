@@ -51,9 +51,10 @@ type adminDevice struct {
 	ExpiresAt       time.Time  `json:"expiresAt"`
 	RevokedAt       *time.Time `json:"revokedAt"`
 	WithholdPrivate bool       `json:"withholdPrivate"`
+	App             string     `json:"app"`
 }
 
-const deviceFields = "serial user name keyProtection registeredAt expiresAt revokedAt withholdPrivate"
+const deviceFields = "serial user name keyProtection registeredAt expiresAt revokedAt withholdPrivate app"
 
 func enrollCodeCommand(config auth.AppConfig, user string) error {
 	var data struct {
@@ -162,7 +163,7 @@ func devicesCommand(config auth.AppConfig, args []string) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "USER\tDEVICE\tKEY\tREGISTERED\tEXPIRES\tSTATUS\tPRIVATE\tSERIAL")
+	fmt.Fprintln(w, "USER\tDEVICE\tAPP\tKEY\tREGISTERED\tEXPIRES\tSTATUS\tPRIVATE\tSERIAL")
 	for _, d := range data.Devices {
 		status := "active"
 		if d.RevokedAt != nil {
@@ -174,7 +175,7 @@ func devicesCommand(config auth.AppConfig, args []string) error {
 		if d.WithholdPrivate {
 			private = "withheld"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.User, d.Name, d.KeyProtection,
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.User, d.Name, d.App, d.KeyProtection,
 			d.RegisteredAt.Local().Format(time.DateOnly), d.ExpiresAt.Local().Format(time.DateOnly), status, private, d.Serial)
 	}
 	return w.Flush()

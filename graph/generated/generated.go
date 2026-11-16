@@ -414,6 +414,7 @@ type ComplexityRoot struct {
 		CaCertificate     func(childComplexity int) int
 		Cameras           func(childComplexity int) int
 		Copies            func(childComplexity int) int
+		DeviceApps        func(childComplexity int) int
 		Discovery         func(childComplexity int) int
 		EncodesWav        func(childComplexity int) int
 		Faces             func(childComplexity int) int
@@ -2322,6 +2323,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Copies(childComplexity), true
+	case "ServerInfo.deviceApps":
+		if e.ComplexityRoot.ServerInfo.DeviceApps == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.DeviceApps(childComplexity), true
 	case "ServerInfo.discovery":
 		if e.ComplexityRoot.ServerInfo.Discovery == nil {
 			break
@@ -3761,6 +3768,8 @@ type ServerInfo {
   tuckedAway: Boolean!
   "Notes are kept and synced (setNote, Media.note)."
   notes: Boolean!
+  "enrollDevice takes the app enrolling (EnrollDeviceInput.app), and devices of audio-logs see sound recordings."
+  deviceApps: Boolean!
 }
 
 type Mutation {
@@ -3783,6 +3792,13 @@ input EnrollDeviceInput {
   "PKCS#10 certificate request for an EC P-256 key, base64-encoded DER."
   csr: String!
   keyProtection: KeyProtection!
+  """
+  The app enrolling, in lower case: journal (the default when null) or audio-logs (Audio Logs, which records and
+  transcribes). Two apps on one phone enroll as two devices, each with its own key. A device of audio-logs sees the
+  user's sound recordings whatever the user hides (hiddenCollections.recordings, calls, voiceMessages): it uploads
+  them and plays them back. Servers before Nov 16, 2026 (serverInfo.deviceApps false) refuse this field.
+  """
+  app: String
 }
 
 "Where the device keeps its private key."
@@ -4806,6 +4822,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_tuckedAway(ctx, field)
 	case "notes":
 		return ec.fieldContext_ServerInfo_notes(ctx, field)
+	case "deviceApps":
+		return ec.fieldContext_ServerInfo_deviceApps(ctx, field)
 	case "audio":
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
@@ -13214,6 +13232,29 @@ func (ec *executionContext) fieldContext_ServerInfo_notes(_ context.Context, fie
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_deviceApps(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_deviceApps(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DeviceApps, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_deviceApps(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_audio(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -15684,7 +15725,7 @@ func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context,
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"code", "deviceName", "csr", "keyProtection"}
+	fieldsInOrder := [...]string{"code", "deviceName", "csr", "keyProtection", "app"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -15719,6 +15760,13 @@ func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context,
 				return it, err
 			}
 			it.KeyProtection = data
+		case "app":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("app"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.App = data
 		}
 	}
 	return it, nil
@@ -19342,6 +19390,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "notes":
 			out.Values[i] = ec._ServerInfo_notes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deviceApps":
+			out.Values[i] = ec._ServerInfo_deviceApps(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
