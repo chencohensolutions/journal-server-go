@@ -389,7 +389,7 @@ type ComplexityRoot struct {
 	Query struct {
 		AppData              func(childComplexity int, name string) int
 		Cameras              func(childComplexity int) int
-		Changes              func(childComplexity int, since *string, limit *int) int
+		Changes              func(childComplexity int, since *string, limit *int, kinds []model.MediaKind) int
 		Copies               func(childComplexity int) int
 		Duplicates           func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
 		EnrollmentPreview    func(childComplexity int, code string) int
@@ -609,7 +609,7 @@ type QueryResolver interface {
 	MissingMedia(ctx context.Context, hashes []string) ([]string, error)
 	Media(ctx context.Context, sha256 string) (*model.Media, error)
 	StorageUsage(ctx context.Context) (*model.StorageUsage, error)
-	Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error)
+	Changes(ctx context.Context, since *string, limit *int, kinds []model.MediaKind) (*model.ChangePage, error)
 	People(ctx context.Context, includeGroups *bool, includePrivate *bool) (*model.People, error)
 	SimilarFaces(ctx context.Context, face string, limit *int, offset *int, includePrivate *bool) ([]*model.FaceHit, error)
 	SearchMedia(ctx context.Context, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) (*model.MediaSearch, error)
@@ -2199,7 +2199,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.Changes(childComplexity, args["since"].(*string), args["limit"].(*int)), true
+		return e.ComplexityRoot.Query.Changes(childComplexity, args["since"].(*string), args["limit"].(*int), args["kinds"].([]model.MediaKind)), true
 	case "Query.copies":
 		if e.ComplexityRoot.Query.Copies == nil {
 			break
@@ -3846,8 +3846,12 @@ type ChangePage {
 }
 
 extend type Query {
-  "What changed since the cursor; without one, everything (a new device). At most 5000 per page."
-  changes(since: String, limit: Int = 2000): ChangePage!
+  """
+  What changed since the cursor; without one, everything (a new device). At most 5000 per page. With kinds, only
+  files of those kinds (Audio Logs reads only AUDIO); ask with the same kinds each time, since the cursor moves past
+  the others.
+  """
+  changes(since: String, limit: Int = 2000, kinds: [MediaKind!]): ChangePage!
 }
 `, BuiltIn: false},
 	{Name: "../schema/notes.graphql", Input: `# --- Notes ---------------------------------------------------------------------
@@ -6083,6 +6087,14 @@ func (ec *executionContext) field_Query_changes_args(ctx context.Context, rawArg
 		return nil, err
 	}
 	args["limit"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "kinds",
+		func(ctx context.Context, v any) ([]model.MediaKind, error) {
+			return ec.unmarshalOMediaKind2ᚕgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaKindᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["kinds"] = arg2
 	return args, nil
 }
 
@@ -13091,7 +13103,7 @@ func (ec *executionContext) _Query_changes(ctx context.Context, field graphql.Co
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().Changes(ctx, fc.Args["since"].(*string), fc.Args["limit"].(*int))
+			return ec.Resolvers.Query().Changes(ctx, fc.Args["since"].(*string), fc.Args["limit"].(*int), fc.Args["kinds"].([]model.MediaKind))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.ChangePage) graphql.Marshaler {
@@ -23606,6 +23618,43 @@ func (ec *executionContext) marshalOMedia2ᚖgithubᚗcomᚋjournalᚋserverᚑg
 		return graphql.Null
 	}
 	return ec._Media(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOMediaKind2ᚕgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaKindᚄ(ctx context.Context, v any) ([]model.MediaKind, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]model.MediaKind, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNMediaKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaKind(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalOMediaKind2ᚕgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaKindᚄ(ctx context.Context, sel ast.SelectionSet, v []model.MediaKind) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNMediaKind2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐMediaKind(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) unmarshalONudityHidingInput2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐNudityHidingInput(ctx context.Context, v any) (*model.NudityHidingInput, error) {

@@ -473,3 +473,27 @@ func TestScreenshotsGetTheirApp(t *testing.T) {
 		t.Fatalf("unchanged: %v", items)
 	}
 }
+
+// With kinds, only those files come, and the cursor goes on past the rest.
+func TestChangesOfOneKind(t *testing.T) {
+	f := newFixture(t)
+	f.upload([]byte("photo 1"), "IMG.jpg")
+	first := f.importAudio([]byte("sound 1"), "recording-20220925-195923.m4a", nil, SourceOther)
+	f.now = f.now.Add(time.Second)
+	f.upload([]byte("photo 2"), "IMG.jpg")
+	items, cursor, remaining, err := f.store.Changes("", 10, View{}, KindAudio)
+	if err != nil || len(items) != 1 || items[0].Sha256() != first.Sha256() || remaining != 0 {
+		t.Fatalf("first page: %v %d %v", items, remaining, err)
+	}
+	if items, next, _, _ := f.store.Changes(cursor, 10, View{}, KindAudio); len(items) != 0 || next != cursor {
+		t.Fatalf("a photo moved the sound feed: %v", items)
+	}
+	f.now = f.now.Add(time.Second)
+	second := f.importAudio([]byte("sound 2"), "recording-20220926-195923.m4a", nil, SourceOther)
+	if items, _, _, _ := f.store.Changes(cursor, 10, View{}, KindAudio); len(items) != 1 || items[0].Sha256() != second.Sha256() {
+		t.Fatalf("second sound: %v", items)
+	}
+	if items, _, _, _ := f.store.Changes("", 10, View{}); len(items) != 4 {
+		t.Fatalf("without kinds: %d items, want 4", len(items))
+	}
+}

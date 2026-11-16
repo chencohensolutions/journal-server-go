@@ -420,11 +420,11 @@ All of these need a client certificate, like everything except enrollment
 
 ## Change feed
 
-`query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA,
+`query changes(since: String, limit: Int = 2000, kinds: [MediaKind!])` returns pages of `Change { kind: MEDIA,
 path: "media/<sha256>", deleted, hidden, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many
 changes come after the page, for a progress count). A new device starts without `since` and calls again with each
 page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed since (an empty page
-returns the same cursor). A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
+returns the same cursor). With `kinds`, only files of those kinds come (Audio Logs asks for `[AUDIO]` and never pages through the photos); the cursor moves past the rest all the same, so a device asks with the same kinds each time. A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
 (see [Nudity scan](#nudity-scan)), its source is corrected (see [Fixing sources](#fixing-sources)) or it is marked
 private or unmarked (see [Private files](#private-files)), tucked away or brought back (see
 [Tucked away](#tucked-away)), or its note is written or deleted (see [Notes](#notes)): it then comes again, whole,

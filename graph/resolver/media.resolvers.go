@@ -181,7 +181,7 @@ func (r *queryResolver) StorageUsage(ctx context.Context) (*model.StorageUsage, 
 }
 
 // Changes is the resolver for the changes field.
-func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) (*model.ChangePage, error) {
+func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int, kinds []model.MediaKind) (*model.ChangePage, error) {
 	v, err := r.view(ctx)
 	if err != nil {
 		return nil, err
@@ -197,7 +197,18 @@ func (r *queryResolver) Changes(ctx context.Context, since *string, limit *int) 
 	if since != nil {
 		cursor = *since
 	}
-	items, next, remaining, err := v.store.Changes(cursor, n, v.View)
+	var only []media.Kind
+	for _, k := range kinds {
+		switch k {
+		case model.MediaKindPhoto:
+			only = append(only, media.KindPhoto)
+		case model.MediaKindVideo:
+			only = append(only, media.KindVideo)
+		case model.MediaKindAudio:
+			only = append(only, media.KindAudio)
+		}
+	}
+	items, next, remaining, err := v.store.Changes(cursor, n, v.View, only...)
 	if err != nil {
 		return nil, err
 	}
