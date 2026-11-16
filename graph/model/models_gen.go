@@ -30,6 +30,10 @@ type PersonResult interface {
 	IsPersonResult()
 }
 
+type SetAppDataResult interface {
+	IsSetAppDataResult()
+}
+
 type SetNoteResult interface {
 	IsSetNoteResult()
 }
@@ -41,6 +45,29 @@ type SiblingCodeResult interface {
 type StartUploadResult interface {
 	IsStartUploadResult()
 }
+
+// A piece of the asking app's data.
+type AppData struct {
+	Name string `json:"name"`
+	// A JSON object as the app wrote it; null when there is none.
+	Content *string `json:"content,omitempty"`
+	// The sha256 of content, in hex, for setAppData's baseVersion; null when there is none.
+	Version *string `json:"version,omitempty"`
+}
+
+// The data changed since baseVersion: data is as it is now. Merge the change into it and send again.
+type AppDataConflict struct {
+	Data *AppData `json:"data"`
+}
+
+func (AppDataConflict) IsSetAppDataResult() {}
+
+// The data was kept (or deleted).
+type AppDataSaved struct {
+	Data *AppData `json:"data"`
+}
+
+func (AppDataSaved) IsSetAppDataResult() {}
 
 type AudioHidingInput struct {
 	Recordings    bool `json:"recordings"`
@@ -613,6 +640,14 @@ func (Person) IsPersonResult() {}
 type Query struct {
 }
 
+// A page of the sound recordings this device sees, newest first by when each was made (recordingsPage). older and newer
+// are the cursors for the pages either side; null when there is none that way.
+type RecordingsPage struct {
+	Recordings []*Media `json:"recordings"`
+	Older      *string  `json:"older,omitempty"`
+	Newer      *string  `json:"newer,omitempty"`
+}
+
 type SearchHit struct {
 	Media *Media `json:"media"`
 	// How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
@@ -685,6 +720,11 @@ type ServerInfo struct {
 	SiblingCodes bool `json:"siblingCodes"`
 	// An app made for sound recordings chooses whether it shows calls and voice messages (setSoundRecordingsShown).
 	SoundRecordingsShown bool `json:"soundRecordingsShown"`
+	// Each app keeps its own note on a file (Media.note and setNote are the asking app's own; journal's is the one from
+	// before) and its own data (appData, setAppData), so one app never sees another's.
+	AppNotes bool `json:"appNotes"`
+	// The sound recordings can be read a page at a time, newest first (recordingsPage).
+	RecordingsPage bool `json:"recordingsPage"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.

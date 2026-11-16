@@ -30,7 +30,8 @@ import (
 // spaceReserve stays free on the copy's disk; a pass stops before eating into it.
 const spaceReserve uint64 = 1 << 30
 
-// rootFiles are the files at the data folder's root that are copied beside media/: the user's choices, and the
+// rootFiles are the files at the data folder's root that are copied beside media/: the user's choices, each app's
+// data (apps/), and the
 // journals of fix-sources' relabels and of the server's sound-folder moves (relabels/*.tsv), the only way to undo
 // one.
 func (c *Copier) rootFiles() []string {
@@ -38,6 +39,11 @@ func (c *Copier) rootFiles() []string {
 	journals, _ := filepath.Glob(c.source(filepath.Join("relabels", "*.tsv")))
 	for _, journal := range journals {
 		files = append(files, "relabels/"+filepath.Base(journal))
+	}
+	// Each app's own data (labels, tags): apps/<app>/<name>.json.
+	data, _ := filepath.Glob(c.source(filepath.Join("apps", "*", "*.json")))
+	for _, file := range data {
+		files = append(files, "apps/"+filepath.Base(filepath.Dir(file))+"/"+filepath.Base(file))
 	}
 	return files
 }

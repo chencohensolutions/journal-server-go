@@ -11,9 +11,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -297,5 +299,117 @@ func TestAudioLogsChoosesCallsAndNeverGetsPrivate(t *testing.T) {
 	}
 	if s := status(audioLogs, secret); s != http.StatusNotFound {
 		t.Errorf("Audio Logs /media of a private recording: %d", s)
+	}
+}
+
+// Audio Logs lists recordings a page at a time, newest first, and each app keeps its own note and its own data.
+func TestRecordingsPagesAndEachAppsOwnNotesAndData(t *testing.T) {
+	env := newTestEnv(t)
+	journal, _ := env.enrolledAppClient(t, "hen", "")
+	audioLogs, _ := env.enrolledAppClient(t, "hen", "audio-logs")
+	store := env.library.Store("hen")
+	var shas []string // oldest first
+	for i := 0; i < 7; i++ {
+		name := fmt.Sprintf("class-%d.flac", i)
+		data := []byte("the bytes of " + name)
+		path := filepath.Join(t.TempDir(), name)
+		os.WriteFile(path, data, 0o644)
+		sum := sha256.Sum256(data)
+		sha := hex.EncodeToString(sum[:])
+		taken := time.Date(2026, 1, 1+i, 10, 0, 0, 0, time.UTC)
+		source := media.SourceRecording
+		req := media.UploadRequest{Sha256: sha, Size: int64(len(data)), FileName: name, MimeType: "audio/flac",
+			Kind: media.KindAudio, TakenAt: &taken, Source: &source, UploadedBy: "import"}
+		if _, _, err := store.Import(path, req); err != nil {
+			t.Fatal(err)
+		}
+		shas = append(shas, sha)
+	}
+	type page struct {
+		Recordings []struct{ Sha256 string }
+		Older      *string
+		Newer      *string
+	}
+	get := func(args string) page {
+		r := env.graphql(t, audioLogs, `{ recordingsPage(`+args+`) { recordings { sha256 } older newer } }`, nil)
+		if len(r.Errors) > 0 {
+			t.Fatalf("recordingsPage(%s): %+v", args, r.Errors)
+		}
+		var p page
+		json.Unmarshal(r.Data["recordingsPage"], &p)
+		return p
+	}
+	names := func(p page) []string {
+		var out []string
+		for _, r := range p.Recordings {
+			out = append(out, r.Sha256)
+		}
+		return out
+	}
+	first := get("limit: 3")
+	if want := []string{shas[6], shas[5], shas[4]}; !slices.Equal(names(first), want) || first.Older == nil || first.Newer != nil {
+		t.Fatalf("first page %v older=%v newer=%v", names(first), first.Older, first.Newer)
+	}
+	second := get(fmt.Sprintf("before: %q, limit: 3", *first.Older))
+	if want := []string{shas[3], shas[2], shas[1]}; !slices.Equal(names(second), want) || second.Older == nil || second.Newer == nil {
+		t.Fatalf("second page %v", names(second))
+	}
+	last := get(fmt.Sprintf("before: %q, limit: 3", *second.Older))
+	if want := []string{shas[0]}; !slices.Equal(names(last), want) || last.Older != nil {
+		t.Fatalf("last page %v older=%v", names(last), last.Older)
+	}
+	back := get(fmt.Sprintf("after: %q, limit: 3", *second.Newer))
+	if want := []string{shas[6], shas[5], shas[4]}; !slices.Equal(names(back), want) || back.Newer != nil {
+		t.Fatalf("going back to newer %v newer=%v", names(back), back.Newer)
+	}
+
+	// Each app's note on the same file is its own (a photo, which both see: journal hides recordings by default).
+	photoData := []byte("a photo")
+	photoPath := filepath.Join(t.TempDir(), "photo.jpg")
+	os.WriteFile(photoPath, photoData, 0o644)
+	photoSum := sha256.Sum256(photoData)
+	photo := hex.EncodeToString(photoSum[:])
+	if _, _, err := store.Import(photoPath, media.UploadRequest{Sha256: photo, Size: int64(len(photoData)), FileName: "photo.jpg",
+		MimeType: "image/jpeg", Kind: media.KindPhoto, UploadedBy: "import"}); err != nil {
+		t.Fatal(err)
+	}
+	setNote := func(client *http.Client, note string) {
+		r := env.graphql(t, client, `mutation($s: Sha256!, $n: String) { setNote(sha256: $s, note: $n) { __typename } }`,
+			map[string]any{"s": photo, "n": note})
+		if len(r.Errors) > 0 || !strings.Contains(string(r.Data["setNote"]), "NoteSaved") {
+			t.Fatalf("setNote: %s %+v", r.Data["setNote"], r.Errors)
+		}
+	}
+	noteOf := func(client *http.Client) string {
+		var m struct{ Note *string }
+		json.Unmarshal(env.graphql(t, client, `query($s: Sha256!) { media(sha256: $s) { note } }`, map[string]any{"s": photo}).Data["media"], &m)
+		if m.Note == nil {
+			return ""
+		}
+		return *m.Note
+	}
+	setNote(journal, `{"caption":"journal's"}`)
+	setNote(audioLogs, `{"title":"Audio Logs'"}`)
+	if got := noteOf(journal); got != `{"caption":"journal's"}` {
+		t.Errorf("journal's note = %s", got)
+	}
+	if got := noteOf(audioLogs); got != `{"title":"Audio Logs'"}` {
+		t.Errorf("Audio Logs' note = %s", got)
+	}
+
+	// Each app's data is its own.
+	set := env.graphql(t, audioLogs, `mutation { setAppData(name: "labels", content: "{\"labels\":[\"Psychology\"]}") { __typename ... on AppDataSaved { data { version } } } }`, nil)
+	if len(set.Errors) > 0 || !strings.Contains(string(set.Data["setAppData"]), "AppDataSaved") {
+		t.Fatalf("setAppData: %s %+v", set.Data["setAppData"], set.Errors)
+	}
+	if got := string(env.graphql(t, audioLogs, `{ appData(name: "labels") { content } }`, nil).Data["appData"]); !strings.Contains(got, "Psychology") {
+		t.Errorf("Audio Logs' labels = %s", got)
+	}
+	if got := string(env.graphql(t, journal, `{ appData(name: "labels") { content } }`, nil).Data["appData"]); got != `{"content":null}` {
+		t.Errorf("journal sees %s of Audio Logs' labels", got)
+	}
+	conflict := env.graphql(t, audioLogs, `mutation { setAppData(name: "labels", content: "{}", baseVersion: "old") { __typename } }`, nil)
+	if !strings.Contains(string(conflict.Data["setAppData"]), "AppDataConflict") {
+		t.Errorf("a stale base: %s", conflict.Data["setAppData"])
 	}
 }

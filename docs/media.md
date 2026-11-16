@@ -572,6 +572,23 @@ fields are never lost. It sits in the sidecar:
   reads notes.
 - Notes go to the [copies](copies.md) with the sidecars. A sidecar whose `note` is in another shape (written by hand
   or by a tool) is read as no note and written back as it was; fields the server doesn't know are kept too.
+- **Each app has its own note** (owner's call, Nov 16, 2026; `serverInfo.appNotes`). `note` is journal's (and every
+  device's enrolled before apps); any other app's is in `appNotes` under its name, e.g. `"appNotes": {"audio-logs":
+  {"content": {…}, "setAt": …, "setBy": …}}`. `Media.note`, `Media.noteVersion` and `setNote` are always the asking
+  device's app's own (`auth.AppFromContext`, `Sidecar.NoteOf`, `Store.SetAppNote`), so no app sees or replaces
+  another's; the file comes again in every device's feed when any of them changes.
+
+## App data
+
+What an app keeps on the server for the user apart from any file: Audio Logs' labels (names, colors), journal's tags.
+Owner's request, Nov 16, 2026: each app's own, so one app's labels never show in another. Kept in the data folder as
+`apps/<app>/<name>.json` (`{"v": 1, "content": {…}, "setAt": …, "setBy": …}`, `media/appdata.go`), written in a turn,
+and copied with the [copies](copies.md) (`apps/` beside `relabels/`).
+
+- `appData(name)` is the asking app's data called `name` (1–40 lower-case letters, digits or dashes): `content` (a
+  JSON object as text) and `version` (its sha256), null when there is none.
+- `setAppData(name, content, baseVersion)` replaces it, at most 1 MB, null deleting it, as `setNote` does: when
+  `baseVersion` is no longer the data's version, nothing is written and `AppDataConflict` brings it as it is now.
 
 ## Hidden collections
 
@@ -692,6 +709,15 @@ shared with the import in `media/audionames.go`):
 `AUD-`/`PTT-` names get `source` `folder:whatsapp` (the rule's step 2). When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
 is encoded to FLAC first (`Store.keepAsFLAC`). Without ffmpeg its last piece answers 503 and the upload is kept for a
 later try; `serverInfo.encodesWav` says whether it can.
+
+### Pages of recordings
+
+`recordingsPage(before, after, limit)` (`serverInfo.recordingsPage`, `Store.RecordingsPage`) lists the sound
+recordings the device sees a page at a time, newest first by when each was made (`takenAt`, else when it was
+uploaded), for an app that lists them without reading the whole change feed (Audio Logs, whose feed would carry every
+photo too). Without a cursor it is the newest `limit` (1–500, 50 by default); `before: <older>` the next older ones;
+`after: <newer>` the ones just newer, still newest first. A cursor names a place in that order, not a file, so a
+recording deleted since doesn't break paging.
 
 ## JPEG XL
 

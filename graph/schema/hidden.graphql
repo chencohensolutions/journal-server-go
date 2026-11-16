@@ -129,3 +129,23 @@ extend type Mutation {
   """
   setSoundRecordingsShown(calls: Boolean!, voiceMessages: Boolean!): SoundRecordingsShown!
 }
+
+"""
+A page of the sound recordings this device sees, newest first by when each was made (recordingsPage). older and newer
+are the cursors for the pages either side; null when there is none that way.
+"""
+type RecordingsPage {
+  recordings: [Media!]!
+  older: String
+  newer: String
+}
+
+extend type Query {
+  """
+  The sound recordings this device sees (recordings; calls and voice messages as soundRecordingsShown says), a page at
+  a time, newest first by when each was made: the newest without a cursor; with before (a page's older), the next
+  older ones; with after (a page's newer), the ones just newer. For an app that lists them (Audio Logs) without
+  reading the whole change feed. limit is 1–500.
+  """
+  recordingsPage(before: String, after: String, limit: Int = 50): RecordingsPage!
+}

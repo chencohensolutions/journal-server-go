@@ -64,6 +64,7 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 				}
 			}
 			ctx = auth.WithDeviceName(ctx, device.Name)
+			ctx = auth.WithApp(ctx, device.AppName())
 			if device.WithholdsPrivate() {
 				ctx = auth.WithWithholdPrivate(ctx)
 			}

@@ -37,6 +37,8 @@ func (r *Resolver) store(ctx context.Context) (*media.Store, error) {
 type view struct {
 	store *media.Store
 	media.View
+	// The device's app (journal, audio-logs): the note a file shows is this app's own.
+	app string
 }
 
 func (r *Resolver) view(ctx context.Context) (view, error) {
@@ -44,7 +46,7 @@ func (r *Resolver) view(ctx context.Context) (view, error) {
 	if err != nil {
 		return view{}, err
 	}
-	return view{store, auth.ViewFor(ctx, store)}, nil
+	return view{store, auth.ViewFor(ctx, store), auth.AppFromContext(ctx)}, nil
 }
 
 // hides reports whether the device may not see item.
@@ -102,7 +104,7 @@ func (v view) toMedia(item media.Item) *model.Media {
 
 // toMediaWith is item as the device may see it: edits and paired files it may not see are left out.
 func (v view) toMediaWith(item media.Item, versions, paired []string) *model.Media {
-	m := toMediaWith(item, v.visible(versions), v.visible(paired))
+	m := toMediaWith(item, v.visible(versions), v.visible(paired), v.app)
 	if m.VersionOf != nil && v.hidesSha(*m.VersionOf) {
 		m.VersionOf = nil
 	}
@@ -112,7 +114,7 @@ func (v view) toMediaWith(item media.Item, versions, paired []string) *model.Med
 	return m
 }
 
-func toMediaWith(item media.Item, versions, paired []string) *model.Media {
+func toMediaWith(item media.Item, versions, paired []string, app string) *model.Media {
 	facts := item.Sidecar.Facts
 	if versions == nil {
 		versions = []string{}
@@ -166,8 +168,8 @@ func toMediaWith(item media.Item, versions, paired []string) *model.Media {
 		score := d.Nudity.Score
 		m.Nudity = &score
 	}
-	if note := item.Sidecar.NoteContent(); note != nil {
-		text, version := string(note), item.Sidecar.NoteVersion()
+	if note := item.Sidecar.NoteContentOf(app); note != nil {
+		text, version := string(note), item.Sidecar.NoteVersionOf(app)
 		m.Note, m.NoteVersion = &text, &version
 	}
 	return m
@@ -192,4 +194,22 @@ func (r *Resolver) soundDevice(ctx context.Context) (enroll.Device, bool) {
 		return enroll.Device{}, false
 	}
 	return device, true
+}
+
+// deref is *s, or "" for nil.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// appDataOf is an app's data as the schema has it.
+func appDataOf(name string, data media.AppData) *model.AppData {
+	out := &model.AppData{Name: name}
+	if len(data.Content) > 0 {
+		content, version := string(data.Content), data.Version
+		out.Content, out.Version = &content, &version
+	}
+	return out
 }

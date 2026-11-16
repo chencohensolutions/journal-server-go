@@ -135,6 +135,8 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		DeviceApps:           true,
 		SiblingCodes:         true,
 		SoundRecordingsShown: true,
+		AppNotes:             true,
+		RecordingsPage:       true,
 		Copies:               r.Resolver.Copies != nil,
 		PeerCopies:           r.Resolver.Copies != nil,
 		Audio:                true,

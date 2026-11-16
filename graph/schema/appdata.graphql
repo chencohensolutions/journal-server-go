@@ -1,0 +1,38 @@
+# --- App data ------------------------------------------------------------------
+# What an app keeps on the server for the user apart from any file: Audio Logs' labels, journal's tags. Each app sees
+# only its own (the server files it under the asking device's app), kept in the data folder as apps/<app>/<name>.json.
+# See docs/media.md "App data".
+
+"A piece of the asking app's data."
+type AppData {
+  name: String!
+  "A JSON object as the app wrote it; null when there is none."
+  content: String
+  "The sha256 of content, in hex, for setAppData's baseVersion; null when there is none."
+  version: String
+}
+
+union SetAppDataResult = AppDataSaved | AppDataConflict
+
+"The data was kept (or deleted)."
+type AppDataSaved {
+  data: AppData!
+}
+
+"The data changed since baseVersion: data is as it is now. Merge the change into it and send again."
+type AppDataConflict {
+  data: AppData!
+}
+
+extend type Query {
+  "The asking app's data called name (1–40 lower-case letters, digits or dashes)."
+  appData(name: String!): AppData!
+}
+
+extend type Mutation {
+  """
+  Replaces the asking app's data called name with content, a JSON object of at most 1 MB (null deletes it), when
+  baseVersion is the version the device changed (null when it had none); otherwise AppDataConflict.
+  """
+  setAppData(name: String!, content: String, baseVersion: String): SetAppDataResult!
+}

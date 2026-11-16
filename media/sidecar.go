@@ -142,6 +142,9 @@ type Sidecar struct {
 	// What the user wrote about the file and how they arranged it in the apps (SetNote); absent until first written.
 	// Kept as is when the facts are rewritten, and carried to the JPEG XL a JPEG is kept as.
 	Note *Note `json:"note,omitempty"`
+	// Each other app's own note on the file (SetNote with an app other than journal, e.g. "audio-logs"): kept apart
+	// from journal's (Note) and from each other, so no app sees or overwrites another's.
+	AppNotes map[string]*Note `json:"appNotes,omitempty"`
 	// What models found in the file (scripts/scan-nudity). Never the user's tags: clients decide what to hide.
 	Detected *Detected `json:"detected,omitempty"`
 }
@@ -203,6 +206,11 @@ func (s Sidecar) ChangedAt() time.Time {
 	}
 	if n := s.Note; n != nil && n.SetAt.After(changed) {
 		changed = n.SetAt
+	}
+	for _, n := range s.AppNotes {
+		if n != nil && n.SetAt.After(changed) {
+			changed = n.SetAt
+		}
 	}
 	return changed
 }

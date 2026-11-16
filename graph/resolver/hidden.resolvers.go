@@ -75,3 +75,33 @@ func (r *queryResolver) SoundRecordingsShown(ctx context.Context) (*model.SoundR
 	}
 	return &model.SoundRecordingsShown{Calls: device.ShowCalls, VoiceMessages: device.ShowVoiceMessages}, nil
 }
+
+// RecordingsPage is the resolver for the recordingsPage field.
+func (r *queryResolver) RecordingsPage(ctx context.Context, before *string, after *string, limit *int) (*model.RecordingsPage, error) {
+	v, err := r.view(ctx)
+	if err != nil {
+		return nil, err
+	}
+	n := 50
+	if limit != nil {
+		n = *limit
+	}
+	if n < 1 || n > 500 {
+		return nil, coded(CodeInvalidArgument, "limit must be 1–500")
+	}
+	if before != nil && after != nil {
+		return nil, coded(CodeInvalidArgument, "before or after, not both")
+	}
+	items, older, newer := v.store.RecordingsPage(v.View, deref(before), deref(after), n)
+	page := &model.RecordingsPage{Recordings: make([]*model.Media, 0, len(items))}
+	for _, item := range items {
+		page.Recordings = append(page.Recordings, v.toMedia(item))
+	}
+	if older != "" {
+		page.Older = &older
+	}
+	if newer != "" {
+		page.Newer = &newer
+	}
+	return page, nil
+}

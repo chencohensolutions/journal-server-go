@@ -100,3 +100,19 @@ func WithholdPrivateFromContext(ctx context.Context) bool {
 	withhold, _ := ctx.Value(withholdContextKey).(bool)
 	return withhold
 }
+
+type appContextKey struct{}
+
+// WithApp records which app the device is (enroll.Device.AppName: journal, audio-logs), for what each app keeps
+// apart: its own note on a file, its own data (labels, tags).
+func WithApp(ctx context.Context, app string) context.Context {
+	return context.WithValue(ctx, appContextKey{}, app)
+}
+
+// AppFromContext is the device's app; journal when the request names none (a device enrolled before apps).
+func AppFromContext(ctx context.Context) string {
+	if app, ok := ctx.Value(appContextKey{}).(string); ok && app != "" {
+		return app
+	}
+	return "journal"
+}

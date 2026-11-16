@@ -65,6 +65,13 @@ type ServerInfo {
   siblingCodes: Boolean!
   "An app made for sound recordings chooses whether it shows calls and voice messages (setSoundRecordingsShown)."
   soundRecordingsShown: Boolean!
+  """
+  Each app keeps its own note on a file (Media.note and setNote are the asking app's own; journal's is the one from
+  before) and its own data (appData, setAppData), so one app never sees another's.
+  """
+  appNotes: Boolean!
+  "The sound recordings can be read a page at a time, newest first (recordingsPage)."
+  recordingsPage: Boolean!
 }
 
 type Mutation {
