@@ -70,9 +70,11 @@ type ComplexityRoot struct {
 	}
 
 	Device struct {
+		AppName         func(childComplexity int) int
 		ExpiresAt       func(childComplexity int) int
 		KeyProtection   func(childComplexity int) int
 		Name            func(childComplexity int) int
+		PhoneID         func(childComplexity int) int
 		RegisteredAt    func(childComplexity int) int
 		RevokedAt       func(childComplexity int) int
 		Serial          func(childComplexity int) int
@@ -286,6 +288,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.CopyReport.User(childComplexity), true
 
+	case "Device.app":
+		if e.ComplexityRoot.Device.AppName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Device.AppName(childComplexity), true
 	case "Device.expiresAt":
 		if e.ComplexityRoot.Device.ExpiresAt == nil {
 			break
@@ -304,6 +312,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Device.Name(childComplexity), true
+	case "Device.phone":
+		if e.ComplexityRoot.Device.PhoneID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Device.PhoneID(childComplexity), true
 	case "Device.registeredAt":
 		if e.ComplexityRoot.Device.RegisteredAt == nil {
 			break
@@ -742,6 +756,10 @@ type Device {
   revokedAt: Time
   "The server keeps the files the user marked private from this device."
   withholdPrivate: Boolean!
+  "The app that enrolled it: journal, or audio-logs."
+  app: String!
+  "The phone it is an app of: the serial of the phone's first enrollment. Its apps share it, and are revoked together."
+  phone: String!
 }
 `, BuiltIn: false},
 }
@@ -831,6 +849,10 @@ func (ec *executionContext) childFields_Device(ctx context.Context, field graphq
 		return ec.fieldContext_Device_revokedAt(ctx, field)
 	case "withholdPrivate":
 		return ec.fieldContext_Device_withholdPrivate(ctx, field)
+	case "app":
+		return ec.fieldContext_Device_app(ctx, field)
+	case "phone":
+		return ec.fieldContext_Device_phone(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Device", field.Name)
 }
@@ -1921,6 +1943,52 @@ func (ec *executionContext) _Device_withholdPrivate(ctx context.Context, field g
 }
 func (ec *executionContext) fieldContext_Device_withholdPrivate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Device", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Device_app(ctx context.Context, field graphql.CollectedField, obj *enroll.Device) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Device_app(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AppName(), nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Device_app(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Device", field, true, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Device_phone(ctx context.Context, field graphql.CollectedField, obj *enroll.Device) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Device_phone(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PhoneID(), nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Device_phone(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Device", field, true, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _EnrollmentCode_code(ctx context.Context, field graphql.CollectedField, obj *model.EnrollmentCode) (ret graphql.Marshaler) {
@@ -4083,6 +4151,16 @@ func (ec *executionContext) _Device(ctx context.Context, sel ast.SelectionSet, o
 			out.Values[i] = ec._Device_revokedAt(ctx, field, obj)
 		case "withholdPrivate":
 			out.Values[i] = ec._Device_withholdPrivate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "app":
+			out.Values[i] = ec._Device_app(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "phone":
+			out.Values[i] = ec._Device_phone(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

@@ -33,7 +33,7 @@ func (r *mutationResolver) SetNote(ctx context.Context, sha256 string, note *str
 	if baseVersion != nil {
 		base = *baseVersion
 	}
-	item, saved, err := v.store.SetNote(sha256, content, base, auth.DeviceNameFromContext(ctx))
+	item, saved, err := v.store.SetAppNote(sha256, v.app, content, base, auth.DeviceNameFromContext(ctx))
 	if errors.Is(err, media.ErrNoteNotObject) || errors.Is(err, media.ErrNoteTooLarge) {
 		return nil, coded(CodeInvalidArgument, "%v", err)
 	}

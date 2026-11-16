@@ -121,4 +121,8 @@ type Device {
   revokedAt: Time
   "The server keeps the files the user marked private from this device."
   withholdPrivate: Boolean!
+  "The app that enrolled it: journal, or audio-logs."
+  app: String!
+  "The phone it is an app of: the serial of the phone's first enrollment. Its apps share it, and are revoked together."
+  phone: String!
 }

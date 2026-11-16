@@ -240,7 +240,7 @@ func plainJobs(src Target) ([]restoreJob, []restoreJob, error) {
 		}
 		return nil
 	}
-	for _, dir := range []string{"media", "relabels"} {
+	for _, dir := range []string{"media", "relabels", "apps"} {
 		if err := src.Walk(dir, add); err != nil {
 			return nil, nil, err
 		}

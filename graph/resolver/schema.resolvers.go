@@ -28,6 +28,7 @@ func (r *mutationResolver) EnrollDevice(ctx context.Context, input model.EnrollD
 		DeviceName:    input.DeviceName,
 		CSR:           csr,
 		KeyProtection: input.KeyProtection.String(),
+		App:           appOf(input.App),
 	})
 	if err != nil {
 		log.Printf("Enrollment failed from %s: %v", auth.ClientIPFromContext(ctx), err)
@@ -38,7 +39,7 @@ func (r *mutationResolver) EnrollDevice(ctx context.Context, input model.EnrollD
 		return model.EnrollmentRejected{Reason: model.EnrollmentRejectedReason(rejection)}, nil
 	}
 	device := enrolled.Device
-	log.Printf("Enrolled device %q for user %s (serial %s, key %s)", device.Name, device.User, device.Serial, device.KeyProtection)
+	log.Printf("Enrolled device %q of %s for user %s (serial %s, key %s)", device.Name, device.AppName(), device.User, device.Serial, device.KeyProtection)
 	return model.EnrolledDevice{
 		User:        device.User,
 		DeviceName:  device.Name,
@@ -76,6 +77,18 @@ func (r *mutationResolver) RenewCertificate(ctx context.Context, csr string, key
 	}, nil
 }
 
+// SiblingEnrollmentCode is the resolver for the siblingEnrollmentCode field.
+func (r *mutationResolver) SiblingEnrollmentCode(ctx context.Context, app string) (model.SiblingCodeResult, error) {
+	serial := auth.SerialFromContext(ctx)
+	code, name, expiresAt, rejection := r.Enrollment.SiblingCode(serial, app)
+	if rejection != "" {
+		log.Printf("Sibling code for %s from certificate %s rejected: %s", app, serial, rejection)
+		return model.EnrollmentRejected{Reason: model.EnrollmentRejectedReason(rejection)}, nil
+	}
+	log.Printf("Sibling code for app %s made by certificate %s, until %s", name, serial, expiresAt.Format("15:04"))
+	return model.SiblingCode{Code: code, App: name, ExpiresAt: expiresAt}, nil
+}
+
 // EnrollmentPreview is the resolver for the enrollmentPreview field.
 func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error) {
 	preview, rejection := r.Enrollment.Preview(auth.ClientIPFromContext(ctx), code)
@@ -100,28 +113,33 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		swap = r.SwapSetup.Info(user.Username)
 	}
 	return &model.ServerInfo{
-		Swap:              swap,
-		Discovery:         found,
-		API:               APIVersion,
-		Version:           r.Version,
-		Search:            r.Search != nil,
-		Previews:          r.Previews != nil && r.Previews.Available(),
-		Posters:           r.Previews != nil && r.Previews.PostersAvailable(),
-		VideoFrames:       r.Previews != nil && r.Previews.PostersAvailable(),
-		NudityScan:        r.NudityScan,
-		Faces:             r.Faces != nil,
-		TextInPhotos:      r.TextInPhotos != nil,
-		Similar:           r.SimilarPhotos != nil,
-		Aesthetic:         r.AestheticScores != nil,
-		LocalIndexes:      r.Local.On(),
-		Indexing:          r.IndexRuns != nil,
-		RenewCertificates: true,
-		CaCertificate:     nonEmpty(r.caPEM()),
-		TuckedAway:        true,
-		Notes:             true,
-		Copies:            r.Resolver.Copies != nil,
-		PeerCopies:        r.Resolver.Copies != nil,
-		Audio:             true,
+		Swap:                 swap,
+		Discovery:            found,
+		API:                  APIVersion,
+		Version:              r.Version,
+		Search:               r.Search != nil,
+		Previews:             r.Previews != nil && r.Previews.Available(),
+		Posters:              r.Previews != nil && r.Previews.PostersAvailable(),
+		VideoFrames:          r.Previews != nil && r.Previews.PostersAvailable(),
+		NudityScan:           r.NudityScan,
+		Faces:                r.Faces != nil,
+		TextInPhotos:         r.TextInPhotos != nil,
+		Similar:              r.SimilarPhotos != nil,
+		Aesthetic:            r.AestheticScores != nil,
+		LocalIndexes:         r.Local.On(),
+		Indexing:             r.IndexRuns != nil,
+		RenewCertificates:    true,
+		CaCertificate:        nonEmpty(r.caPEM()),
+		TuckedAway:           true,
+		Notes:                true,
+		DeviceApps:           true,
+		SiblingCodes:         true,
+		SoundRecordingsShown: true,
+		AppNotes:             true,
+		RecordingsPage:       true,
+		Copies:               r.Resolver.Copies != nil,
+		PeerCopies:           r.Resolver.Copies != nil,
+		Audio:                true,
 		// The stores find ffmpeg the way posters do.
 		EncodesWav: r.Previews != nil && r.Previews.PostersAvailable(),
 		// libjxl is loaded into the server, given to every store (loadJXL).

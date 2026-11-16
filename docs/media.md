@@ -420,11 +420,11 @@ All of these need a client certificate, like everything except enrollment
 
 ## Change feed
 
-`query changes(since: String, limit: Int = 2000)` returns pages of `Change { kind: MEDIA,
+`query changes(since: String, limit: Int = 2000, kinds: [MediaKind!])` returns pages of `Change { kind: MEDIA,
 path: "media/<sha256>", deleted, hidden, media }`, oldest change first, with a `cursor`, `hasMore`, and `remaining` (how many
 changes come after the page, for a progress count). A new device starts without `since` and calls again with each
 page's cursor until `hasMore` is false; afterwards it asks with its saved cursor for what changed since (an empty page
-returns the same cursor). A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
+returns the same cursor). With `kinds`, only files of those kinds come (Audio Logs asks for `[AUDIO]` and never pages through the photos); the cursor moves past the rest all the same, so a device asks with the same kinds each time. A file changes when it is uploaded, and again when a scan writes its answer into the sidecar
 (see [Nudity scan](#nudity-scan)), its source is corrected (see [Fixing sources](#fixing-sources)) or it is marked
 private or unmarked (see [Private files](#private-files)), tucked away or brought back (see
 [Tucked away](#tucked-away)), or its note is written or deleted (see [Notes](#notes)): it then comes again, whole,
@@ -572,6 +572,23 @@ fields are never lost. It sits in the sidecar:
   reads notes.
 - Notes go to the [copies](copies.md) with the sidecars. A sidecar whose `note` is in another shape (written by hand
   or by a tool) is read as no note and written back as it was; fields the server doesn't know are kept too.
+- **Each app has its own note** (owner's call, Nov 16, 2026; `serverInfo.appNotes`). `note` is journal's (and every
+  device's enrolled before apps); any other app's is in `appNotes` under its name, e.g. `"appNotes": {"audio-logs":
+  {"content": {…}, "setAt": …, "setBy": …}}`. `Media.note`, `Media.noteVersion` and `setNote` are always the asking
+  device's app's own (`auth.AppFromContext`, `Sidecar.NoteOf`, `Store.SetAppNote`), so no app sees or replaces
+  another's; the file comes again in every device's feed when any of them changes.
+
+## App data
+
+What an app keeps on the server for the user apart from any file: Audio Logs' labels (names, colors), journal's tags.
+Owner's request, Nov 16, 2026: each app's own, so one app's labels never show in another. Kept in the data folder as
+`apps/<app>/<name>.json` (`{"v": 1, "content": {…}, "setAt": …, "setBy": …}`, `media/appdata.go`), written in a turn,
+and copied with the [copies](copies.md) (`apps/` beside `relabels/`).
+
+- `appData(name)` is the asking app's data called `name` (1–40 lower-case letters, digits or dashes): `content` (a
+  JSON object as text) and `version` (its sha256), null when there is none.
+- `setAppData(name, content, baseVersion)` replaces it, at most 1 MB, null deleting it, as `setNote` does: when
+  `baseVersion` is no longer the data's version, nothing is written and `AppDataConflict` brings it as it is now.
 
 ## Hidden collections
 
@@ -581,7 +598,14 @@ Petcube; `hiddenCollections.apps`), the screenshots of chosen apps (by `facts.sc
 screenshots whose name says no app, the files sent to the user (source `received`, "Sent to you": photos from a
 camera they marked not theirs; see [Cameras](#cameras)), the files the [nudity scan](#nudity-scan) scored at a chosen
 score or more, and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the
-user shows it.
+user shows it. One exception: a device enrolled by Audio Logs (`app` `audio-logs`, docs/authentication.md) has its
+own choice of sound recordings instead (`Store.ViewFor`'s `audio`, from `auth.ViewFor`): recordings always, since it
+uploads them and plays them back, and calls and voice messages only once the user turns them on in that app
+(`setSoundRecordingsShown(calls:, voiceMessages:)`, read with `query soundRecordingsShown`; kept per device in
+`devices.json` as `show_calls` and `show_voice_messages`, off by default, carried over a renewal). Changing it restarts
+that device's feed, which then sends the calls or voice messages as added or deleted. Audio Logs never gets the user's
+private files either (`Device.WithholdsPrivate`; owner's call, Nov 16, 2026): a recording marked private leaves it on
+every phone. The rest of what the user hides stays hidden from it too.
 `query hiddenCollections` lists them with how many files each has, hidden or not, and how many of those the import
 placed (`imported`, files whose `uploadedBy` is `import`; the rest came from devices, so apps can say what is hidden of
 each), apps with most files first (a
@@ -685,6 +709,15 @@ shared with the import in `media/audionames.go`):
 `AUD-`/`PTT-` names get `source` `folder:whatsapp` (the rule's step 2). When ffprobe can't read the file, the phone's facts stay. An uploaded WAV
 is encoded to FLAC first (`Store.keepAsFLAC`). Without ffmpeg its last piece answers 503 and the upload is kept for a
 later try; `serverInfo.encodesWav` says whether it can.
+
+### Pages of recordings
+
+`recordingsPage(before, after, limit)` (`serverInfo.recordingsPage`, `Store.RecordingsPage`) lists the sound
+recordings the device sees a page at a time, newest first by when each was made (`takenAt`, else when it was
+uploaded), for an app that lists them without reading the whole change feed (Audio Logs, whose feed would carry every
+photo too). Without a cursor it is the newest `limit` (1–500, 50 by default); `before: <older>` the next older ones;
+`after: <newer>` the ones just newer, still newest first. A cursor names a place in that order, not a file, so a
+recording deleted since doesn't break paging.
 
 ## JPEG XL
 

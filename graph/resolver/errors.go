@@ -31,3 +31,11 @@ const (
 func coded(code, format string, args ...any) error {
 	return &gqlerror.Error{Message: fmt.Sprintf(format, args...), Extensions: map[string]any{"code": code}}
 }
+
+// appOf is EnrollDeviceInput.app, "" when the device named none.
+func appOf(app *string) string {
+	if app == nil {
+		return ""
+	}
+	return *app
+}

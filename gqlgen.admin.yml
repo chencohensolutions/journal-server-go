@@ -19,3 +19,8 @@ resolver:
 models:
   Device:
     model: github.com/journal/server-go/enroll.Device
+    fields:
+      app:
+        fieldName: AppName
+      phone:
+        fieldName: PhoneID

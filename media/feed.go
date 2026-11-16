@@ -3,6 +3,7 @@ package media
 import (
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +24,10 @@ import (
 // without the rest coming again. A cursor the server can't read, or one whose view changed while such a change-over
 // was under way, starts the feed again with everything, hidden files included, since what the device holds is
 // unknown.
-func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next string, remaining int, err error) {
+//
+// With kinds, only files of those kinds come (an app that reads only sound recordings needn't page through every
+// photo); the cursor moves past the others all the same, so a device asks with the same kinds every time.
+func (s *Store) Changes(cursor string, limit int, view View, kinds ...Kind) (items []Item, next string, remaining int, err error) {
 	c := decodeCursor(cursor)
 	fresh := cursor == ""
 	var old *View             // the view the device had, while its files are changed over to view
@@ -42,6 +46,9 @@ func (s *Store) Changes(cursor string, limit int, view View) (items []Item, next
 	s.mu.RLock()
 	var all, over []Item
 	for _, item := range s.items {
+		if len(kinds) > 0 && !slices.Contains(kinds, item.Sidecar.Facts.Kind) {
+			continue
+		}
 		if old != nil && !c.pos.before(*item) && changed.before(*item) && s.hides(*old, *item) != s.hides(view, *item) {
 			over = append(over, *item)
 		}

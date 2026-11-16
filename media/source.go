@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // A file's source is its kind: what it is and where it came from, as the apps name it (MediaSource in
@@ -380,6 +381,11 @@ func soundSourceOf(facts Facts, uploaded bool, sound SoundFolderMarks) string {
 		return as
 	}
 	if facts.Call != nil {
+		return SourceCall
+	}
+	// A call whose facts were read before its name was known as one (Samsung's "Call <contact>_<date>_<time>"
+	// before Nov 16, 2026): its name says so.
+	if call, _ := CallFromName(facts.FileName, "", time.UTC); call != nil {
 		return SourceCall
 	}
 	stored := ""

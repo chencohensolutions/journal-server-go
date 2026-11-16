@@ -250,6 +250,10 @@ type ChangePage {
 }
 
 extend type Query {
-  "What changed since the cursor; without one, everything (a new device). At most 5000 per page."
-  changes(since: String, limit: Int = 2000): ChangePage!
+  """
+  What changed since the cursor; without one, everything (a new device). At most 5000 per page. With kinds, only
+  files of those kinds (Audio Logs reads only AUDIO); ask with the same kinds each time, since the cursor moves past
+  the others.
+  """
+  changes(since: String, limit: Int = 2000, kinds: [MediaKind!]): ChangePage!
 }

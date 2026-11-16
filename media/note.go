@@ -107,6 +107,33 @@ func noteVersion(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// NoteOf is app's own note: journal's is Note, every other app's is in AppNotes. Nil when it has none.
+func (s Sidecar) NoteOf(app string) *Note {
+	if app == "" || app == JournalApp {
+		return s.Note
+	}
+	return s.AppNotes[app]
+}
+
+// NoteVersionOf is NoteVersion for app's own note.
+func (s Sidecar) NoteVersionOf(app string) string {
+	if n := s.NoteOf(app); n != nil && len(n.Content) > 0 {
+		return noteVersion(n.Content)
+	}
+	return ""
+}
+
+// NoteContentOf is NoteContent for app's own note.
+func (s Sidecar) NoteContentOf(app string) json.RawMessage {
+	if n := s.NoteOf(app); n != nil && len(n.Content) > 0 {
+		return n.Content
+	}
+	return nil
+}
+
+// JournalApp is the app whose note is the sidecar's "note" (the first app, and every device enrolled before apps).
+const JournalApp = "journal"
+
 // NoteContent is the note's JSON object, or nil without one.
 func (s Sidecar) NoteContent() json.RawMessage {
 	if s.Note == nil || len(s.Note.Content) == 0 {
@@ -144,6 +171,12 @@ func compactNote(content []byte) ([]byte, error) {
 // its change into the note returned (item) and tries again. Only the sidecar is rewritten, and the file comes again
 // in the change feed. Writing the note it already has changes nothing.
 func (s *Store) SetNote(sha string, content []byte, base, by string) (item Item, saved bool, err error) {
+	return s.SetAppNote(sha, JournalApp, content, base, by)
+}
+
+// SetAppNote is SetNote for app's own note (Sidecar.NoteOf): each app's note is kept apart, so one app never sees or
+// replaces another's.
+func (s *Store) SetAppNote(sha, app string, content []byte, base, by string) (item Item, saved bool, err error) {
 	compact, err := compactNote(content)
 	if err != nil {
 		return Item{}, false, err
@@ -155,7 +188,7 @@ func (s *Store) SetNote(sha string, content []byte, base, by string) (item Item,
 		if !ok {
 			return fmt.Errorf("%s isn't in the data folder", sha)
 		}
-		current := found.Sidecar.NoteVersion()
+		current := found.Sidecar.NoteVersionOf(app)
 		if current != base {
 			item = *found
 			return nil
@@ -171,11 +204,20 @@ func (s *Store) SetNote(sha string, content []byte, base, by string) (item Item,
 		}
 		sidecar := found.Sidecar
 		note := Note{}
-		if sidecar.Note != nil {
-			note = *sidecar.Note
+		if old := sidecar.NoteOf(app); old != nil {
+			note = *old
 		}
 		note.Content, note.SetAt, note.SetBy, note.raw = compact, s.now().UTC(), by, nil
-		sidecar.Note = &note
+		if app == "" || app == JournalApp {
+			sidecar.Note = &note
+		} else {
+			notes := make(map[string]*Note, len(sidecar.AppNotes)+1)
+			for k, v := range sidecar.AppNotes {
+				notes[k] = v
+			}
+			notes[app] = &note
+			sidecar.AppNotes = notes
+		}
 		if err := s.rewriteSidecar(found, sidecar); err != nil {
 			return err
 		}

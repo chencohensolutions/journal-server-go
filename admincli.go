@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -51,9 +52,11 @@ type adminDevice struct {
 	ExpiresAt       time.Time  `json:"expiresAt"`
 	RevokedAt       *time.Time `json:"revokedAt"`
 	WithholdPrivate bool       `json:"withholdPrivate"`
+	App             string     `json:"app"`
+	Phone           string     `json:"phone"`
 }
 
-const deviceFields = "serial user name keyProtection registeredAt expiresAt revokedAt withholdPrivate"
+const deviceFields = "serial user name keyProtection registeredAt expiresAt revokedAt withholdPrivate app phone"
 
 func enrollCodeCommand(config auth.AppConfig, user string) error {
 	var data struct {
@@ -161,9 +164,21 @@ func devicesCommand(config auth.AppConfig, args []string) error {
 		fmt.Println("No enrolled devices.")
 		return nil
 	}
+	// A phone's apps together (one enrollment, revoked together), phones in the order they enrolled.
+	first := map[string]int{}
+	for i, d := range data.Devices {
+		if _, ok := first[d.Phone]; !ok {
+			first[d.Phone] = i
+		}
+	}
+	sort.SliceStable(data.Devices, func(i, j int) bool { return first[data.Devices[i].Phone] < first[data.Devices[j].Phone] })
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "USER\tDEVICE\tKEY\tREGISTERED\tEXPIRES\tSTATUS\tPRIVATE\tSERIAL")
-	for _, d := range data.Devices {
+	fmt.Fprintln(w, "USER\tDEVICE\tAPP\tKEY\tREGISTERED\tEXPIRES\tSTATUS\tPRIVATE\tSERIAL")
+	for i, d := range data.Devices {
+		name := d.Name
+		if i > 0 && data.Devices[i-1].Phone == d.Phone {
+			name = "  ⤷ same phone" // another app (or a renewed certificate) of the phone above
+		}
 		status := "active"
 		if d.RevokedAt != nil {
 			status = "revoked " + d.RevokedAt.Local().Format(time.DateOnly)
@@ -174,7 +189,7 @@ func devicesCommand(config auth.AppConfig, args []string) error {
 		if d.WithholdPrivate {
 			private = "withheld"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.User, d.Name, d.KeyProtection,
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.User, name, d.App, d.KeyProtection,
 			d.RegisteredAt.Local().Format(time.DateOnly), d.ExpiresAt.Local().Format(time.DateOnly), status, private, d.Serial)
 	}
 	return w.Flush()
@@ -189,7 +204,7 @@ func revokeCommand(config auth.AppConfig, serial string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Revoked %q of user %s (serial %s)\n", data.RevokeDevice.Name, data.RevokeDevice.User, data.RevokeDevice.Serial)
+	fmt.Printf("Revoked %q of user %s (serial %s), with every app on that phone\n", data.RevokeDevice.Name, data.RevokeDevice.User, data.RevokeDevice.Serial)
 	return nil
 }
 

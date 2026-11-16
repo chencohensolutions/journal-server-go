@@ -30,13 +30,44 @@ type PersonResult interface {
 	IsPersonResult()
 }
 
+type SetAppDataResult interface {
+	IsSetAppDataResult()
+}
+
 type SetNoteResult interface {
 	IsSetNoteResult()
+}
+
+type SiblingCodeResult interface {
+	IsSiblingCodeResult()
 }
 
 type StartUploadResult interface {
 	IsStartUploadResult()
 }
+
+// A piece of the asking app's data.
+type AppData struct {
+	Name string `json:"name"`
+	// A JSON object as the app wrote it; null when there is none.
+	Content *string `json:"content,omitempty"`
+	// The sha256 of content, in hex, for setAppData's baseVersion; null when there is none.
+	Version *string `json:"version,omitempty"`
+}
+
+// The data changed since baseVersion: data is as it is now. Merge the change into it and send again.
+type AppDataConflict struct {
+	Data *AppData `json:"data"`
+}
+
+func (AppDataConflict) IsSetAppDataResult() {}
+
+// The data was kept (or deleted).
+type AppDataSaved struct {
+	Data *AppData `json:"data"`
+}
+
+func (AppDataSaved) IsSetAppDataResult() {}
 
 type AudioHidingInput struct {
 	Recordings    bool `json:"recordings"`
@@ -223,6 +254,11 @@ type EnrollDeviceInput struct {
 	// PKCS#10 certificate request for an EC P-256 key, base64-encoded DER.
 	Csr           string        `json:"csr"`
 	KeyProtection KeyProtection `json:"keyProtection"`
+	// The app enrolling, in lower case: journal (the default when null) or audio-logs (Audio Logs, which records and
+	// transcribes). Two apps on one phone enroll as two devices, each with its own key. A device of audio-logs sees the
+	// user's sound recordings whatever the user hides (hiddenCollections.recordings, calls, voiceMessages): it uploads
+	// them and plays them back. Servers before Nov 16, 2026 (serverInfo.deviceApps false) refuse this field.
+	App *string `json:"app,omitempty"`
 }
 
 type EnrolledDevice struct {
@@ -246,6 +282,8 @@ func (EnrollmentPreview) IsEnrollmentPreviewResult() {}
 type EnrollmentRejected struct {
 	Reason EnrollmentRejectedReason `json:"reason"`
 }
+
+func (EnrollmentRejected) IsSiblingCodeResult() {}
 
 func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
@@ -602,6 +640,14 @@ func (Person) IsPersonResult() {}
 type Query struct {
 }
 
+// A page of the sound recordings this device sees, newest first by when each was made (recordingsPage). older and newer
+// are the cursors for the pages either side; null when there is none that way.
+type RecordingsPage struct {
+	Recordings []*Media `json:"recordings"`
+	Older      *string  `json:"older,omitempty"`
+	Newer      *string  `json:"newer,omitempty"`
+}
+
 type SearchHit struct {
 	Media *Media `json:"media"`
 	// How close the file is to the text: the cosine similarity of their vectors, -1 to 1. Only the order means much;
@@ -668,6 +714,17 @@ type ServerInfo struct {
 	TuckedAway bool `json:"tuckedAway"`
 	// Notes are kept and synced (setNote, Media.note).
 	Notes bool `json:"notes"`
+	// enrollDevice takes the app enrolling (EnrollDeviceInput.app), and devices of audio-logs see sound recordings.
+	DeviceApps bool `json:"deviceApps"`
+	// An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone.
+	SiblingCodes bool `json:"siblingCodes"`
+	// An app made for sound recordings chooses whether it shows calls and voice messages (setSoundRecordingsShown).
+	SoundRecordingsShown bool `json:"soundRecordingsShown"`
+	// Each app keeps its own note on a file (Media.note and setNote are the asking app's own; journal's is the one from
+	// before) and its own data (appData, setAppData), so one app never sees another's.
+	AppNotes bool `json:"appNotes"`
+	// The sound recordings can be read a page at a time, newest first (recordingsPage).
+	RecordingsPage bool `json:"recordingsPage"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
@@ -695,6 +752,15 @@ type ServerInfo struct {
 	Swap *SwapInfo `json:"swap"`
 }
 
+type SiblingCode struct {
+	// Redeemed by enrollDevice like a code from journal-server enroll-code, only by the app it names.
+	Code      string    `json:"code"`
+	App       string    `json:"app"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (SiblingCode) IsSiblingCodeResult() {}
+
 type SimilarHit struct {
 	Media *Media `json:"media"`
 	// How alike the two photos look: the cosine similarity of their DINOv2 vectors, -1 to 1. A copy of the same photo
@@ -718,6 +784,15 @@ type SoundFolder struct {
 	// How many of its files are still being moved after its mark changed: to call or recording, or back. 0 once they all
 	// have; each moved file comes again in the change feed.
 	Pending int `json:"pending"`
+}
+
+// What an app made for sound recordings (Audio Logs) shows of them, whatever the user hides on other devices: recordings
+// always, calls and voice messages only when the user turns them on in that app. Each app of a phone has its own; journal
+// follows the hidden collections. Such an app never gets files the user marked private (setPrivate): mark a recording
+// private and it leaves the app on every phone.
+type SoundRecordingsShown struct {
+	Calls         bool `json:"calls"`
+	VoiceMessages bool `json:"voiceMessages"`
 }
 
 type StartUploadInput struct {
@@ -1085,6 +1160,8 @@ const (
 	EnrollmentRejectedReasonRateLimited EnrollmentRejectedReason = "RATE_LIMITED"
 	// renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again.
 	EnrollmentRejectedReasonNotEnrolled EnrollmentRejectedReason = "NOT_ENROLLED"
+	// enrollDevice with a sibling code made for another app (SiblingCode.app).
+	EnrollmentRejectedReasonWrongApp EnrollmentRejectedReason = "WRONG_APP"
 )
 
 var AllEnrollmentRejectedReason = []EnrollmentRejectedReason{
@@ -1092,11 +1169,12 @@ var AllEnrollmentRejectedReason = []EnrollmentRejectedReason{
 	EnrollmentRejectedReasonInvalidCsr,
 	EnrollmentRejectedReasonRateLimited,
 	EnrollmentRejectedReasonNotEnrolled,
+	EnrollmentRejectedReasonWrongApp,
 }
 
 func (e EnrollmentRejectedReason) IsValid() bool {
 	switch e {
-	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited, EnrollmentRejectedReasonNotEnrolled:
+	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited, EnrollmentRejectedReasonNotEnrolled, EnrollmentRejectedReasonWrongApp:
 		return true
 	}
 	return false

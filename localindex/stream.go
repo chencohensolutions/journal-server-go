@@ -66,7 +66,7 @@ func (s *Server) ServeIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := store.ViewFor(auth.WithholdPrivateFromContext(r.Context()))
+	view := auth.ViewFor(r.Context(), store)
 	given := r.URL.Query().Get("cursor")
 	c, ok := decodeCursor(given)
 

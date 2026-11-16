@@ -20,7 +20,13 @@ const (
 type pendingCode struct {
 	User      string
 	ExpiresAt time.Time
+	// A sibling code (CreateSibling): the phone the new app joins, and the app it is for.
+	Phone string
+	App   string
 }
+
+// SiblingCodeTTL is how long a sibling code stays valid: the apps hand it over on the phone at once.
+const SiblingCodeTTL = 2 * time.Minute
 
 // CodeStore holds one-time enrollment codes in memory, keyed by the SHA-256 of the normalized code
 // so the codes themselves are never kept. A server restart drops all pending codes.
@@ -36,6 +42,16 @@ func NewCodeStore(now func() time.Time) *CodeStore {
 
 // Create returns a new code for user, formatted for display ("K7QM-4XPD").
 func (s *CodeStore) Create(user string) (string, time.Time) {
+	return s.add(pendingCode{User: user, ExpiresAt: s.now().Add(CodeTTL)})
+}
+
+// CreateSibling returns a code for another app (app) on the phone of an enrolled device: the device that redeems it
+// joins that phone.
+func (s *CodeStore) CreateSibling(user, phone, app string) (string, time.Time) {
+	return s.add(pendingCode{User: user, ExpiresAt: s.now().Add(SiblingCodeTTL), Phone: phone, App: app})
+}
+
+func (s *CodeStore) add(pending pendingCode) (string, time.Time) {
 	raw := make([]byte, codeLength)
 	rand.Read(raw)
 	for i := range raw {
@@ -46,9 +62,8 @@ func (s *CodeStore) Create(user string) (string, time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.removeExpired()
-	expiresAt := s.now().Add(CodeTTL)
-	s.codes[sha256.Sum256([]byte(code))] = pendingCode{User: user, ExpiresAt: expiresAt}
-	return code[:4] + "-" + code[4:], expiresAt
+	s.codes[sha256.Sum256([]byte(code))] = pending
+	return code[:4] + "-" + code[4:], pending.ExpiresAt
 }
 
 // Peek reports the pending code without using it up.
