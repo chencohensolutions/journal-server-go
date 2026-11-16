@@ -256,10 +256,10 @@ type View struct {
 // ViewFor is the view of a device that is, or isn't, kept from private files, with what the user hides now. A
 // device that shows audio (an app made for sound recordings, enroll.Device.SeesSoundRecordings) sees every sound
 // recording whatever the user hides; the rest of what they hide stays hidden from it.
-func (s *Store) ViewFor(withholdPrivate, showAudio bool) View {
+func (s *Store) ViewFor(withholdPrivate bool, audio *AudioHiding) View {
 	hidden := s.Hidden()
-	if showAudio {
-		hidden.Audio = AudioHiding{}
+	if audio != nil {
+		hidden.Audio = *audio
 	}
 	return View{WithholdPrivate: withholdPrivate, Hidden: hidden}
 }

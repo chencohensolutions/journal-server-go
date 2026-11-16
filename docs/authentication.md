@@ -122,8 +122,10 @@ $ journal-server revoke 9c3e52…
 **Apps** (Nov 16, 2026): `enrollDevice` takes the app enrolling (`EnrollDeviceInput.app`, kept as `app` in the
 registry and shown as APP by `journal-server devices`): `journal` when it names none, or `audio-logs` (Audio Logs,
 the recording app, through the shared `shed` library). Each app on a phone has its own key and certificate (Android
-ties a key to the app that made it). A device of `audio-logs` sees the user's sound recordings whatever
-the user hides ([Hidden collections](media.md#hidden-collections)); renewal keeps the app. `serverInfo.deviceApps` says
+ties a key to the app that made it). A device of `audio-logs` sees the user's recordings whatever the user hides,
+and calls and voice messages only once the user turns them on in it (`setSoundRecordingsShown`, kept per device as
+`show_calls` / `show_voice_messages`; [Hidden collections](media.md#hidden-collections)), and never gets private files,
+whatever its phone's `withhold_private` (`Device.WithholdsPrivate`); renewal keeps the app and these choices. `serverInfo.deviceApps` says
 a server takes the field; an older one refuses it as an unknown input field, and an app enrolls again without it.
 
 **One enrollment per phone** (owner's request, Nov 16, 2026): the user enrolls a phone once, with a code from

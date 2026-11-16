@@ -163,16 +163,18 @@ func (s *Service) Renew(serial string, csrDER []byte, keyProtection string) (Enr
 		keyProtection = old.KeyProtection
 	}
 	device := Device{
-		Serial:          SerialString(cert.SerialNumber),
-		User:            old.User,
-		Name:            old.Name,
-		KeyProtection:   keyProtection,
-		RegisteredAt:    s.now().UTC(),
-		ExpiresAt:       cert.NotAfter.UTC(),
-		WithholdPrivate: old.WithholdPrivate,
-		RenewedFrom:     old.Serial,
-		App:             old.App,
-		Phone:           old.PhoneID(),
+		Serial:            SerialString(cert.SerialNumber),
+		User:              old.User,
+		Name:              old.Name,
+		KeyProtection:     keyProtection,
+		RegisteredAt:      s.now().UTC(),
+		ExpiresAt:         cert.NotAfter.UTC(),
+		WithholdPrivate:   old.WithholdPrivate,
+		RenewedFrom:       old.Serial,
+		App:               old.App,
+		Phone:             old.PhoneID(),
+		ShowCalls:         old.ShowCalls,
+		ShowVoiceMessages: old.ShowVoiceMessages,
 	}
 	if err := s.Registry.Add(device); err != nil {
 		return Enrolled{}, "", err

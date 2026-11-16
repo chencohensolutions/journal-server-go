@@ -581,9 +581,14 @@ Petcube; `hiddenCollections.apps`), the screenshots of chosen apps (by `facts.sc
 screenshots whose name says no app, the files sent to the user (source `received`, "Sent to you": photos from a
 camera they marked not theirs; see [Cameras](#cameras)), the files the [nudity scan](#nudity-scan) scored at a chosen
 score or more, and [sound recordings](#sound-recordings): recordings, calls and voice messages, each hidden until the
-user shows it. One exception: a device enrolled by Audio Logs (`app` `audio-logs`, docs/authentication.md) always
-sees sound recordings, since it uploads them and plays them back; the rest of what the user hides stays hidden from it
-too (`Store.ViewFor`'s `showAudio`).
+user shows it. One exception: a device enrolled by Audio Logs (`app` `audio-logs`, docs/authentication.md) has its
+own choice of sound recordings instead (`Store.ViewFor`'s `audio`, from `auth.ViewFor`): recordings always, since it
+uploads them and plays them back, and calls and voice messages only once the user turns them on in that app
+(`setSoundRecordingsShown(calls:, voiceMessages:)`, read with `query soundRecordingsShown`; kept per device in
+`devices.json` as `show_calls` and `show_voice_messages`, off by default, carried over a renewal). Changing it restarts
+that device's feed, which then sends the calls or voice messages as added or deleted. Audio Logs never gets the user's
+private files either (`Device.WithholdsPrivate`; owner's call, Nov 16, 2026): a recording marked private leaves it on
+every phone. The rest of what the user hides stays hidden from it too.
 `query hiddenCollections` lists them with how many files each has, hidden or not, and how many of those the import
 placed (`imported`, files whose `uploadedBy` is `import`; the rest came from devices, so apps can say what is hidden of
 each), apps with most files first (a

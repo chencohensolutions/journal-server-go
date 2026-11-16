@@ -1,6 +1,10 @@
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/journal/server-go/media"
+)
 
 type contextKey string
 
@@ -55,15 +59,34 @@ func DeviceNameFromContext(ctx context.Context) string {
 	return name
 }
 
-// WithShowAudio records that the device always sees the user's sound recordings (enroll.Device.SeesSoundRecordings).
-func WithShowAudio(ctx context.Context) context.Context {
-	return context.WithValue(ctx, showAudioContextKey, true)
+// SoundRecordings is what a device made for sound recordings (Audio Logs, enroll.Device.SeesSoundRecordings) shows of
+// them, whatever the user hides on other devices: recordings always, calls and voice messages when the user turned
+// them on in that app (setSoundRecordingsShown).
+type SoundRecordings struct {
+	Calls         bool
+	VoiceMessages bool
 }
 
-// ShowAudioFromContext reports whether the device always sees sound recordings, whatever the user hides.
-func ShowAudioFromContext(ctx context.Context) bool {
-	show, _ := ctx.Value(showAudioContextKey).(bool)
-	return show
+// WithSoundRecordings records that the device sees sound recordings as shown says.
+func WithSoundRecordings(ctx context.Context, shown SoundRecordings) context.Context {
+	return context.WithValue(ctx, showAudioContextKey, shown)
+}
+
+// SoundRecordingsFromContext is what the device shows of sound recordings, and false for a device that follows what
+// the user hides (every app but Audio Logs).
+func SoundRecordingsFromContext(ctx context.Context) (SoundRecordings, bool) {
+	shown, ok := ctx.Value(showAudioContextKey).(SoundRecordings)
+	return shown, ok
+}
+
+// ViewFor is the view of store the device making the request has: kept from private files or not, and what it shows
+// of sound recordings (media.Store.ViewFor).
+func ViewFor(ctx context.Context, store *media.Store) media.View {
+	var audio *media.AudioHiding
+	if shown, ok := SoundRecordingsFromContext(ctx); ok {
+		audio = &media.AudioHiding{Calls: !shown.Calls, VoiceMessages: !shown.VoiceMessages}
+	}
+	return store.ViewFor(WithholdPrivateFromContext(ctx), audio)
 }
 
 // WithWithholdPrivate records that the device is kept from the files the user marked private.

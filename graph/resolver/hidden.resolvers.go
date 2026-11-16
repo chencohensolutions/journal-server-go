@@ -8,6 +8,7 @@ package resolver
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
@@ -43,6 +44,20 @@ func (r *mutationResolver) SetHiddenCollections(ctx context.Context, input model
 	return hiddenCollections(store), nil
 }
 
+// SetSoundRecordingsShown is the resolver for the setSoundRecordingsShown field.
+func (r *mutationResolver) SetSoundRecordingsShown(ctx context.Context, calls bool, voiceMessages bool) (*model.SoundRecordingsShown, error) {
+	device, ok := r.soundDevice(ctx)
+	if !ok {
+		return nil, coded(CodeInvalidArgument, "this app follows the hidden collections; it doesn't choose what it shows of sound recordings")
+	}
+	updated, err := r.Enrollment.Registry.SetSoundRecordingsShown(device.Serial, calls, voiceMessages)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Device %s (%s) shows calls: %v, voice messages: %v", updated.Name, updated.AppName(), calls, voiceMessages)
+	return &model.SoundRecordingsShown{Calls: updated.ShowCalls, VoiceMessages: updated.ShowVoiceMessages}, nil
+}
+
 // HiddenCollections is the resolver for the hiddenCollections field.
 func (r *queryResolver) HiddenCollections(ctx context.Context) (*model.HiddenCollections, error) {
 	store, err := r.store(ctx)
@@ -50,4 +65,13 @@ func (r *queryResolver) HiddenCollections(ctx context.Context) (*model.HiddenCol
 		return nil, err
 	}
 	return hiddenCollections(store), nil
+}
+
+// SoundRecordingsShown is the resolver for the soundRecordingsShown field.
+func (r *queryResolver) SoundRecordingsShown(ctx context.Context) (*model.SoundRecordingsShown, error) {
+	device, ok := r.soundDevice(ctx)
+	if !ok {
+		return nil, nil
+	}
+	return &model.SoundRecordingsShown{Calls: device.ShowCalls, VoiceMessages: device.ShowVoiceMessages}, nil
 }

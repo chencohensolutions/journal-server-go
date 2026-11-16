@@ -104,3 +104,28 @@ extend type Mutation {
   """
   setHiddenCollections(input: HiddenCollectionsInput!): HiddenCollections!
 }
+
+"""
+What an app made for sound recordings (Audio Logs) shows of them, whatever the user hides on other devices: recordings
+always, calls and voice messages only when the user turns them on in that app. Each app of a phone has its own; journal
+follows the hidden collections. Such an app never gets files the user marked private (setPrivate): mark a recording
+private and it leaves the app on every phone.
+"""
+type SoundRecordingsShown {
+  calls: Boolean!
+  voiceMessages: Boolean!
+}
+
+extend type Query {
+  "What this device shows of sound recordings; null for an app that follows the hidden collections (journal)."
+  soundRecordingsShown: SoundRecordingsShown
+}
+
+extend type Mutation {
+  """
+  Sets what this device shows of sound recordings beside recordings (serverInfo.soundRecordingsShown). Its change feed
+  then sends the calls or voice messages it now shows, or sends them as deleted. INVALID_ARGUMENT for an app that
+  follows the hidden collections.
+  """
+  setSoundRecordingsShown(calls: Boolean!, voiceMessages: Boolean!): SoundRecordingsShown!
+}

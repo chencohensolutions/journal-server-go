@@ -208,3 +208,94 @@ func TestAudioLogsSeesSoundRecordings(t *testing.T) {
 		t.Errorf("Audio Logs /media of a hidden WhatsApp photo: %d", s)
 	}
 }
+
+func TestAudioLogsChoosesCallsAndNeverGetsPrivate(t *testing.T) {
+	env := newTestEnv(t)
+	journal, _ := env.enrolledAppClient(t, "hen", "")
+	audioLogs, audioSerial := env.enrolledAppClient(t, "hen", "audio-logs")
+
+	store := env.library.Store("hen")
+	place := func(name, source string, call *media.Call) string {
+		data := []byte("the bytes of " + name)
+		path := filepath.Join(t.TempDir(), name)
+		os.WriteFile(path, data, 0o644)
+		sum := sha256.Sum256(data)
+		sha := hex.EncodeToString(sum[:])
+		taken := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+		req := media.UploadRequest{Sha256: sha, Size: int64(len(data)), FileName: name, MimeType: "audio/flac",
+			Kind: media.KindAudio, TakenAt: &taken, Source: &source, UploadedBy: "import", Call: call}
+		if _, _, err := store.Import(path, req); err != nil {
+			t.Fatal(err)
+		}
+		return sha
+	}
+	recording := place("class.flac", media.SourceRecording, nil)
+	call := place("call.flac", media.SourceCall, &media.Call{})
+	secret := place("secret.flac", media.SourceRecording, nil)
+
+	seen := func(client *http.Client) map[string]bool {
+		var page struct {
+			Changes []struct {
+				Path    string
+				Deleted bool
+			}
+		}
+		json.Unmarshal(env.graphql(t, client, `{ changes { changes { path deleted } } }`, nil).Data["changes"], &page)
+		shown := map[string]bool{}
+		for _, c := range page.Changes {
+			if !c.Deleted {
+				shown[strings.TrimPrefix(c.Path, "media/")] = true
+			}
+		}
+		return shown
+	}
+	status := func(client *http.Client, sha string) int {
+		resp, err := client.Get(env.server.URL + "/media/" + sha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Calls are off until the user turns them on in Audio Logs.
+	if got := seen(audioLogs); !got[recording] || got[call] {
+		t.Fatalf("Audio Logs sees %v: want the recordings, not the call", got)
+	}
+	if s := status(audioLogs, call); s != http.StatusNotFound {
+		t.Errorf("Audio Logs /media of a call while calls are off: %d", s)
+	}
+	if got := string(env.graphql(t, audioLogs, `{ soundRecordingsShown { calls voiceMessages } serverInfo { soundRecordingsShown } }`, nil).Data["soundRecordingsShown"]); got != `{"calls":false,"voiceMessages":false}` {
+		t.Fatalf("soundRecordingsShown = %s", got)
+	}
+	set := env.graphql(t, audioLogs, `mutation { setSoundRecordingsShown(calls: true, voiceMessages: false) { calls } }`, nil)
+	if len(set.Errors) > 0 || string(set.Data["setSoundRecordingsShown"]) != `{"calls":true}` {
+		t.Fatalf("setSoundRecordingsShown: %s %+v", set.Data["setSoundRecordingsShown"], set.Errors)
+	}
+	if d, _ := env.enrollment.Registry.Find(audioSerial); !d.ShowCalls || d.ShowVoiceMessages {
+		t.Fatalf("device after the change: %+v", d)
+	}
+	if got := seen(audioLogs); !got[recording] || !got[call] {
+		t.Errorf("Audio Logs with calls on sees %v", got)
+	}
+
+	// Journal follows the hidden collections and can't choose.
+	if got := string(env.graphql(t, journal, `{ soundRecordingsShown { calls } }`, nil).Data["soundRecordingsShown"]); got != "null" {
+		t.Errorf("journal's soundRecordingsShown = %s", got)
+	}
+	if r := env.graphql(t, journal, `mutation { setSoundRecordingsShown(calls: true, voiceMessages: true) { calls } }`, nil); len(r.Errors) == 0 {
+		t.Error("journal could set what it shows of sound recordings")
+	}
+
+	// A recording marked private never reaches Audio Logs.
+	if r := env.graphql(t, journal, `mutation($s: [Sha256!]!) { setPrivate(sha256s: $s, private: true) { sha256 } }`,
+		map[string]any{"s": []string{secret}}); len(r.Errors) > 0 {
+		t.Fatalf("setPrivate: %+v", r.Errors)
+	}
+	if got := seen(audioLogs); got[secret] || !got[recording] {
+		t.Errorf("Audio Logs sees %v after the secret was marked private", got)
+	}
+	if s := status(audioLogs, secret); s != http.StatusNotFound {
+		t.Errorf("Audio Logs /media of a private recording: %d", s)
+	}
+}

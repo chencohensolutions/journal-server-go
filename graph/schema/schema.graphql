@@ -63,6 +63,8 @@ type ServerInfo {
   deviceApps: Boolean!
   "An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone."
   siblingCodes: Boolean!
+  "An app made for sound recordings chooses whether it shows calls and voice messages (setSoundRecordingsShown)."
+  soundRecordingsShown: Boolean!
 }
 
 type Mutation {

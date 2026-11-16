@@ -683,6 +683,8 @@ type ServerInfo struct {
 	DeviceApps bool `json:"deviceApps"`
 	// An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone.
 	SiblingCodes bool `json:"siblingCodes"`
+	// An app made for sound recordings chooses whether it shows calls and voice messages (setSoundRecordingsShown).
+	SoundRecordingsShown bool `json:"soundRecordingsShown"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
@@ -742,6 +744,15 @@ type SoundFolder struct {
 	// How many of its files are still being moved after its mark changed: to call or recording, or back. 0 once they all
 	// have; each moved file comes again in the change feed.
 	Pending int `json:"pending"`
+}
+
+// What an app made for sound recordings (Audio Logs) shows of them, whatever the user hides on other devices: recordings
+// always, calls and voice messages only when the user turns them on in that app. Each app of a phone has its own; journal
+// follows the hidden collections. Such an app never gets files the user marked private (setPrivate): mark a recording
+// private and it leaves the app on every phone.
+type SoundRecordingsShown struct {
+	Calls         bool `json:"calls"`
+	VoiceMessages bool `json:"voiceMessages"`
 }
 
 type StartUploadInput struct {

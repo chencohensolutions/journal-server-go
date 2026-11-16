@@ -35,6 +35,10 @@ type Device struct {
 	// other apps enroll with a sibling code from an app already enrolled (SiblingCode), and join its phone. Empty
 	// for the first: PhoneID is then its own serial.
 	Phone string `json:"phone,omitempty"`
+	// What an app made for sound recordings (SeesSoundRecordings) shows beside recordings: calls and voice messages,
+	// each off until the user turns it on in the app (setSoundRecordingsShown).
+	ShowCalls         bool `json:"show_calls,omitempty"`
+	ShowVoiceMessages bool `json:"show_voice_messages,omitempty"`
 }
 
 // PhoneID is the phone the device belongs to: one id for all its apps, and all the certificates they renewed.
@@ -62,6 +66,11 @@ func (d Device) AppName() string {
 // SeesSoundRecordings reports whether the device always sees the user's sound recordings, whatever the user hides
 // (media.View.ShowAudio): an app made for them, Audio Logs, which uploads recordings and plays them back.
 func (d Device) SeesSoundRecordings() bool { return d.AppName() == AppAudioLogs }
+
+// WithholdsPrivate reports whether the server keeps the user's private files from the device: when set for its phone
+// (WithholdPrivate), and always from Audio Logs, so a recording the user marked private never reaches a phone through
+// it (the owner's call, Nov 16, 2026).
+func (d Device) WithholdsPrivate() bool { return d.WithholdPrivate || d.AppName() == AppAudioLogs }
 
 var ErrDeviceNotFound = errors.New("device not found")
 
@@ -164,6 +173,29 @@ func (r *Registry) RevokePhone(serial string, at time.Time) (Device, error) {
 		return Device{}, err
 	}
 	return r.devices[target], nil
+}
+
+// SetSoundRecordingsShown sets what the device with serial shows of sound recordings beside recordings (calls, voice
+// messages). Only this app of its phone changes.
+func (r *Registry) SetSoundRecordingsShown(serial string, calls, voiceMessages bool) (Device, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.devices {
+		if r.devices[i].Serial != serial {
+			continue
+		}
+		if r.devices[i].ShowCalls == calls && r.devices[i].ShowVoiceMessages == voiceMessages {
+			return r.devices[i], nil
+		}
+		previous := r.devices[i]
+		r.devices[i].ShowCalls, r.devices[i].ShowVoiceMessages = calls, voiceMessages
+		if err := r.save(); err != nil {
+			r.devices[i] = previous
+			return Device{}, err
+		}
+		return r.devices[i], nil
+	}
+	return Device{}, ErrDeviceNotFound
 }
 
 // SetWithholdPrivate turns withholding private files from a phone on or off: the device with serial and its

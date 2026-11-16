@@ -297,34 +297,35 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcceptSwapOffer       func(childComplexity int, id string, passphrase *string, plain *bool) int
-		DeclineSwapOffer      func(childComplexity int, id string) int
-		EnrollDevice          func(childComplexity int, input model.EnrollDeviceInput) int
-		ForgetPerson          func(childComplexity int, id string) int
-		JoinSwap              func(childComplexity int, link string, name string, passphrase *string, plain *bool, offerQuota *int64) int
-		MarkFaces             func(childComplexity int, person string, yes []string, no []string) int
-		MergePeople           func(childComplexity int, into string, from []string) int
-		MoveFace              func(childComplexity int, face string, to *string) int
-		NameFace              func(childComplexity int, face string, name string) int
-		NamePerson            func(childComplexity int, id string, name string) int
-		PauseIndexing         func(childComplexity int) int
-		PrepareSearch         func(childComplexity int) int
-		RemoveSwap            func(childComplexity int, name string) int
-		RenewCertificate      func(childComplexity int, csr string, keyProtection model.KeyProtection) int
-		RevokeSwap            func(childComplexity int, name string, deleteFiles *bool) int
-		SetCall               func(childComplexity int, sha256 string, call model.CallInput) int
-		SetCamera             func(childComplexity int, make string, model string, mine bool) int
-		SetHiddenCollections  func(childComplexity int, input model.HiddenCollectionsInput) int
-		SetNote               func(childComplexity int, sha256 string, note *string, baseVersion *string) int
-		SetPrivate            func(childComplexity int, sha256s []string, private bool) int
-		SetSoundFolder        func(childComplexity int, id string, as model.SoundFolderMark) int
-		SetTucked             func(childComplexity int, sha256s []string, tucked bool) int
-		SiblingEnrollmentCode func(childComplexity int, app string) int
-		StartCopy             func(childComplexity int, folder string) int
-		StartIndexing         func(childComplexity int) int
-		StartUpload           func(childComplexity int, input model.StartUploadInput) int
-		StopCopy              func(childComplexity int, folder string) int
-		SwapInvite            func(childComplexity int, name string, quota int64) int
+		AcceptSwapOffer         func(childComplexity int, id string, passphrase *string, plain *bool) int
+		DeclineSwapOffer        func(childComplexity int, id string) int
+		EnrollDevice            func(childComplexity int, input model.EnrollDeviceInput) int
+		ForgetPerson            func(childComplexity int, id string) int
+		JoinSwap                func(childComplexity int, link string, name string, passphrase *string, plain *bool, offerQuota *int64) int
+		MarkFaces               func(childComplexity int, person string, yes []string, no []string) int
+		MergePeople             func(childComplexity int, into string, from []string) int
+		MoveFace                func(childComplexity int, face string, to *string) int
+		NameFace                func(childComplexity int, face string, name string) int
+		NamePerson              func(childComplexity int, id string, name string) int
+		PauseIndexing           func(childComplexity int) int
+		PrepareSearch           func(childComplexity int) int
+		RemoveSwap              func(childComplexity int, name string) int
+		RenewCertificate        func(childComplexity int, csr string, keyProtection model.KeyProtection) int
+		RevokeSwap              func(childComplexity int, name string, deleteFiles *bool) int
+		SetCall                 func(childComplexity int, sha256 string, call model.CallInput) int
+		SetCamera               func(childComplexity int, make string, model string, mine bool) int
+		SetHiddenCollections    func(childComplexity int, input model.HiddenCollectionsInput) int
+		SetNote                 func(childComplexity int, sha256 string, note *string, baseVersion *string) int
+		SetPrivate              func(childComplexity int, sha256s []string, private bool) int
+		SetSoundFolder          func(childComplexity int, id string, as model.SoundFolderMark) int
+		SetSoundRecordingsShown func(childComplexity int, calls bool, voiceMessages bool) int
+		SetTucked               func(childComplexity int, sha256s []string, tucked bool) int
+		SiblingEnrollmentCode   func(childComplexity int, app string) int
+		StartCopy               func(childComplexity int, folder string) int
+		StartIndexing           func(childComplexity int) int
+		StartUpload             func(childComplexity int, input model.StartUploadInput) int
+		StopCopy                func(childComplexity int, folder string) int
+		SwapInvite              func(childComplexity int, name string, quota int64) int
 	}
 
 	MySwap struct {
@@ -371,27 +372,28 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Cameras           func(childComplexity int) int
-		Changes           func(childComplexity int, since *string, limit *int) int
-		Copies            func(childComplexity int) int
-		Duplicates        func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
-		EnrollmentPreview func(childComplexity int, code string) int
-		FolderNames       func(childComplexity int) int
-		HiddenCollections func(childComplexity int) int
-		Indexing          func(childComplexity int) int
-		LocalIndexes      func(childComplexity int) int
-		Media             func(childComplexity int, sha256 string) int
-		MissingMedia      func(childComplexity int, hashes []string) int
-		People            func(childComplexity int, includeGroups *bool, includePrivate *bool) int
-		PhoneModels       func(childComplexity int) int
-		SearchMedia       func(childComplexity int, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
-		SearchModel       func(childComplexity int, wait *bool) int
-		ServerInfo        func(childComplexity int) int
-		SimilarFaces      func(childComplexity int, face string, limit *int, offset *int, includePrivate *bool) int
-		SimilarMedia      func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
-		SoundFolders      func(childComplexity int) int
-		StorageUsage      func(childComplexity int) int
-		Swaps             func(childComplexity int) int
+		Cameras              func(childComplexity int) int
+		Changes              func(childComplexity int, since *string, limit *int) int
+		Copies               func(childComplexity int) int
+		Duplicates           func(childComplexity int, limit *int, offset *int, includePrivate *bool) int
+		EnrollmentPreview    func(childComplexity int, code string) int
+		FolderNames          func(childComplexity int) int
+		HiddenCollections    func(childComplexity int) int
+		Indexing             func(childComplexity int) int
+		LocalIndexes         func(childComplexity int) int
+		Media                func(childComplexity int, sha256 string) int
+		MissingMedia         func(childComplexity int, hashes []string) int
+		People               func(childComplexity int, includeGroups *bool, includePrivate *bool) int
+		PhoneModels          func(childComplexity int) int
+		SearchMedia          func(childComplexity int, text *string, people []string, limit *int, offset *int, years []int, area *model.GeoAreaInput, includePrivate *bool) int
+		SearchModel          func(childComplexity int, wait *bool) int
+		ServerInfo           func(childComplexity int) int
+		SimilarFaces         func(childComplexity int, face string, limit *int, offset *int, includePrivate *bool) int
+		SimilarMedia         func(childComplexity int, sha256 string, limit *int, offset *int, includePrivate *bool) int
+		SoundFolders         func(childComplexity int) int
+		SoundRecordingsShown func(childComplexity int) int
+		StorageUsage         func(childComplexity int) int
+		Swaps                func(childComplexity int) int
 	}
 
 	SearchHit struct {
@@ -409,34 +411,35 @@ type ComplexityRoot struct {
 	}
 
 	ServerInfo struct {
-		API               func(childComplexity int) int
-		Aesthetic         func(childComplexity int) int
-		Audio             func(childComplexity int) int
-		CaCertificate     func(childComplexity int) int
-		Cameras           func(childComplexity int) int
-		Copies            func(childComplexity int) int
-		DeviceApps        func(childComplexity int) int
-		Discovery         func(childComplexity int) int
-		EncodesWav        func(childComplexity int) int
-		Faces             func(childComplexity int) int
-		Indexing          func(childComplexity int) int
-		KeepsJpegAsJxl    func(childComplexity int) int
-		LocalIndexes      func(childComplexity int) int
-		Notes             func(childComplexity int) int
-		NudityScan        func(childComplexity int) int
-		PeerCopies        func(childComplexity int) int
-		Posters           func(childComplexity int) int
-		Previews          func(childComplexity int) int
-		RenewCertificates func(childComplexity int) int
-		Search            func(childComplexity int) int
-		SiblingCodes      func(childComplexity int) int
-		Similar           func(childComplexity int) int
-		SoundFolders      func(childComplexity int) int
-		Swap              func(childComplexity int) int
-		TextInPhotos      func(childComplexity int) int
-		TuckedAway        func(childComplexity int) int
-		Version           func(childComplexity int) int
-		VideoFrames       func(childComplexity int) int
+		API                  func(childComplexity int) int
+		Aesthetic            func(childComplexity int) int
+		Audio                func(childComplexity int) int
+		CaCertificate        func(childComplexity int) int
+		Cameras              func(childComplexity int) int
+		Copies               func(childComplexity int) int
+		DeviceApps           func(childComplexity int) int
+		Discovery            func(childComplexity int) int
+		EncodesWav           func(childComplexity int) int
+		Faces                func(childComplexity int) int
+		Indexing             func(childComplexity int) int
+		KeepsJpegAsJxl       func(childComplexity int) int
+		LocalIndexes         func(childComplexity int) int
+		Notes                func(childComplexity int) int
+		NudityScan           func(childComplexity int) int
+		PeerCopies           func(childComplexity int) int
+		Posters              func(childComplexity int) int
+		Previews             func(childComplexity int) int
+		RenewCertificates    func(childComplexity int) int
+		Search               func(childComplexity int) int
+		SiblingCodes         func(childComplexity int) int
+		Similar              func(childComplexity int) int
+		SoundFolders         func(childComplexity int) int
+		SoundRecordingsShown func(childComplexity int) int
+		Swap                 func(childComplexity int) int
+		TextInPhotos         func(childComplexity int) int
+		TuckedAway           func(childComplexity int) int
+		Version              func(childComplexity int) int
+		VideoFrames          func(childComplexity int) int
 	}
 
 	SiblingCode struct {
@@ -457,6 +460,11 @@ type ComplexityRoot struct {
 		Imported func(childComplexity int) int
 		Name     func(childComplexity int) int
 		Pending  func(childComplexity int) int
+	}
+
+	SoundRecordingsShown struct {
+		Calls         func(childComplexity int) int
+		VoiceMessages func(childComplexity int) int
 	}
 
 	StorageUsage struct {
@@ -538,6 +546,7 @@ type MutationResolver interface {
 	StartCopy(ctx context.Context, folder string) (*model.DataCopy, error)
 	StopCopy(ctx context.Context, folder string) (*model.DataCopy, error)
 	SetHiddenCollections(ctx context.Context, input model.HiddenCollectionsInput) (*model.HiddenCollections, error)
+	SetSoundRecordingsShown(ctx context.Context, calls bool, voiceMessages bool) (*model.SoundRecordingsShown, error)
 	StartIndexing(ctx context.Context) (*model.Indexing, error)
 	PauseIndexing(ctx context.Context) (*model.Indexing, error)
 	StartUpload(ctx context.Context, input model.StartUploadInput) (model.StartUploadResult, error)
@@ -565,6 +574,7 @@ type QueryResolver interface {
 	Cameras(ctx context.Context) ([]*model.CameraModel, error)
 	Copies(ctx context.Context) ([]*model.DataCopy, error)
 	HiddenCollections(ctx context.Context) (*model.HiddenCollections, error)
+	SoundRecordingsShown(ctx context.Context) (*model.SoundRecordingsShown, error)
 	Indexing(ctx context.Context) (*model.Indexing, error)
 	LocalIndexes(ctx context.Context) ([]*model.LocalIndex, error)
 	PhoneModels(ctx context.Context) ([]*model.ModelFile, error)
@@ -1867,6 +1877,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetSoundFolder(childComplexity, args["id"].(string), args["as"].(model.SoundFolderMark)), true
+	case "Mutation.setSoundRecordingsShown":
+		if e.ComplexityRoot.Mutation.SetSoundRecordingsShown == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setSoundRecordingsShown_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetSoundRecordingsShown(childComplexity, args["calls"].(bool), args["voiceMessages"].(bool)), true
 	case "Mutation.setTucked":
 		if e.ComplexityRoot.Mutation.SetTucked == nil {
 			break
@@ -2244,6 +2265,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.SoundFolders(childComplexity), true
+	case "Query.soundRecordingsShown":
+		if e.ComplexityRoot.Query.SoundRecordingsShown == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.SoundRecordingsShown(childComplexity), true
 	case "Query.storageUsage":
 		if e.ComplexityRoot.Query.StorageUsage == nil {
 			break
@@ -2445,6 +2472,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.SoundFolders(childComplexity), true
+	case "ServerInfo.soundRecordingsShown":
+		if e.ComplexityRoot.ServerInfo.SoundRecordingsShown == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.SoundRecordingsShown(childComplexity), true
 	case "ServerInfo.swap":
 		if e.ComplexityRoot.ServerInfo.Swap == nil {
 			break
@@ -2544,6 +2577,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.SoundFolder.Pending(childComplexity), true
+
+	case "SoundRecordingsShown.calls":
+		if e.ComplexityRoot.SoundRecordingsShown.Calls == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundRecordingsShown.Calls(childComplexity), true
+	case "SoundRecordingsShown.voiceMessages":
+		if e.ComplexityRoot.SoundRecordingsShown.VoiceMessages == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SoundRecordingsShown.VoiceMessages(childComplexity), true
 
 	case "StorageUsage.audio":
 		if e.ComplexityRoot.StorageUsage.Audio == nil {
@@ -3201,6 +3247,31 @@ extend type Mutation {
   """
   setHiddenCollections(input: HiddenCollectionsInput!): HiddenCollections!
 }
+
+"""
+What an app made for sound recordings (Audio Logs) shows of them, whatever the user hides on other devices: recordings
+always, calls and voice messages only when the user turns them on in that app. Each app of a phone has its own; journal
+follows the hidden collections. Such an app never gets files the user marked private (setPrivate): mark a recording
+private and it leaves the app on every phone.
+"""
+type SoundRecordingsShown {
+  calls: Boolean!
+  voiceMessages: Boolean!
+}
+
+extend type Query {
+  "What this device shows of sound recordings; null for an app that follows the hidden collections (journal)."
+  soundRecordingsShown: SoundRecordingsShown
+}
+
+extend type Mutation {
+  """
+  Sets what this device shows of sound recordings beside recordings (serverInfo.soundRecordingsShown). Its change feed
+  then sends the calls or voice messages it now shows, or sends them as deleted. INVALID_ARGUMENT for an app that
+  follows the hidden collections.
+  """
+  setSoundRecordingsShown(calls: Boolean!, voiceMessages: Boolean!): SoundRecordingsShown!
+}
 `, BuiltIn: false},
 	{Name: "../schema/indexing.graphql", Input: `# --- Reading the user's photos for the indexes -------------------------------------------------
 # The server reads each new file once for its indexes (search, faces, text in photos, similar photos, aesthetic,
@@ -3817,6 +3888,8 @@ type ServerInfo {
   deviceApps: Boolean!
   "An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone."
   siblingCodes: Boolean!
+  "An app made for sound recordings chooses whether it shows calls and voice messages (setSoundRecordingsShown)."
+  soundRecordingsShown: Boolean!
 }
 
 type Mutation {
@@ -4892,6 +4965,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_deviceApps(ctx, field)
 	case "siblingCodes":
 		return ec.fieldContext_ServerInfo_siblingCodes(ctx, field)
+	case "soundRecordingsShown":
+		return ec.fieldContext_ServerInfo_soundRecordingsShown(ctx, field)
 	case "audio":
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
@@ -4944,6 +5019,16 @@ func (ec *executionContext) childFields_SoundFolder(ctx context.Context, field g
 		return ec.fieldContext_SoundFolder_pending(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type SoundFolder", field.Name)
+}
+
+func (ec *executionContext) childFields_SoundRecordingsShown(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "calls":
+		return ec.fieldContext_SoundRecordingsShown_calls(ctx, field)
+	case "voiceMessages":
+		return ec.fieldContext_SoundRecordingsShown_voiceMessages(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SoundRecordingsShown", field.Name)
 }
 
 func (ec *executionContext) childFields_StorageUsage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -5577,6 +5662,28 @@ func (ec *executionContext) field_Mutation_setSoundFolder_args(ctx context.Conte
 		return nil, err
 	}
 	args["as"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setSoundRecordingsShown_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "calls",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["calls"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "voiceMessages",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["voiceMessages"] = arg1
 	return args, nil
 }
 
@@ -10553,6 +10660,50 @@ func (ec *executionContext) fieldContext_Mutation_setHiddenCollections(ctx conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_setSoundRecordingsShown(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setSoundRecordingsShown(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetSoundRecordingsShown(ctx, fc.Args["calls"].(bool), fc.Args["voiceMessages"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.SoundRecordingsShown) graphql.Marshaler {
+			return ec.marshalNSoundRecordingsShown2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundRecordingsShown(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setSoundRecordingsShown(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SoundRecordingsShown(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setSoundRecordingsShown_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_startIndexing(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -12124,6 +12275,38 @@ func (ec *executionContext) fieldContext_Query_hiddenCollections(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_soundRecordingsShown(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_soundRecordingsShown(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().SoundRecordingsShown(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.SoundRecordingsShown) graphql.Marshaler {
+			return ec.marshalOSoundRecordingsShown2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundRecordingsShown(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Query_soundRecordingsShown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SoundRecordingsShown(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_indexing(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13404,6 +13587,29 @@ func (ec *executionContext) fieldContext_ServerInfo_siblingCodes(_ context.Conte
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_soundRecordingsShown(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_soundRecordingsShown(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SoundRecordingsShown, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_soundRecordingsShown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_audio(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13935,6 +14141,52 @@ func (ec *executionContext) _SoundFolder_pending(ctx context.Context, field grap
 }
 func (ec *executionContext) fieldContext_SoundFolder_pending(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("SoundFolder", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _SoundRecordingsShown_calls(ctx context.Context, field graphql.CollectedField, obj *model.SoundRecordingsShown) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundRecordingsShown_calls(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Calls, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundRecordingsShown_calls(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundRecordingsShown", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _SoundRecordingsShown_voiceMessages(ctx context.Context, field graphql.CollectedField, obj *model.SoundRecordingsShown) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SoundRecordingsShown_voiceMessages(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VoiceMessages, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SoundRecordingsShown_voiceMessages(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SoundRecordingsShown", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _StorageUsage_photos(ctx context.Context, field graphql.CollectedField, obj *model.StorageUsage) (ret graphql.Marshaler) {
@@ -18443,6 +18695,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setSoundRecordingsShown":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setSoundRecordingsShown(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "startIndexing":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_startIndexing(ctx, field)
@@ -19077,6 +19336,25 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "soundRecordingsShown":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_soundRecordingsShown(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "indexing":
 			field := field
 
@@ -19655,6 +19933,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "soundRecordingsShown":
+			out.Values[i] = ec._ServerInfo_soundRecordingsShown(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "audio":
 			out.Values[i] = ec._ServerInfo_audio(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -19861,6 +20144,50 @@ func (ec *executionContext) _SoundFolder(ctx context.Context, sel ast.SelectionS
 			}
 		case "pending":
 			out.Values[i] = ec._SoundFolder_pending(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var soundRecordingsShownImplementors = []string{"SoundRecordingsShown"}
+
+func (ec *executionContext) _SoundRecordingsShown(ctx context.Context, sel ast.SelectionSet, obj *model.SoundRecordingsShown) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, soundRecordingsShownImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SoundRecordingsShown")
+		case "calls":
+			out.Values[i] = ec._SoundRecordingsShown_calls(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "voiceMessages":
+			out.Values[i] = ec._SoundRecordingsShown_voiceMessages(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -21661,6 +21988,20 @@ func (ec *executionContext) marshalNSoundFolderMark2githubᚗcomᚋjournalᚋser
 	return v
 }
 
+func (ec *executionContext) marshalNSoundRecordingsShown2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundRecordingsShown(ctx context.Context, sel ast.SelectionSet, v model.SoundRecordingsShown) graphql.Marshaler {
+	return ec._SoundRecordingsShown(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSoundRecordingsShown2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundRecordingsShown(ctx context.Context, sel ast.SelectionSet, v *model.SoundRecordingsShown) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SoundRecordingsShown(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNStartUploadInput2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐStartUploadInput(ctx context.Context, v any) (model.StartUploadInput, error) {
 	res, err := ec.unmarshalInputStartUploadInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -22326,6 +22667,13 @@ func (ec *executionContext) marshalOSha2562ᚖstring(ctx context.Context, sel as
 	_ = ctx
 	res := model.MarshalSha256(*v)
 	return res
+}
+
+func (ec *executionContext) marshalOSoundRecordingsShown2ᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSoundRecordingsShown(ctx context.Context, sel ast.SelectionSet, v *model.SoundRecordingsShown) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._SoundRecordingsShown(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOString2ᚕstringᚄ(ctx context.Context, v any) ([]string, error) {

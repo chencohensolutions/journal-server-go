@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/journal/server-go/auth"
+	"github.com/journal/server-go/enroll"
 	"github.com/journal/server-go/graph/model"
 	"github.com/journal/server-go/media"
 )
@@ -43,7 +44,7 @@ func (r *Resolver) view(ctx context.Context) (view, error) {
 	if err != nil {
 		return view{}, err
 	}
-	return view{store, store.ViewFor(auth.WithholdPrivateFromContext(ctx), auth.ShowAudioFromContext(ctx))}, nil
+	return view{store, auth.ViewFor(ctx, store)}, nil
 }
 
 // hides reports whether the device may not see item.
@@ -179,4 +180,16 @@ func blankToNil(s *string) *string {
 	}
 	t := strings.TrimSpace(*s)
 	return &t
+}
+
+// soundDevice is the enrolled device making the request when it is an app made for sound recordings (Audio Logs).
+func (r *Resolver) soundDevice(ctx context.Context) (enroll.Device, bool) {
+	if r.Enrollment == nil || r.Enrollment.Registry == nil {
+		return enroll.Device{}, false
+	}
+	device, ok := r.Enrollment.Registry.Find(auth.SerialFromContext(ctx))
+	if !ok || !device.SeesSoundRecordings() {
+		return enroll.Device{}, false
+	}
+	return device, true
 }

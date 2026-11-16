@@ -52,7 +52,7 @@ func (s *Server) ServePeople(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := store.ViewFor(auth.WithholdPrivateFromContext(r.Context()), auth.ShowAudioFromContext(r.Context()))
+	view := auth.ViewFor(r.Context(), store)
 	keep := func(sha string) bool {
 		item, ok := store.Get(sha)
 		return ok && !store.Hides(view, item)
