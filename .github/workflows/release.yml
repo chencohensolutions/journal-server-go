@@ -73,7 +73,9 @@ jobs:
         run: |
           mkdir -p dist/installer
           cp dist/journal-server-windows-amd64.exe dist/installer/journal-server.exe
-          docker run --rm -v "$PWD:/work" -w /work amake/innosetup:innosetup6 \
+          # Wine inside the image fails on the runner's default seccomp profile ("wineserver: socket: Function not
+          # implemented", Nov 16, 2026), so the container runs without it; it only compiles the installer.
+          docker run --rm --security-opt seccomp=unconfined -v "$PWD:/work" -w /work amake/innosetup:innosetup6 \
             "/DAppVersion=${{ steps.version.outputs.version }}" "/DDist=..\dist\installer" \
             installer/journal-server.iss
           mv dist/installer/journal-server-setup-*.exe dist/
