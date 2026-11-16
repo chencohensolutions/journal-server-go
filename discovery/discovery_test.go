@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dht/v2"
+	"golang.org/x/time/rate"
 )
 
 func TestServerIDs(t *testing.T) {
@@ -95,6 +96,9 @@ func TestKeysComeFromTheTLSKey(t *testing.T) {
 func TestPublishAndLookUp(t *testing.T) {
 	var addrs []dht.Addr
 	bootstrap := func() ([]dht.Addr, error) { return addrs, nil }
+	// Every socket listens before any node joins, and each node has its own send limit: with the library's one limit
+	// for the process, eight nodes spent one another's and dropped answers, and publishing or looking up failed now
+	// and then (it failed the release on CI, Nov 16, 2026).
 	var nodes []*Node
 	for range 8 {
 		conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
@@ -102,11 +106,8 @@ func TestPublishAndLookUp(t *testing.T) {
 			t.Skip("no UDP here:", err)
 		}
 		addrs = append(addrs, dht.NewAddr(conn.LocalAddr()))
-		conn.Close() // its port is taken again by the node below
-	}
-	for _, a := range addrs {
-		n := &Node{Bootstrap: bootstrap, Active: true, listen: a.String()}
-		t.Cleanup(n.Close)
+		n := &Node{Bootstrap: bootstrap, Active: true, conn: conn, limiter: rate.NewLimiter(rate.Inf, 0)}
+		t.Cleanup(func() { n.Close(); conn.Close() })
 		nodes = append(nodes, n)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
