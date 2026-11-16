@@ -187,6 +187,20 @@ func (s *Store) StartUpload(req UploadRequest) (StartResult, error) {
 	} else if err := os.Remove(s.partialPath(req.Sha256)); err != nil && !os.IsNotExist(err) {
 		return StartResult{}, err
 	}
+	// Every byte arrived before, but filing it failed (or the server stopped before it could): a device can't send a
+	// piece past the end, so it would be asked for more forever. It is filed now; if that fails again, the upload
+	// starts over from nothing (Nov 17, 2026: a call from Audio Logs stuck this way).
+	if offset >= req.Size {
+		item, err := s.finish(req)
+		if err == nil {
+			return StartResult{Existing: item}, nil
+		}
+		log.Printf("media: %s held in full but not filed, starting over: %v", req.FileName, err)
+		if err := os.Remove(s.partialPath(req.Sha256)); err != nil && !os.IsNotExist(err) {
+			return StartResult{}, err
+		}
+		offset = 0
+	}
 	if free, err := freeBytes(s.root); err == nil && free < uint64(req.Size-offset)+spaceReserve {
 		return StartResult{Rejected: RejectNoSpace}, nil
 	}
