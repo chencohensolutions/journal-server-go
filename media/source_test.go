@@ -291,6 +291,8 @@ func TestSourceOfSoundRecordings(t *testing.T) {
 		{"merged once, the mark taken back: an import's other", withSentFrom(imported(`D:\Archive\phone\Call\x.m4a`, SourceRecording), SourceOther), SourceOther, "folder:call"},
 		{"merged once, the mark taken back, nothing before: its folder", imported(`D:\Archive\phone\Call\x.m4a`, SourceRecording), "folder:call", "folder:call"},
 		{"a phone's own recording stays", stored("x.m4a", SourceRecording, SourceRecording, "Recordings/Call/"), SourceRecording, "folder:call"},
+		{"a call by its name, read before the name was known", stored("Call \u200eאמא_260515_114640.m4a", SourceRecording, SourceRecording, ""), SourceCall, ""},
+		{"a Hebrew call by its name", imported(`D:\Archive\phone\x\שיחה אבא_261028_122919.m4a`, SourceOther), SourceCall, "folder:x"},
 	} {
 		source, _ := SourceOf(c.facts, CameraMarks{}, kinds)
 		if source != c.source {

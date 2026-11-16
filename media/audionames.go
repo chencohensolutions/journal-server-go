@@ -21,8 +21,8 @@ import (
 
 // Samsung's call recorder names a call after the contact or, without one, the number, then the local start
 // with a two-digit year: "Call recording אבא_250206_142813", "הקלטת שיחה 0501234567_211115_200618", and since
-// 2026 "שיחה אבא_260724_204448".
-var samsungCall = regexp.MustCompile(`^(?:Call recording|הקלטת שיחה|שיחה) (.+)_(\d{6})_(\d{6})$`)
+// 2026 "שיחה אבא_260724_204448" and, in English, "Call אמא_260515_114640".
+var samsungCall = regexp.MustCompile(`^(?:Call recording|Call|הקלטת שיחה|שיחה) +(.+)_(\d{6})_(\d{6})$`)
 
 // A phone number as recorders write it: 0501234567, +972501234567, *3123, 164.
 var phoneNumber = regexp.MustCompile(`^\+?[\d*#]{3,15}$`)
