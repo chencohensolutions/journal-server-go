@@ -164,6 +164,39 @@ func TestUploadResumesAfterRestartAndRejectsWrongOffset(t *testing.T) {
 	}
 }
 
+func TestUploadHeldInFullButNotFiledIsFiledAtTheNextStart(t *testing.T) {
+	f := newFixture(t)
+	data := []byte("a call that arrived whole")
+	f.start(photoRequest(data, "call.m4a"))
+	// Every byte is there, as when filing failed after the last piece.
+	if err := os.WriteFile(f.store.partialPath(shaOf(data)), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again := f.start(photoRequest(data, "call.m4a"))
+	if again.Existing == nil {
+		t.Fatalf("start = %+v", again)
+	}
+	if _, ok := f.store.Find(shaOf(data)); !ok {
+		t.Fatal("not filed")
+	}
+}
+
+func TestUploadHeldInFullWithWrongBytesStartsOver(t *testing.T) {
+	f := newFixture(t)
+	data := []byte("the real call bytes")
+	f.start(photoRequest(data, "call.m4a"))
+	if err := os.WriteFile(f.store.partialPath(shaOf(data)), []byte("other bytes, same size"[:len(data)]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again := f.start(photoRequest(data, "call.m4a"))
+	if again.Upload == nil || again.Upload.Offset != 0 {
+		t.Fatalf("start = %+v", again)
+	}
+	if result, err := f.chunk(data, 0, int64(len(data))); err != nil || result.Item == nil {
+		t.Fatalf("upload again = %+v %v", result, err)
+	}
+}
+
 func TestUploadWithWrongBytesIsDiscarded(t *testing.T) {
 	f := newFixture(t)
 	data := []byte("the real photo")

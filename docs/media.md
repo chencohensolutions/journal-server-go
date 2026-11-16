@@ -303,7 +303,10 @@ PUT … the last piece                          ───▶   checks the sha256
 | `416`, `Upload-Offset: n` | The piece doesn't start where the received bytes end | Continue from `n` |
 
 - **Resuming:** `HEAD /upload/{sha256}` returns `Upload-Offset` (and `Upload-Complete`). `startUpload`
-  again also returns the offset. Either works after a dropped connection or a server restart.
+  again also returns the offset. Either works after a dropped connection or a server restart. An upload whose
+  every byte arrived but that was never filed (filing failed after the last piece, or the server stopped) is filed at
+  the next `startUpload`, which then answers `MediaExists`; if filing fails again the upload starts over from 0
+  (Nov 17, 2026: a device can't send a piece past the end, so it was asked for more forever).
 - **Pieces:** the server asks for 16 MB (`chunkSize`) and accepts up to 64 MB. The bytes of a piece that breaks
   off are kept (they arrive in order, and the whole file is checked at the end), so the next piece starts where they
   ended; pieces needn't line up with anything.
