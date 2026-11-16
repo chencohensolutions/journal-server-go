@@ -21,8 +21,11 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.version.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,22 +71,59 @@ jobs:
               -ldflags "-s -w -X github.com/journal/server-go/version.Build=release" -o "$out" .
           done
 
-      - name: Installer
+      - uses: actions/upload-artifact@v4
         if: steps.version.outputs.skip != 'true'
+        with:
+          name: programs
+          path: dist/
+
+  # The installer is made on Windows, with Inno Setup itself: under Wine in Docker on Linux it stopped working on
+  # GitHub's runners (wineserver: "socket: Function not implemented", every release from Nov 14, 2026).
+  installer:
+    needs: build
+    if: needs.build.outputs.skip != 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: programs
+          path: dist/
+
+      - name: Installer
+        shell: pwsh
         run: |
-          mkdir -p dist/installer
-          cp dist/journal-server-windows-amd64.exe dist/installer/journal-server.exe
-          docker run --rm -v "$PWD:/work" -w /work amake/innosetup:innosetup6 \
-            "/DAppVersion=${{ steps.version.outputs.version }}" "/DDist=..\dist\installer" \
-            installer/journal-server.iss
-          mv dist/installer/journal-server-setup-*.exe dist/
-          rm -r dist/installer
+          choco install innosetup --no-progress -y
+          New-Item -ItemType Directory -Force dist\installer | Out-Null
+          Copy-Item dist\journal-server-windows-amd64.exe dist\installer\journal-server.exe
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ needs.build.outputs.version }}" "/DDist=..\dist\installer" installer\journal-server.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: dist/installer/journal-server-setup-*.exe
+
+  publish:
+    needs: [build, installer]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
 
       - name: Sign
-        if: steps.version.outputs.skip != 'true'
         run: |
           cd dist
-          { echo "# journal-server ${{ steps.version.outputs.version }}"; sha256sum -- *; } > SHA256SUMS
+          { echo "# journal-server ${{ needs.build.outputs.version }}"; sha256sum -- *; } > SHA256SUMS
           cd ..
           go run ./scripts/sign-release sign dist/SHA256SUMS
           go run ./scripts/sign-release verify dist/SHA256SUMS
@@ -92,9 +132,8 @@ jobs:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
 
       - name: Publish
-        if: steps.version.outputs.skip != 'true'
         run: |
-          gh release create "v${{ steps.version.outputs.version }}" dist/* \
-            --target "$GITHUB_SHA" --title "journal-server ${{ steps.version.outputs.version }}" --generate-notes
+          gh release create "v${{ needs.build.outputs.version }}" dist/* \
+            --target "$GITHUB_SHA" --title "journal-server ${{ needs.build.outputs.version }}" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

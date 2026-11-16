@@ -145,7 +145,8 @@ tests, then builds:
 
 - `journal-server-windows-amd64.exe`, `-linux-amd64`, `-linux-arm64`, `-darwin-amd64`, `-darwin-arm64`: the program
   for each system, marked as a release build (`version.Build` is `release`; only these update themselves),
-- `journal-server-setup-<version>.exe`, the Windows installer, with Inno Setup in Docker,
+- `journal-server-setup-<version>.exe`, the Windows installer, made by Inno Setup itself on a Windows runner (Inno
+  Setup under Wine in Docker stopped working on GitHub's Linux runners: every release from Nov 14, 2026 failed there),
 - `SHA256SUMS`: `# journal-server <version>`, then the sha256 of every file,
 - `SHA256SUMS.sig`: an ed25519 signature of `SHA256SUMS` by the release key.
 
