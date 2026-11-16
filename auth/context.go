@@ -5,12 +5,12 @@ import "context"
 type contextKey string
 
 const (
-	userContextKey     contextKey = "user"
-	clientIPContextKey contextKey = "client_ip"
-	deviceContextKey   contextKey = "device"
-	withholdContextKey contextKey = "withhold_private"
+	userContextKey      contextKey = "user"
+	clientIPContextKey  contextKey = "client_ip"
+	deviceContextKey    contextKey = "device"
+	withholdContextKey  contextKey = "withhold_private"
 	showAudioContextKey contextKey = "show_audio"
-	serialContextKey   contextKey = "serial"
+	serialContextKey    contextKey = "serial"
 )
 
 // WithSerial records the serial of the client certificate.
