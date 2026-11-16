@@ -22,3 +22,5 @@ models:
     fields:
       app:
         fieldName: AppName
+      phone:
+        fieldName: PhoneID

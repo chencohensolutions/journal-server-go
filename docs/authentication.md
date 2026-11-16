@@ -110,10 +110,10 @@ and expiry dates, the revocation date, and whether private files are kept from t
 
 ```
 $ journal-server devices hen
-USER   DEVICE        APP          KEY              REGISTERED   EXPIRES      STATUS   PRIVATE    SERIAL
-hen    Pixel 9 Pro   journal      STRONGBOX        2026-10-17   2027-10-17   active   sent       4fa107…
-hen    Pixel 9 Pro   audio-logs   STRONGBOX        2026-11-16   2027-11-16   active   sent       7d20b9…
-hen    iPad          journal      SECURE_ENCLAVE   2026-09-02   2027-09-02   active   withheld   9c3e52…
+USER   DEVICE           APP          KEY              REGISTERED   EXPIRES      STATUS   PRIVATE    SERIAL
+hen    Pixel 9 Pro      journal      STRONGBOX        2026-10-17   2027-10-17   active   sent       4fa107…
+hen      ⤷ same phone   audio-logs   STRONGBOX        2026-11-16   2027-11-16   active   sent       7d20b9…
+hen    iPad             journal      SECURE_ENCLAVE   2026-09-02   2027-09-02   active   withheld   9c3e52…
 
 $ journal-server private 9c3e52… withhold     # or allow
 $ journal-server revoke 9c3e52…
@@ -121,14 +121,24 @@ $ journal-server revoke 9c3e52…
 
 **Apps** (Nov 16, 2026): `enrollDevice` takes the app enrolling (`EnrollDeviceInput.app`, kept as `app` in the
 registry and shown as APP by `journal-server devices`): `journal` when it names none, or `audio-logs` (Audio Logs,
-the recording app, through the shared `shed` library). Two apps on one phone are two devices, each with its own key
-and certificate, so either can be revoked alone. A device of `audio-logs` sees the user's sound recordings whatever
+the recording app, through the shared `shed` library). Each app on a phone has its own key and certificate (Android
+ties a key to the app that made it). A device of `audio-logs` sees the user's sound recordings whatever
 the user hides ([Hidden collections](media.md#hidden-collections)); renewal keeps the app. `serverInfo.deviceApps` says
 a server takes the field; an older one refuses it as an unknown input field, and an app enrolls again without it.
 
-A user can have any number of devices. Each one enrolls with its own code (codes are single use)
-and gets its own key and certificate, all with `CN = <user>`, so they share the same data. Revoking
-one device does not affect the others.
+**One enrollment per phone** (owner's request, Nov 16, 2026): the user enrolls a phone once, with a code from
+`enroll-code`, in whichever app comes first. Another app on that phone asks the enrolled one, which asks the user to
+confirm and calls `siblingEnrollmentCode(app:)` over its certificate: a single-use code for that app only, valid for 2
+minutes (`enroll.CodeStore.CreateSibling`), which it hands to the other app on the phone. `enrollDevice` with it gives
+the new app its own certificate as one more app of the same phone: the registry keeps `phone` (the serial of the
+phone's first enrollment; `Device.PhoneID`), the phone's name, and its `withhold_private`. Used by another app the
+code answers `WRONG_APP`. `journal-server devices` lists a phone's apps together; `revoke` and `private` act on the
+whole phone (`Registry.RevokePhone`, `SetWithholdPrivate`). A renewed certificate stays in its phone.
+`serverInfo.siblingCodes` says a server makes them.
+
+A user can have any number of devices. Each phone enrolls with its own code (codes are single use)
+and each app gets its own key and certificate, all with `CN = <user>`, so they share the same data. Revoking
+one phone does not affect the others.
 
 A revoked serial is rejected with `401` on the next connection. Certificates that never went
 through enrollment (made with `scripts/generate-user-cert.ps1`) are not in the registry and cannot

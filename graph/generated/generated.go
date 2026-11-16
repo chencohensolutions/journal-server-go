@@ -297,33 +297,34 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		AcceptSwapOffer      func(childComplexity int, id string, passphrase *string, plain *bool) int
-		DeclineSwapOffer     func(childComplexity int, id string) int
-		EnrollDevice         func(childComplexity int, input model.EnrollDeviceInput) int
-		ForgetPerson         func(childComplexity int, id string) int
-		JoinSwap             func(childComplexity int, link string, name string, passphrase *string, plain *bool, offerQuota *int64) int
-		MarkFaces            func(childComplexity int, person string, yes []string, no []string) int
-		MergePeople          func(childComplexity int, into string, from []string) int
-		MoveFace             func(childComplexity int, face string, to *string) int
-		NameFace             func(childComplexity int, face string, name string) int
-		NamePerson           func(childComplexity int, id string, name string) int
-		PauseIndexing        func(childComplexity int) int
-		PrepareSearch        func(childComplexity int) int
-		RemoveSwap           func(childComplexity int, name string) int
-		RenewCertificate     func(childComplexity int, csr string, keyProtection model.KeyProtection) int
-		RevokeSwap           func(childComplexity int, name string, deleteFiles *bool) int
-		SetCall              func(childComplexity int, sha256 string, call model.CallInput) int
-		SetCamera            func(childComplexity int, make string, model string, mine bool) int
-		SetHiddenCollections func(childComplexity int, input model.HiddenCollectionsInput) int
-		SetNote              func(childComplexity int, sha256 string, note *string, baseVersion *string) int
-		SetPrivate           func(childComplexity int, sha256s []string, private bool) int
-		SetSoundFolder       func(childComplexity int, id string, as model.SoundFolderMark) int
-		SetTucked            func(childComplexity int, sha256s []string, tucked bool) int
-		StartCopy            func(childComplexity int, folder string) int
-		StartIndexing        func(childComplexity int) int
-		StartUpload          func(childComplexity int, input model.StartUploadInput) int
-		StopCopy             func(childComplexity int, folder string) int
-		SwapInvite           func(childComplexity int, name string, quota int64) int
+		AcceptSwapOffer       func(childComplexity int, id string, passphrase *string, plain *bool) int
+		DeclineSwapOffer      func(childComplexity int, id string) int
+		EnrollDevice          func(childComplexity int, input model.EnrollDeviceInput) int
+		ForgetPerson          func(childComplexity int, id string) int
+		JoinSwap              func(childComplexity int, link string, name string, passphrase *string, plain *bool, offerQuota *int64) int
+		MarkFaces             func(childComplexity int, person string, yes []string, no []string) int
+		MergePeople           func(childComplexity int, into string, from []string) int
+		MoveFace              func(childComplexity int, face string, to *string) int
+		NameFace              func(childComplexity int, face string, name string) int
+		NamePerson            func(childComplexity int, id string, name string) int
+		PauseIndexing         func(childComplexity int) int
+		PrepareSearch         func(childComplexity int) int
+		RemoveSwap            func(childComplexity int, name string) int
+		RenewCertificate      func(childComplexity int, csr string, keyProtection model.KeyProtection) int
+		RevokeSwap            func(childComplexity int, name string, deleteFiles *bool) int
+		SetCall               func(childComplexity int, sha256 string, call model.CallInput) int
+		SetCamera             func(childComplexity int, make string, model string, mine bool) int
+		SetHiddenCollections  func(childComplexity int, input model.HiddenCollectionsInput) int
+		SetNote               func(childComplexity int, sha256 string, note *string, baseVersion *string) int
+		SetPrivate            func(childComplexity int, sha256s []string, private bool) int
+		SetSoundFolder        func(childComplexity int, id string, as model.SoundFolderMark) int
+		SetTucked             func(childComplexity int, sha256s []string, tucked bool) int
+		SiblingEnrollmentCode func(childComplexity int, app string) int
+		StartCopy             func(childComplexity int, folder string) int
+		StartIndexing         func(childComplexity int) int
+		StartUpload           func(childComplexity int, input model.StartUploadInput) int
+		StopCopy              func(childComplexity int, folder string) int
+		SwapInvite            func(childComplexity int, name string, quota int64) int
 	}
 
 	MySwap struct {
@@ -428,6 +429,7 @@ type ComplexityRoot struct {
 		Previews          func(childComplexity int) int
 		RenewCertificates func(childComplexity int) int
 		Search            func(childComplexity int) int
+		SiblingCodes      func(childComplexity int) int
 		Similar           func(childComplexity int) int
 		SoundFolders      func(childComplexity int) int
 		Swap              func(childComplexity int) int
@@ -435,6 +437,12 @@ type ComplexityRoot struct {
 		TuckedAway        func(childComplexity int) int
 		Version           func(childComplexity int) int
 		VideoFrames       func(childComplexity int) int
+	}
+
+	SiblingCode struct {
+		App       func(childComplexity int) int
+		Code      func(childComplexity int) int
+		ExpiresAt func(childComplexity int) int
 	}
 
 	SimilarHit struct {
@@ -524,6 +532,7 @@ type MediaResolver interface {
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
 	RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error)
+	SiblingEnrollmentCode(ctx context.Context, app string) (model.SiblingCodeResult, error)
 	SetCall(ctx context.Context, sha256 string, call model.CallInput) (*model.Media, error)
 	SetCamera(ctx context.Context, make string, model string, mine bool) ([]*model.CameraModel, error)
 	StartCopy(ctx context.Context, folder string) (*model.DataCopy, error)
@@ -1869,6 +1878,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetTucked(childComplexity, args["sha256s"].([]string), args["tucked"].(bool)), true
+	case "Mutation.siblingEnrollmentCode":
+		if e.ComplexityRoot.Mutation.SiblingEnrollmentCode == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_siblingEnrollmentCode_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SiblingEnrollmentCode(childComplexity, args["app"].(string)), true
 	case "Mutation.startCopy":
 		if e.ComplexityRoot.Mutation.StartCopy == nil {
 			break
@@ -2407,6 +2427,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Search(childComplexity), true
+	case "ServerInfo.siblingCodes":
+		if e.ComplexityRoot.ServerInfo.SiblingCodes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.SiblingCodes(childComplexity), true
 	case "ServerInfo.similar":
 		if e.ComplexityRoot.ServerInfo.Similar == nil {
 			break
@@ -2449,6 +2475,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.VideoFrames(childComplexity), true
+
+	case "SiblingCode.app":
+		if e.ComplexityRoot.SiblingCode.App == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiblingCode.App(childComplexity), true
+	case "SiblingCode.code":
+		if e.ComplexityRoot.SiblingCode.Code == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiblingCode.Code(childComplexity), true
+	case "SiblingCode.expiresAt":
+		if e.ComplexityRoot.SiblingCode.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiblingCode.ExpiresAt(childComplexity), true
 
 	case "SimilarHit.media":
 		if e.ComplexityRoot.SimilarHit.Media == nil {
@@ -3770,6 +3815,8 @@ type ServerInfo {
   notes: Boolean!
   "enrollDevice takes the app enrolling (EnrollDeviceInput.app), and devices of audio-logs see sound recordings."
   deviceApps: Boolean!
+  "An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone."
+  siblingCodes: Boolean!
 }
 
 type Mutation {
@@ -3782,6 +3829,23 @@ type Mutation {
   outside enrollment, or revoked.
   """
   renewCertificate(csr: String!, keyProtection: KeyProtection!): EnrollDeviceResult!
+  """
+  A one-time code for another app on the calling device's phone, so the user enrolls a phone once for all its apps.
+  The app already enrolled asks for it when the user confirms there, and hands it to the other app on the phone, which
+  enrolls with it (enrollDevice, with that app's name) within 2 minutes. Each app keeps its own key (Android ties a key
+  to the app that made it), but the server keeps them as one phone: one name, revoked and kept from private files
+  together. NOT_ENROLLED for a certificate made outside enrollment, or revoked.
+  """
+  siblingEnrollmentCode(app: String!): SiblingCodeResult!
+}
+
+union SiblingCodeResult = SiblingCode | EnrollmentRejected
+
+type SiblingCode {
+  "Redeemed by enrollDevice like a code from journal-server enroll-code, only by the app it names."
+  code: String!
+  app: String!
+  expiresAt: Time!
 }
 
 input EnrollDeviceInput {
@@ -3844,6 +3908,8 @@ enum EnrollmentRejectedReason {
   RATE_LIMITED
   "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
   NOT_ENROLLED
+  "enrollDevice with a sibling code made for another app (SiblingCode.app)."
+  WRONG_APP
 }
 `, BuiltIn: false},
 	{Name: "../schema/search.graphql", Input: `# --- Text search ----------------------------------------------------------------
@@ -4824,6 +4890,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_notes(ctx, field)
 	case "deviceApps":
 		return ec.fieldContext_ServerInfo_deviceApps(ctx, field)
+	case "siblingCodes":
+		return ec.fieldContext_ServerInfo_siblingCodes(ctx, field)
 	case "audio":
 		return ec.fieldContext_ServerInfo_audio(ctx, field)
 	case "encodesWav":
@@ -5531,6 +5599,20 @@ func (ec *executionContext) field_Mutation_setTucked_args(ctx context.Context, r
 		return nil, err
 	}
 	args["tucked"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_siblingEnrollmentCode_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "app",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["app"] = arg0
 	return args, nil
 }
 
@@ -10207,6 +10289,50 @@ func (ec *executionContext) fieldContext_Mutation_renewCertificate(ctx context.C
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_siblingEnrollmentCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_siblingEnrollmentCode(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SiblingEnrollmentCode(ctx, fc.Args["app"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.SiblingCodeResult) graphql.Marshaler {
+			return ec.marshalNSiblingCodeResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSiblingCodeResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_siblingEnrollmentCode(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type SiblingCodeResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_siblingEnrollmentCode_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_setCall(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13255,6 +13381,29 @@ func (ec *executionContext) fieldContext_ServerInfo_deviceApps(_ context.Context
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_siblingCodes(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_siblingCodes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SiblingCodes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_siblingCodes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _ServerInfo_audio(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13524,6 +13673,75 @@ func (ec *executionContext) fieldContext_ServerInfo_swap(_ context.Context, fiel
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _SiblingCode_code(ctx context.Context, field graphql.CollectedField, obj *model.SiblingCode) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SiblingCode_code(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Code, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SiblingCode_code(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SiblingCode", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SiblingCode_app(ctx context.Context, field graphql.CollectedField, obj *model.SiblingCode) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SiblingCode_app(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.App, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SiblingCode_app(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SiblingCode", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SiblingCode_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.SiblingCode) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SiblingCode_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SiblingCode_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SiblingCode", field, false, false, errors.New("field of type Time does not have child fields"))
 }
 
 func (ec *executionContext) _SimilarHit_media(ctx context.Context, field graphql.CollectedField, obj *model.SimilarHit) (ret graphql.Marshaler) {
@@ -16270,6 +16488,33 @@ func (ec *executionContext) _SetNoteResult(ctx context.Context, sel ast.Selectio
 	}
 }
 
+func (ec *executionContext) _SiblingCodeResult(ctx context.Context, sel ast.SelectionSet, obj model.SiblingCodeResult) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.SiblingCode:
+		return ec._SiblingCode(ctx, sel, &obj)
+	case *model.SiblingCode:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._SiblingCode(ctx, sel, obj)
+	case model.EnrollmentRejected:
+		return ec._EnrollmentRejected(ctx, sel, &obj)
+	case *model.EnrollmentRejected:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._EnrollmentRejected(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of SiblingCodeResult must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
 func (ec *executionContext) _StartUploadResult(ctx context.Context, sel ast.SelectionSet, obj model.StartUploadResult) graphql.Marshaler {
 	switch obj := (obj).(type) {
 	case nil:
@@ -17124,7 +17369,7 @@ func (ec *executionContext) _EnrollmentPreview(ctx context.Context, sel ast.Sele
 	return out
 }
 
-var enrollmentRejectedImplementors = []string{"EnrollmentRejected", "EnrollmentPreviewResult", "EnrollDeviceResult"}
+var enrollmentRejectedImplementors = []string{"EnrollmentRejected", "SiblingCodeResult", "EnrollmentPreviewResult", "EnrollDeviceResult"}
 
 func (ec *executionContext) _EnrollmentRejected(ctx context.Context, sel ast.SelectionSet, obj *model.EnrollmentRejected) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, enrollmentRejectedImplementors)
@@ -18155,6 +18400,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "renewCertificate":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_renewCertificate(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "siblingEnrollmentCode":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_siblingEnrollmentCode(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -19398,6 +19650,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "siblingCodes":
+			out.Values[i] = ec._ServerInfo_siblingCodes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "audio":
 			out.Values[i] = ec._ServerInfo_audio(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -19447,6 +19704,55 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "swap":
 			out.Values[i] = ec._ServerInfo_swap(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var siblingCodeImplementors = []string{"SiblingCode", "SiblingCodeResult"}
+
+func (ec *executionContext) _SiblingCode(ctx context.Context, sel ast.SelectionSet, obj *model.SiblingCode) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, siblingCodeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SiblingCode")
+		case "code":
+			out.Values[i] = ec._SiblingCode_code(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "app":
+			out.Values[i] = ec._SiblingCode_app(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._SiblingCode_expiresAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -21281,6 +21587,16 @@ func (ec *executionContext) marshalNSha2562ᚕstringᚄ(ctx context.Context, sel
 	}
 
 	return ret
+}
+
+func (ec *executionContext) marshalNSiblingCodeResult2githubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSiblingCodeResult(ctx context.Context, sel ast.SelectionSet, v model.SiblingCodeResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SiblingCodeResult(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNSimilarHit2ᚕᚖgithubᚗcomᚋjournalᚋserverᚑgoᚋgraphᚋmodelᚐSimilarHitᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.SimilarHit) graphql.Marshaler {

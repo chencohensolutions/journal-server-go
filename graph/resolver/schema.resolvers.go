@@ -77,6 +77,18 @@ func (r *mutationResolver) RenewCertificate(ctx context.Context, csr string, key
 	}, nil
 }
 
+// SiblingEnrollmentCode is the resolver for the siblingEnrollmentCode field.
+func (r *mutationResolver) SiblingEnrollmentCode(ctx context.Context, app string) (model.SiblingCodeResult, error) {
+	serial := auth.SerialFromContext(ctx)
+	code, name, expiresAt, rejection := r.Enrollment.SiblingCode(serial, app)
+	if rejection != "" {
+		log.Printf("Sibling code for %s from certificate %s rejected: %s", app, serial, rejection)
+		return model.EnrollmentRejected{Reason: model.EnrollmentRejectedReason(rejection)}, nil
+	}
+	log.Printf("Sibling code for app %s made by certificate %s, until %s", name, serial, expiresAt.Format("15:04"))
+	return model.SiblingCode{Code: code, App: name, ExpiresAt: expiresAt}, nil
+}
+
 // EnrollmentPreview is the resolver for the enrollmentPreview field.
 func (r *queryResolver) EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error) {
 	preview, rejection := r.Enrollment.Preview(auth.ClientIPFromContext(ctx), code)
@@ -121,6 +133,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		TuckedAway:        true,
 		Notes:             true,
 		DeviceApps:        true,
+		SiblingCodes:      true,
 		Copies:            r.Resolver.Copies != nil,
 		PeerCopies:        r.Resolver.Copies != nil,
 		Audio:             true,

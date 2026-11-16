@@ -61,6 +61,8 @@ type ServerInfo {
   notes: Boolean!
   "enrollDevice takes the app enrolling (EnrollDeviceInput.app), and devices of audio-logs see sound recordings."
   deviceApps: Boolean!
+  "An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone."
+  siblingCodes: Boolean!
 }
 
 type Mutation {
@@ -73,6 +75,23 @@ type Mutation {
   outside enrollment, or revoked.
   """
   renewCertificate(csr: String!, keyProtection: KeyProtection!): EnrollDeviceResult!
+  """
+  A one-time code for another app on the calling device's phone, so the user enrolls a phone once for all its apps.
+  The app already enrolled asks for it when the user confirms there, and hands it to the other app on the phone, which
+  enrolls with it (enrollDevice, with that app's name) within 2 minutes. Each app keeps its own key (Android ties a key
+  to the app that made it), but the server keeps them as one phone: one name, revoked and kept from private files
+  together. NOT_ENROLLED for a certificate made outside enrollment, or revoked.
+  """
+  siblingEnrollmentCode(app: String!): SiblingCodeResult!
+}
+
+union SiblingCodeResult = SiblingCode | EnrollmentRejected
+
+type SiblingCode {
+  "Redeemed by enrollDevice like a code from journal-server enroll-code, only by the app it names."
+  code: String!
+  app: String!
+  expiresAt: Time!
 }
 
 input EnrollDeviceInput {
@@ -135,4 +154,6 @@ enum EnrollmentRejectedReason {
   RATE_LIMITED
   "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
   NOT_ENROLLED
+  "enrollDevice with a sibling code made for another app (SiblingCode.app)."
+  WRONG_APP
 }

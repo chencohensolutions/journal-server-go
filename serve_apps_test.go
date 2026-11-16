@@ -25,6 +25,16 @@ import (
 func (e *testEnv) enrolledAppClient(t *testing.T, user, app string) (*http.Client, string) {
 	t.Helper()
 	code, _ := e.enrollment.Codes.Create(user)
+	client, serial, result := e.enrollWithCode(t, code, app)
+	if result.Typename != "EnrolledDevice" {
+		t.Fatalf("enroll = %+v", result)
+	}
+	return client, serial
+}
+
+// enrollWithCode enrolls app with code, and returns its client and serial when enrolled, and the result.
+func (e *testEnv) enrollWithCode(t *testing.T, code, app string) (*http.Client, string, enrollResult) {
+	t.Helper()
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	csr, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "device"}}, key)
 	resp := e.graphql(t, e.client(nil), enrollMutation, map[string]any{"input": map[string]any{
@@ -37,10 +47,84 @@ func (e *testEnv) enrolledAppClient(t *testing.T, user, app string) (*http.Clien
 	var result enrollResult
 	json.Unmarshal(resp.Data["enrollDevice"], &result)
 	if result.Typename != "EnrolledDevice" {
-		t.Fatalf("enroll = %+v", result)
+		return nil, "", result
 	}
 	certDER, _ := base64.StdEncoding.DecodeString(result.Certificate)
-	return e.client(&tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key}), result.Serial
+	return e.client(&tls.Certificate{Certificate: [][]byte{certDER}, PrivateKey: key}), result.Serial, result
+}
+
+// TestOneEnrollmentPerPhone enrolls journal with a code from enroll-code, then Audio Logs with a sibling code journal
+// asked for: Audio Logs joins journal's phone (its name and its choices), the code works only for the app it names
+// and only once, and revoking either revokes the phone.
+func TestOneEnrollmentPerPhone(t *testing.T) {
+	env := newTestEnv(t)
+	journal, journalSerial := env.enrolledAppClient(t, "hen", "")
+	if _, err := env.enrollment.Registry.SetWithholdPrivate(journalSerial, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(env.graphql(t, journal, `{ serverInfo { siblingCodes } }`, nil).Data["serverInfo"]); got != `{"siblingCodes":true}` {
+		t.Fatalf("serverInfo = %s", got)
+	}
+
+	sibling := func(app string) (code, name string) {
+		resp := env.graphql(t, journal, `mutation($a: String!) { siblingEnrollmentCode(app: $a) { __typename ... on SiblingCode { code app expiresAt } } }`,
+			map[string]any{"a": app})
+		if len(resp.Errors) > 0 {
+			t.Fatalf("siblingEnrollmentCode: %+v", resp.Errors)
+		}
+		var result struct {
+			Typename string `json:"__typename"`
+			Code     string
+			App      string
+		}
+		json.Unmarshal(resp.Data["siblingEnrollmentCode"], &result)
+		if result.Typename != "SiblingCode" {
+			t.Fatalf("siblingEnrollmentCode = %+v", result)
+		}
+		return result.Code, result.App
+	}
+
+	code, app := sibling("Audio-Logs")
+	if app != "audio-logs" {
+		t.Errorf("app = %q", app)
+	}
+	if _, _, result := env.enrollWithCode(t, code, "journal"); result.Reason != "WRONG_APP" {
+		t.Fatalf("another app with the code: %+v", result)
+	}
+	audioLogs, audioSerial, result := env.enrollWithCode(t, code, "audio-logs")
+	if audioLogs == nil {
+		t.Fatalf("Audio Logs with the sibling code: %+v", result)
+	}
+	if _, _, again := env.enrollWithCode(t, code, "audio-logs"); again.Reason != "INVALID_CODE" {
+		t.Fatalf("the code again: %+v", again)
+	}
+	phone, _ := env.enrollment.Registry.Find(journalSerial)
+	device, _ := env.enrollment.Registry.Find(audioSerial)
+	if device.PhoneID() != phone.PhoneID() || device.Name != phone.Name || !device.WithholdPrivate || device.AppName() != "audio-logs" {
+		t.Fatalf("Audio Logs' device = %+v, journal's = %+v", device, phone)
+	}
+	if got := string(env.graphql(t, audioLogs, `{ serverInfo { deviceApps } }`, nil).Data["serverInfo"]); got != `{"deviceApps":true}` {
+		t.Fatalf("Audio Logs can't reach the server: %s", got)
+	}
+
+	// A third app gets its code from Audio Logs, and joins the same phone.
+	resp := env.graphql(t, audioLogs, `mutation { siblingEnrollmentCode(app: "notes") { ... on SiblingCode { code } } }`, nil)
+	var third struct{ Code string }
+	json.Unmarshal(resp.Data["siblingEnrollmentCode"], &third)
+	_, notesSerial, _ := env.enrollWithCode(t, third.Code, "notes")
+	if d, _ := env.enrollment.Registry.Find(notesSerial); d.PhoneID() != phone.PhoneID() {
+		t.Fatalf("the third app's phone = %q, want %q", d.PhoneID(), phone.PhoneID())
+	}
+
+	// Revoking Audio Logs revokes the phone: journal and the third app too.
+	if _, err := env.enrollment.Registry.RevokePhone(audioSerial, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, serial := range []string{journalSerial, audioSerial, notesSerial} {
+		if !env.enrollment.Registry.IsRevoked(serial) {
+			t.Errorf("%s isn't revoked", serial)
+		}
+	}
 }
 
 // TestAudioLogsSeesSoundRecordings enrolls journal and Audio Logs on one phone: the registry tells them apart, and

@@ -18,6 +18,8 @@ const (
 	RejectRateLimited Rejection = "RATE_LIMITED"
 	// A renewal from a certificate the registry doesn't know (made outside enrollment), or revoked.
 	RejectNotEnrolled Rejection = "NOT_ENROLLED"
+	// A sibling code used by another app than the one it was made for.
+	RejectWrongApp Rejection = "WRONG_APP"
 )
 
 // RenewBefore is how long before its certificate expires a device renews it.
@@ -59,7 +61,21 @@ func (s *Service) Preview(clientIP, code string) (Preview, Rejection) {
 		s.limiter.Fail(clientIP)
 		return Preview{}, RejectInvalidCode
 	}
-	return Preview(pending), ""
+	return Preview{User: pending.User, ExpiresAt: pending.ExpiresAt}, ""
+}
+
+// SiblingCode makes a code for another app on the phone of the enrolled device with serial, so the user enrolls a
+// phone once: the app already enrolled asks for it (the user confirms there) and hands it to the other app on the
+// phone, which enrolls with it as usual and joins the phone (Device.Phone).
+// It returns the code, the app's name as the server keeps it ("journal" for none) and when the code expires.
+func (s *Service) SiblingCode(serial, app string) (string, string, time.Time, Rejection) {
+	parent, ok := s.Registry.Find(serial)
+	if !ok || parent.RevokedAt != nil {
+		return "", "", time.Time{}, RejectNotEnrolled
+	}
+	clean := cleanAppName(app)
+	code, expiresAt := s.Codes.CreateSibling(parent.User, parent.PhoneID(), clean)
+	return code, Device{App: clean}.AppName(), expiresAt, ""
 }
 
 type Request struct {
@@ -86,10 +102,23 @@ func (s *Service) Enroll(clientIP string, req Request) (Enrolled, Rejection, err
 	if err != nil {
 		return Enrolled{}, RejectInvalidCSR, nil
 	}
-	pending, ok := s.Codes.Redeem(req.Code)
+	pending, ok := s.Codes.Peek(req.Code)
+	if ok && pending.Phone != "" && pending.App != cleanAppName(req.App) {
+		return Enrolled{}, RejectWrongApp, nil
+	}
+	pending, ok = s.Codes.Redeem(req.Code)
 	if !ok {
 		s.limiter.Fail(clientIP)
 		return Enrolled{}, RejectInvalidCode, nil
+	}
+	name := cleanDeviceName(req.DeviceName)
+	withhold := false
+	if pending.Phone != "" {
+		// One phone, one name (the one it enrolled with first), and the phone's choices.
+		if phone, found := s.Registry.Find(pending.Phone); found {
+			name = phone.Name
+			withhold = phone.WithholdPrivate
+		}
 	}
 
 	cert, err := s.Issuer.Issue(csr, pending.User)
@@ -99,11 +128,14 @@ func (s *Service) Enroll(clientIP string, req Request) (Enrolled, Rejection, err
 	device := Device{
 		Serial:        SerialString(cert.SerialNumber),
 		User:          pending.User,
-		Name:          cleanDeviceName(req.DeviceName),
+		Name:          name,
 		KeyProtection: req.KeyProtection,
 		RegisteredAt:  s.now().UTC(),
 		ExpiresAt:     cert.NotAfter.UTC(),
 		App:           cleanAppName(req.App),
+		Phone:         pending.Phone,
+		// Withholding private files is set per phone (Registry.SetWithholdPrivate).
+		WithholdPrivate: withhold,
 	}
 	if err := s.Registry.Add(device); err != nil {
 		return Enrolled{}, "", err
@@ -140,6 +172,7 @@ func (s *Service) Renew(serial string, csrDER []byte, keyProtection string) (Enr
 		WithholdPrivate: old.WithholdPrivate,
 		RenewedFrom:     old.Serial,
 		App:             old.App,
+		Phone:           old.PhoneID(),
 	}
 	if err := s.Registry.Add(device); err != nil {
 		return Enrolled{}, "", err

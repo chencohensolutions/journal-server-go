@@ -34,6 +34,10 @@ type SetNoteResult interface {
 	IsSetNoteResult()
 }
 
+type SiblingCodeResult interface {
+	IsSiblingCodeResult()
+}
+
 type StartUploadResult interface {
 	IsStartUploadResult()
 }
@@ -251,6 +255,8 @@ func (EnrollmentPreview) IsEnrollmentPreviewResult() {}
 type EnrollmentRejected struct {
 	Reason EnrollmentRejectedReason `json:"reason"`
 }
+
+func (EnrollmentRejected) IsSiblingCodeResult() {}
 
 func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
@@ -675,6 +681,8 @@ type ServerInfo struct {
 	Notes bool `json:"notes"`
 	// enrollDevice takes the app enrolling (EnrollDeviceInput.app), and devices of audio-logs see sound recordings.
 	DeviceApps bool `json:"deviceApps"`
+	// An enrolled app can get a sibling code for another app on its phone (siblingEnrollmentCode): one enrollment per phone.
+	SiblingCodes bool `json:"siblingCodes"`
 	// Sound recordings can be in the library (Media.kind AUDIO, Media.call, setCall).
 	Audio bool `json:"audio"`
 	// The server keeps an uploaded WAV as FLAC (ffmpeg is installed); without it, a WAV upload's last piece answers 503.
@@ -701,6 +709,15 @@ type ServerInfo struct {
 	// What this server offers for swaps.
 	Swap *SwapInfo `json:"swap"`
 }
+
+type SiblingCode struct {
+	// Redeemed by enrollDevice like a code from journal-server enroll-code, only by the app it names.
+	Code      string    `json:"code"`
+	App       string    `json:"app"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (SiblingCode) IsSiblingCodeResult() {}
 
 type SimilarHit struct {
 	Media *Media `json:"media"`
@@ -1092,6 +1109,8 @@ const (
 	EnrollmentRejectedReasonRateLimited EnrollmentRejectedReason = "RATE_LIMITED"
 	// renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again.
 	EnrollmentRejectedReasonNotEnrolled EnrollmentRejectedReason = "NOT_ENROLLED"
+	// enrollDevice with a sibling code made for another app (SiblingCode.app).
+	EnrollmentRejectedReasonWrongApp EnrollmentRejectedReason = "WRONG_APP"
 )
 
 var AllEnrollmentRejectedReason = []EnrollmentRejectedReason{
@@ -1099,11 +1118,12 @@ var AllEnrollmentRejectedReason = []EnrollmentRejectedReason{
 	EnrollmentRejectedReasonInvalidCsr,
 	EnrollmentRejectedReasonRateLimited,
 	EnrollmentRejectedReasonNotEnrolled,
+	EnrollmentRejectedReasonWrongApp,
 }
 
 func (e EnrollmentRejectedReason) IsValid() bool {
 	switch e {
-	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited, EnrollmentRejectedReasonNotEnrolled:
+	case EnrollmentRejectedReasonInvalidCode, EnrollmentRejectedReasonInvalidCsr, EnrollmentRejectedReasonRateLimited, EnrollmentRejectedReasonNotEnrolled, EnrollmentRejectedReasonWrongApp:
 		return true
 	}
 	return false

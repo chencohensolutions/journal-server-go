@@ -123,4 +123,6 @@ type Device {
   withholdPrivate: Boolean!
   "The app that enrolled it: journal, or audio-logs."
   app: String!
+  "The phone it is an app of: the serial of the phone's first enrollment. Its apps share it, and are revoked together."
+  phone: String!
 }

@@ -30,7 +30,7 @@ func (r *mutationResolver) CreateEnrollmentCode(ctx context.Context, user string
 
 // RevokeDevice is the resolver for the revokeDevice field.
 func (r *mutationResolver) RevokeDevice(ctx context.Context, serial string) (*enroll.Device, error) {
-	device, err := r.Enrollment.Registry.Revoke(strings.ToLower(serial), r.Now().UTC())
+	device, err := r.Enrollment.Registry.RevokePhone(strings.ToLower(serial), r.Now().UTC())
 	if err != nil {
 		return nil, err
 	}

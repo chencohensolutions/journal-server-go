@@ -30,6 +30,19 @@ type Device struct {
 	// The app that enrolled (EnrollDeviceInput.app): "journal" when it said none. Two apps on one phone are two
 	// devices, each with its own key and certificate.
 	App string `json:"app,omitempty"`
+	// The phone this certificate is one app of: the serial of the phone's first enrollment. Apps on one phone each
+	// have their own key (Android ties a key to the app that made it), but the user enrolls the phone once: the
+	// other apps enroll with a sibling code from an app already enrolled (SiblingCode), and join its phone. Empty
+	// for the first: PhoneID is then its own serial.
+	Phone string `json:"phone,omitempty"`
+}
+
+// PhoneID is the phone the device belongs to: one id for all its apps, and all the certificates they renewed.
+func (d Device) PhoneID() string {
+	if d.Phone == "" {
+		return d.Serial
+	}
+	return d.Phone
 }
 
 // The apps the server knows by name. Any other name is kept as it came, cleaned.
@@ -125,24 +138,64 @@ func (r *Registry) Revoke(serial string, at time.Time) (Device, error) {
 	return Device{}, ErrDeviceNotFound
 }
 
-// SetWithholdPrivate turns withholding private files from a device on or off.
+// RevokePhone revokes the device with serial and every other certificate of its phone (its other apps, and what
+// they renewed): the user enrolled the phone once, so it is revoked once. It returns the device with serial.
+func (r *Registry) RevokePhone(serial string, at time.Time) (Device, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	target := -1
+	for i := range r.devices {
+		if r.devices[i].Serial == serial {
+			target = i
+		}
+	}
+	if target < 0 {
+		return Device{}, ErrDeviceNotFound
+	}
+	previous := append([]Device(nil), r.devices...)
+	phone := r.devices[target].PhoneID()
+	for i := range r.devices {
+		if r.devices[i].PhoneID() == phone && r.devices[i].RevokedAt == nil {
+			r.devices[i].RevokedAt = &at
+		}
+	}
+	if err := r.save(); err != nil {
+		r.devices = previous
+		return Device{}, err
+	}
+	return r.devices[target], nil
+}
+
+// SetWithholdPrivate turns withholding private files from a phone on or off: the device with serial and its
+// phone's other apps alike.
 func (r *Registry) SetWithholdPrivate(serial string, withhold bool) (Device, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	target := -1
 	for i := range r.devices {
-		if r.devices[i].Serial != serial {
-			continue
+		if r.devices[i].Serial == serial {
+			target = i
 		}
-		if r.devices[i].WithholdPrivate != withhold {
-			r.devices[i].WithholdPrivate = withhold
-			if err := r.save(); err != nil {
-				r.devices[i].WithholdPrivate = !withhold
-				return Device{}, err
-			}
-		}
-		return r.devices[i], nil
 	}
-	return Device{}, ErrDeviceNotFound
+	if target < 0 {
+		return Device{}, ErrDeviceNotFound
+	}
+	previous := append([]Device(nil), r.devices...)
+	phone := r.devices[target].PhoneID()
+	changed := false
+	for i := range r.devices {
+		if r.devices[i].PhoneID() == phone && r.devices[i].WithholdPrivate != withhold {
+			r.devices[i].WithholdPrivate = withhold
+			changed = true
+		}
+	}
+	if changed {
+		if err := r.save(); err != nil {
+			r.devices = previous
+			return Device{}, err
+		}
+	}
+	return r.devices[target], nil
 }
 
 // Find returns the device with this certificate serial.
