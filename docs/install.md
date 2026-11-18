@@ -1,7 +1,8 @@
 # Installing the server on Windows
 
-`journal-server-setup-<version>.exe` installs the server on a Windows PC: a small installer that holds only the
-program and downloads the rest while it installs. Each release on GitHub has it (Releases, below), built from
+`journal-server-setup-<version>.exe` installs the server on a Windows PC: the program with ONNX Runtime,
+libvips and ffmpeg (about 100 MB), so it installs offline, as the Microsoft Store requires; setup then downloads the
+models. Each release on GitHub has it (Releases, below), built from
 `installer/journal-server.iss` with Inno Setup.
 
 Linux and macOS have no installer yet: each release has `journal-server-linux-amd64`, `-linux-arm64`,
@@ -14,9 +15,11 @@ In the folder chosen (`C:\JournalServer` by default; not Program Files, because 
 | | |
 |---|---|
 | `journal-server.exe` | the server, its admin commands (`enroll-code`, `devices`, `copy`, …), `journal-server import` (brings photos from folders or the cloud into a user's data folder; package `importcmd`) and `journal-server jxl` (keeps a user's JPEG photos as JPEG XL, losslessly; package `jxlcmd`) |
-| `onnxruntime\`, `models\` | downloaded: ONNX Runtime and every index's model (`bundle.ONNX`) |
-| `vips\` | downloaded: libvips with HEIC and libjxl, from MSYS2's packages (`bundle.Vips`) |
-| `ffmpeg\bin\` | downloaded: ffmpeg and ffprobe (`bundle.FFmpeg`, a pinned release of Gyan's build) |
+| `onnxruntime\` | in the installer: ONNX Runtime (`bundle.Runtime`) |
+| `vips\` | in the installer: libvips with HEIC and libjxl, from MSYS2's packages (`bundle.Vips`) |
+| `ffmpeg\bin\` | in the installer: ffmpeg and ffprobe (`bundle.FFmpeg`, a pinned release of Gyan's build) |
+| `libraries.json` | in the installer: which of those it shipped (`bundle.Libraries`, `scripts/bundle-libraries`), so setup keeps them |
+| `models\` | downloaded by setup: every index's model (`bundle.ONNX`) |
 | `config.json`, `certs\`, `devices.json` | the server's own: made by setup, or copied from the server it replaces |
 
 The folder is added to the PATH, so `journal-server` runs from any console. It changes to its own folder when the
@@ -39,11 +42,19 @@ runs in `%LOCALAPPDATA%\journal-server`.
 
 1. The wizard asks: **move my existing server** (the old server's folder) or **set up a new server** (the first
    user's name and data folder, which CA, and the search model's size).
-2. It copies the programs, then runs `journal-server setup` in a console, which writes the config and certificates
-   and downloads (about 3 GB with every model).
+2. It copies the programs and libraries, then runs `journal-server setup` in a console, which writes the config and
+   certificates and downloads the models (about 3 GB with every one). Setup keeps the libraries `libraries.json`
+   names, unless the program wants a newer ONNX Runtime or ffmpeg than the installer had (after an update); it
+   downloads those and records them. A folder without `libraries.json` gets every library downloaded, as before.
 3. `journal-server service install` sets up the **JournalServer** service: started automatically shortly after boot,
    before anyone logs in, and restarted if it stops on an error. It also adds the Windows Firewall rule
    "Journal server" for the port in `config.json`. Then `service start`.
+
+A **silent install** (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, how the Microsoft Store installs) of a new server
+can't ask, so it only copies the files. The Start menu's **Set up Journal server** then runs `journal-server setup
+--ask --dir <install folder>`: it asks for administrator rights, asks the wizard's questions in a console, runs setup,
+and installs and starts the service. Run on a server that is set up, it checks it and adds what is missing, like
+setup. A silent install over a server upgrades it as the wizard does, with setup's console hidden.
 
 The service starts in the install folder and writes its log to `server.log` there (Start menu: "Journal server
 log"). `journal-server service stop|start|uninstall` (as administrator) does what it says.
@@ -132,6 +143,32 @@ That is for trying the installer out; published releases come from GitHub (below
 It cross-compiles the program (no cgo) and compiles `installer/journal-server.iss` with Inno Setup 6 in
 Docker (`amake/innosetup`). On Windows: build the programs into `dist\` and run
 `ISCC.exe /DAppVersion=<version in version\VERSION> installer\journal-server.iss`.
+
+## Microsoft Store
+
+The installer goes on the Microsoft Store as an EXE app (Nov 18, 2026). The Store's rules for an EXE: signed with
+a code-signing certificate from a CA in Microsoft's Trusted Root Program (bought by the publisher), offline (hence the
+libraries in it), silent-installable, and kept at a URL whose file never changes. EXE apps update themselves, so
+`"update": "auto"` stays; each new version is also submitted, so new installs get it.
+
+The certificate chosen is Certum's Open Source Code Signing in the cloud (SimplySign), which signs on a PC with SimplySign Desktop rather than on
+GitHub's runners, so the Store's installer is made on Windows from a published release:
+
+```powershell
+scripts\store-installer.ps1 -Version <version> [-Certificate "<subject>"] -Upload
+```
+
+It downloads the release's `journal-server-windows-amd64.exe` (checked against `SHA256SUMS`), puts the libraries
+beside it (`scripts/bundle-libraries`), signs the program, builds the installer with `/DSign` (Inno Setup signs the
+installer and its uninstaller through the `journal` sign tool), checks the signature, and adds
+`journal-server-setup-<version>-signed.exe` to the release. That file is not in `SHA256SUMS`: servers update from
+the program, never the installer. It needs Go, Inno Setup 6 and the Windows SDK's signtool.
+
+In Partner Center (Apps and games, New product, EXE or MSI app), each version gets:
+
+- Package URL: `https://github.com/chencohensolutions/journal-server-go/releases/download/v<version>/journal-server-setup-<version>-signed.exe`
+- Architecture x64, installer parameters `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, and the installer's own exit
+  codes (0 is success; Inno Setup's others are listed in its documentation, "Setup Exit Codes").
 
 ## Releases
 

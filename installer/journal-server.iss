@@ -1,9 +1,17 @@
 ; Inno Setup script for the journal server on Windows (docs/install.md). Built by scripts/release.sh, or on
 ; Windows with: ISCC.exe /DAppVersion=<version> installer\journal-server.iss (after building dist\*.exe).
 ;
-; The installer copies the program, then runs `journal-server setup`, which writes config.json and the
-; certificates and downloads ONNX Runtime, the models, libvips and ffmpeg (so the installer stays small), and
-; `journal-server service install`, which sets up the service that starts the server at boot and the firewall rule.
+; The installer copies the program with ONNX Runtime, libvips and ffmpeg (put in Dist by scripts/bundle-libraries,
+; with libraries.json; the Microsoft Store takes only installers that work offline), then runs `journal-server setup`,
+; which writes config.json and the certificates and downloads the models, and `journal-server service install`, which
+; sets up the service that starts the server at boot and the firewall rule.
+;
+; A silent install (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART, as the Store installs) of a new server only copies the
+; files: the Start menu's "Set up Journal server" (journal-server setup --ask) then asks the wizard's questions in a
+; console. A silent install over a server upgrades it as the wizard does.
+;
+; /DSign with ISCC's /Sjournal=<sign command> $f signs the installer and its uninstaller (docs/install.md, "Microsoft
+; Store"); scripts/store-installer.ps1 does that on Windows.
 ; Uninstalling removes the programs and what was downloaded, never config.json, the certificates, devices.json or
 ; any data folder.
 
@@ -30,11 +38,20 @@ OutputDir={#Dist}
 OutputBaseFilename=journal-server-setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
+#ifdef Sign
+SignTool=journal
+SignedUninstaller=yes
+#endif
 WizardStyle=modern
 UninstallDisplayName=Journal server
 
 [Files]
 Source: "{#Dist}\journal-server.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Shipped so the install works offline; a build without them (scripts/release.sh) leaves setup to download them.
+Source: "{#Dist}\libraries.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#Dist}\onnxruntime\*"; DestDir: "{app}\onnxruntime"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{#Dist}\vips\*"; DestDir: "{app}\vips"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "{#Dist}\ffmpeg\*"; DestDir: "{app}\ffmpeg"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [InstallDelete]
 ; Before 1.2 the import and jxl were programs of their own; they are journal-server import and jxl now.
@@ -42,6 +59,7 @@ Type: files; Name: "{app}\journal-import.exe"
 Type: files; Name: "{app}\journal-jxl.exe"
 
 [Icons]
+Name: "{autoprograms}\Set up Journal server"; Filename: "{app}\journal-server.exe"; Parameters: "setup --ask --dir ""{app}"""; WorkingDir: "{app}"; Comment: "Set up the server (after a silent install), or check it and add what is missing"
 Name: "{autoprograms}\Journal server folder"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}"" && journal-server"; WorkingDir: "{app}"; Comment: "A console in the server's folder, for journal-server and its commands"
 Name: "{autoprograms}\Journal server log"; Filename: "{app}\server.log"
 
@@ -55,6 +73,7 @@ Type: filesandordirs; Name: "{app}\models"
 Type: filesandordirs; Name: "{app}\vips"
 Type: filesandordirs; Name: "{app}\ffmpeg"
 Type: files; Name: "{app}\admin.token"
+Type: files; Name: "{app}\libraries.json"
 ; What updates leave beside the program (docs/install.md, "Updates").
 Type: files; Name: "{app}\journal-server.exe.old"
 Type: files; Name: "{app}\journal-server.exe.new"
@@ -185,11 +204,18 @@ begin
   end;
 end;
 
-// Runs journal-server in a console window that stays open on an error, so its messages can be read.
+// Runs journal-server in a console window that stays open on an error, so its messages can be read; hidden, and
+// never waiting for a key, in a silent install.
 function RunServer(Parameters: String): Boolean;
 var
   Code: Integer;
 begin
+  if WizardSilent() then
+  begin
+    Result := Exec(ExpandConstant('{app}\journal-server.exe'), Parameters, ExpandConstant('{app}'), SW_HIDE,
+      ewWaitUntilTerminated, Code) and (Code = 0);
+    exit;
+  end;
   Result := Exec(ExpandConstant('{cmd}'),
     '/c ""' + ExpandConstant('{app}\journal-server.exe') + '" ' + Parameters + ' || (echo. & echo Setup did not finish. Run the installer again to go on. & pause & exit /b 1)"',
     ExpandConstant('{app}'), SW_SHOW, ewWaitUntilTerminated, Code) and (Code = 0);
@@ -226,17 +252,20 @@ begin
   if CurStep <> ssPostInstall then
     exit;
   AddToPath(ExpandConstant('{app}'));
+  // A silent install of a new server has no answers to set it up with: "Set up Journal server" asks them.
+  if WizardSilent() and not IsUpgrade() then
+    exit;
   WizardForm.StatusLabel.Caption := 'Setting up the server and downloading what it needs (this takes a while)...';
   if not RunServer(SetupParameters()) then
   begin
-    MsgBox('The server''s setup did not finish (see the console window). The programs are installed; run this ' +
-      'installer again to go on where it stopped.', mbError, MB_OK);
+    SuppressibleMsgBox('The server''s setup did not finish (see the console window). The programs are installed; ' +
+      'run this installer, or "Set up Journal server", again to go on where it stopped.', mbError, MB_OK, IDOK);
     exit;
   end;
   WizardForm.StatusLabel.Caption := 'Starting the server...';
   if not (RunServer('service install') and RunServer('service start')) then
-    MsgBox('The server is set up but its service did not start. Check server.log in ' + ExpandConstant('{app}') + '.',
-      mbError, MB_OK);
+    SuppressibleMsgBox('The server is set up but its service did not start. Check server.log in ' +
+      ExpandConstant('{app}') + '.', mbError, MB_OK, IDOK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

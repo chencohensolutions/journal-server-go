@@ -91,6 +91,18 @@ jobs:
           name: programs
           path: dist/
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # ONNX Runtime, libvips and ffmpeg go inside the installer: the Microsoft Store takes only installers that work
+      # offline (docs/install.md, "Microsoft Store"). Setup still downloads the models.
+      - name: Libraries
+        shell: pwsh
+        run: |
+          go run ./scripts/bundle-libraries --out dist\installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Installer
         shell: pwsh
         run: |
