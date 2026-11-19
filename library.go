@@ -46,6 +46,9 @@ func openLibrary(config auth.AppConfig) (*media.Library, error) {
 	for _, user := range config.Users {
 		if store := library.Store(user.Username); store != nil {
 			store.CachePreviews = user.PreviewCache
+			if err := store.SignCursors(); err != nil {
+				return nil, fmt.Errorf("user %s: the feed's key: %w", user.Username, err)
+			}
 			store.FFmpeg, store.FFprobe = ffmpeg, ffprobe
 		}
 	}

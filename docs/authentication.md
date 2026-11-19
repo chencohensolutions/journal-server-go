@@ -30,7 +30,7 @@ journal-server enroll-code hen
 |---|---|---|
 | `POST /query` (GraphQL) | Only root fields marked `@public` (`enrollmentPreview`, `enrollDevice`). Everything else, including introspection, returns `client certificate required for <field>` with `extensions.code` `UNAUTHORIZED`. | Every field |
 | `PUT /upload/…`, `GET /media/…` | `401` | That user's own data folder (see media.md) |
-| `GET /` (playground) | Allowed (it can only call `@public` fields without a certificate) | Allowed |
+| `GET /` (playground) | Only with `"playground": true` in config.json (off by default since Nov 19, 2026); it can only call `@public` fields without a certificate | The same |
 | Admin API (`admin_addr`) | Loopback only, needs the admin token | n/a |
 
 How it is enforced:
@@ -40,8 +40,14 @@ How it is enforced:
    handshake fails.
 2. **HTTP** (`middleware.go`, `identify`): a certificate's subject CN must be a `username` in
    `config.json` (enrollment signs `CN=<username>`, taken from the code, never from the device), and
-   its serial must not be revoked in `devices.json`; otherwise `401`. The user is put in the request
-   context. The media routes additionally reject requests without a certificate.
+   its serial must not be revoked in `devices.json`; otherwise `401`. With `"enrolled_only": true` in config.json
+   (what setup writes for new servers since Nov 19, 2026) the serial must also be in the registry, so a certificate
+   the CA signed outside enrollment is refused; servers set up before then can add it once their devices are all
+   enrolled (`journal-server devices` lists them). The user is put in the request context. The media routes
+   additionally reject requests without a certificate.
+4. **Request size** (`limitBody`): a request without a certificate may send at most 64 KB to `/query`, one with a
+   certificate 8 MB; a query costs at most 5000 by gqlgen's complexity count, and there are no multipart uploads on
+   `/query` (files go to `/upload`).
 3. **GraphQL** (`auth/access.go`, `RequireUserUnlessPublic`): a root-field middleware. Anonymous
    requests may only reach fields whose schema definition carries `@public`. This is
    **deny by default**: a new query or mutation needs a certificate unless you mark it `@public`.
@@ -77,8 +83,9 @@ Created by `journal-server enroll-code <user>` (`enroll/codes.go`):
 - `enrollmentPreview` looks a code up without using it. `enrollDevice` uses it up atomically (lookup
   and delete under one lock), so two racing requests cannot both use it. A malformed certificate
   request is rejected *before* the code is used, so a client bug does not burn the code.
-- **Guess limit:** 5 wrong codes per client IP per minute, counted across `enrollmentPreview` and
-  `enrollDevice`. After that, both return `RATE_LIMITED` until the minute has passed.
+- **Guess limit:** 5 wrong codes per client IP per minute (IPv6 counted per /64 network, since one connection
+  has billions of addresses), counted across `enrollmentPreview` and `enrollDevice`. After that, both return
+  `RATE_LIMITED` until the minute has passed. The limiter forgets old entries once it keeps 10,000.
 - Wrong, expired and already used codes all return the same `INVALID_CODE`, so guessing reveals nothing.
 
 ## Issued certificates
@@ -96,7 +103,8 @@ Signed by `client_ca` with `client_ca_key` (`enroll/issuer.go`):
   and records it in the registry with `renewed_from`. The old certificate works until the new one is first used
   (`identify` then revokes it, `Registry.UseRenewal`), so a device that fails to switch keeps working. A
   certificate made outside enrollment, or revoked, gets `NOT_ENROLLED`. A certificate that expired can't renew:
-  enroll the device again.
+  enroll the device again. Since Nov 19, 2026 a renewal before the last 60 days, or a sixth renewal of the same
+  certificate's line, gets `RATE_LIMITED`: a stolen certificate can't renew itself into many new ones.
 - The same CA signs **peer** certificates, for other journal servers that keep copies here ([peers.md](peers.md)):
   `CN` is the invite's name and `OU=journal-peer`. `identify` refuses a certificate with that OU on every route but
   `/peer/`, so a peer named like a user is never that user.
@@ -134,7 +142,8 @@ confirm and calls `siblingEnrollmentCode(app:)` over its certificate: a single-u
 minutes (`enroll.CodeStore.CreateSibling`), which it hands to the other app on the phone. `enrollDevice` with it gives
 the new app its own certificate as one more app of the same phone: the registry keeps `phone` (the serial of the
 phone's first enrollment; `Device.PhoneID`), the phone's name, and its `withhold_private`. Used by another app the
-code answers `WRONG_APP`. `journal-server devices` lists a phone's apps together; `revoke` and `private` act on the
+code answers `WRONG_APP`. A phone makes at most 10 sibling codes an hour (`RATE_LIMITED` after that).
+`journal-server devices` lists a phone's apps together; `revoke` and `private` act on the
 whole phone (`Registry.RevokePhone`, `SetWithholdPrivate`). A renewed certificate stays in its phone.
 `serverInfo.siblingCodes` says a server makes them.
 
@@ -142,7 +151,10 @@ A user can have any number of devices. Each phone enrolls with its own code (cod
 and each app gets its own key and certificate, all with `CN = <user>`, so they share the same data. Revoking
 one phone does not affect the others.
 
-A revoked serial is rejected with `401` on the next connection. Certificates that never went
+A revoked serial is rejected with `401` on the next connection. Revoked serials are also kept in
+`devices.revoked.json` beside `devices.json` (Nov 19, 2026), read at start, so a lost or replaced `devices.json`
+doesn't bring a revoked phone back; a damaged one stops the server rather than letting everyone in. Moving a server
+(`setup --move-from`) copies it too. Certificates that never went
 through enrollment (made with `scripts/generate-user-cert.ps1`) are not in the registry and cannot
 be revoked this way. To lock those out, remove the user from `config.json` or replace the CA.
 
@@ -206,6 +218,8 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
   "devices_file": "devices.json",               // optional (default)
   "admin_addr": "127.0.0.1:8081",               // optional (default), must be loopback
   "admin_token_file": "admin.token",            // optional (default)
+  "enrolled_only": true,                        // only certificates in devices.json (new servers; see Access rules)
+  "playground": false,                          // optional: serve the GraphQL playground at /
   "peers_dir": "certs/peers",                   // optional (default): the peers our copies go to (docs/peers.md)
   "peers_folder": "F:/Peers",                   // optional: keep other servers' copies here; off without it
   "peers_file": "peers.json",                   // optional (default): those servers
@@ -215,7 +229,8 @@ admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphq
 
 `client_ca_key` is the most sensitive file on the server: anyone holding it can mint certificates
 for any user. It now has to sit next to the running server, so keep it readable only by the account
-that runs the server.
+that runs the server. The Windows installer leaves the server's folder to SYSTEM and Administrators
+([install.md](install.md), "Who may open the server's folder").
 
 ## CA and server certificate
 

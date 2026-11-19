@@ -80,6 +80,11 @@ func AssetName(goos, goarch string) string {
 	return name
 }
 
+// AutoInstallAfter is how old a release is before servers install it by themselves: time for the owner to notice a
+// release they didn't make (anything that reaches main is built and signed) and withdraw it. journal-server update
+// installs it at once.
+const AutoInstallAfter = 3 * 24 * time.Hour
+
 // Updater talks to one repository's releases.
 type Updater struct {
 	// API is GitHub's API ("https://api.github.com"); tests point it elsewhere.
@@ -104,8 +109,11 @@ type Release struct {
 	Version string
 	Tag     string
 	URL     string // the release's page
-	assets  map[string]string
-	sums    map[string]string
+	// Published is when GitHub published it (servers install a release by themselves only once it is a few days
+	// old: AutoInstallAfter).
+	Published time.Time
+	assets    map[string]string
+	sums      map[string]string
 }
 
 // Latest finds the newest release, checks its signature and returns it. It doesn't compare versions; see Newer.
@@ -114,9 +122,10 @@ func (u *Updater) Latest(ctx context.Context) (*Release, error) {
 		return nil, errors.New("this build has no release key to check releases with")
 	}
 	var answer struct {
-		Tag    string `json:"tag_name"`
-		URL    string `json:"html_url"`
-		Assets []struct {
+		Tag       string    `json:"tag_name"`
+		URL       string    `json:"html_url"`
+		Published time.Time `json:"published_at"`
+		Assets    []struct {
 			Name string `json:"name"`
 			URL  string `json:"browser_download_url"`
 		} `json:"assets"`
@@ -128,7 +137,7 @@ func (u *Updater) Latest(ctx context.Context) (*Release, error) {
 	if err := json.Unmarshal(body, &answer); err != nil {
 		return nil, fmt.Errorf("the latest release: %w", err)
 	}
-	r := &Release{Tag: answer.Tag, URL: answer.URL, assets: map[string]string{}}
+	r := &Release{Tag: answer.Tag, URL: answer.URL, Published: answer.Published, assets: map[string]string{}}
 	for _, a := range answer.Assets {
 		r.assets[a.Name] = a.URL
 	}

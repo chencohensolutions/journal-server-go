@@ -143,7 +143,16 @@ func (im *importer) review(ctx context.Context, browser bool) {
 	mux.HandleFunc("GET /info", r.info)
 	mux.HandleFunc("GET /preview", r.preview)
 	mux.HandleFunc("POST /decide", r.decide)
-	server := &http.Server{Handler: mux}
+	// Only the address it was opened at: a web page that points its own name at 127.0.0.1 (DNS rebinding) sends its
+	// own name as Host, and is refused, so it can't read the photos or move files.
+	address := listener.Addr().String()
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Host != address {
+			http.Error(w, "not this page's address", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, req)
+	})}
 	go func() {
 		<-ctx.Done()
 		server.Close()

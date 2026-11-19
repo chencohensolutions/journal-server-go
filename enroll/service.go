@@ -4,6 +4,7 @@ package enroll
 
 import (
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -25,6 +26,22 @@ const (
 // RenewBefore is how long before its certificate expires a device renews it.
 var RenewBefore = 30 * 24 * time.Hour
 
+// renewEarliest is how long before its certificate expires the server renews it at the earliest: twice the window the
+// apps renew in, for a clock that is off. Earlier, a renewal is refused (RATE_LIMITED), so a stolen certificate can't
+// be made to last for ever by renewing it.
+var renewEarliest = 2 * RenewBefore
+
+// maxRenewals is how many certificates one certificate may be renewed to: a renewal that failed part way is tried
+// again (the app keeps the old one until the new one works), but no more often than this.
+const maxRenewals = 5
+
+// Sibling codes a phone may ask for in siblingWindow: a code is asked when the user confirms in the app, a few times
+// at most.
+const (
+	maxSiblingCodes = 10
+	siblingWindow   = time.Hour
+)
+
 const maxDeviceNameLength = 64
 
 type Service struct {
@@ -33,6 +50,9 @@ type Service struct {
 	Registry *Registry
 	limiter  *failureLimiter
 	now      func() time.Time
+
+	mu       sync.Mutex
+	siblings map[string][]time.Time // sibling codes asked, by phone
 }
 
 func NewService(issuer *Issuer, registry *Registry, now func() time.Time) *Service {
@@ -73,9 +93,34 @@ func (s *Service) SiblingCode(serial, app string) (string, string, time.Time, Re
 	if !ok || parent.RevokedAt != nil {
 		return "", "", time.Time{}, RejectNotEnrolled
 	}
+	if !s.allowSibling(parent.PhoneID()) {
+		return "", "", time.Time{}, RejectRateLimited
+	}
 	clean := cleanAppName(app)
 	code, expiresAt := s.Codes.CreateSibling(parent.User, parent.PhoneID(), clean)
 	return code, Device{App: clean}.AppName(), expiresAt, ""
+}
+
+// allowSibling counts a sibling code for phone, and reports whether it is within maxSiblingCodes in siblingWindow.
+func (s *Service) allowSibling(phone string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.siblings == nil {
+		s.siblings = map[string][]time.Time{}
+	}
+	now := s.now()
+	var recent []time.Time
+	for _, t := range s.siblings[phone] {
+		if now.Sub(t) < siblingWindow {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= maxSiblingCodes {
+		s.siblings[phone] = recent
+		return false
+	}
+	s.siblings[phone] = append(recent, now)
+	return true
 }
 
 type Request struct {
@@ -150,6 +195,18 @@ func (s *Service) Renew(serial string, csrDER []byte, keyProtection string) (Enr
 	old, ok := s.Registry.Find(serial)
 	if !ok || old.RevokedAt != nil {
 		return Enrolled{}, RejectNotEnrolled, nil
+	}
+	if !old.ExpiresAt.IsZero() && old.ExpiresAt.Sub(s.now()) > renewEarliest {
+		return Enrolled{}, RejectRateLimited, nil
+	}
+	renewed := 0
+	for _, d := range s.Registry.List(old.User) {
+		if d.RenewedFrom == serial {
+			renewed++
+		}
+	}
+	if renewed >= maxRenewals {
+		return Enrolled{}, RejectRateLimited, nil
 	}
 	csr, err := ParseDeviceCSR(csrDER)
 	if err != nil {

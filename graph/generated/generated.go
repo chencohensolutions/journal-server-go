@@ -4094,7 +4094,8 @@ type Mutation {
   Renews the calling device's certificate (serverInfo.renewCertificates): a new certificate for a new key, for the same
   user and device, with its settings. The old certificate works until the new one is first used, and is then
   revoked. A device renews in the last 30 days of its certificate (expiresAt). NOT_ENROLLED for a certificate made
-  outside enrollment, or revoked.
+  outside enrollment, or revoked; RATE_LIMITED more than 60 days before it expires, or after 5 renewals of the same
+  certificate.
   """
   renewCertificate(csr: String!, keyProtection: KeyProtection!): EnrollDeviceResult!
   """
@@ -4102,7 +4103,8 @@ type Mutation {
   The app already enrolled asks for it when the user confirms there, and hands it to the other app on the phone, which
   enrolls with it (enrollDevice, with that app's name) within 2 minutes. Each app keeps its own key (Android ties a key
   to the app that made it), but the server keeps them as one phone: one name, revoked and kept from private files
-  together. NOT_ENROLLED for a certificate made outside enrollment, or revoked.
+  together. NOT_ENROLLED for a certificate made outside enrollment, or revoked; RATE_LIMITED after 10 codes for a phone
+  in an hour.
   """
   siblingEnrollmentCode(app: String!): SiblingCodeResult!
 }

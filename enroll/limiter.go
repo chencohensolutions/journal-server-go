@@ -1,6 +1,7 @@
 package enroll
 
 import (
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -27,15 +28,44 @@ func newFailureLimiter(now func() time.Time) *failureLimiter {
 }
 
 func (l *failureLimiter) Allow(ip string) bool {
+	ip = limiterKey(ip)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.recent(ip)) < maxFailures
 }
 
 func (l *failureLimiter) Fail(ip string) {
+	ip = limiterKey(ip)
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if len(l.failures) >= maxLimiterEntries {
+		// Many addresses failing at once: drop those whose minute has passed, so the map can't grow without end.
+		for other := range l.failures {
+			l.recent(other)
+		}
+	}
 	l.failures[ip] = append(l.recent(ip), l.now())
+}
+
+// maxLimiterEntries is how many addresses the limiter remembers before it clears out the old ones.
+const maxLimiterEntries = 10000
+
+// limiterKey is what failures are counted by: an IPv4 address, or an IPv6 address's /64, since one client has a
+// whole /64 (or more) of addresses to move between.
+func limiterKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.Is4() {
+		return addr.String()
+	}
+	prefix, err := addr.Prefix(64)
+	if err != nil {
+		return addr.String()
+	}
+	return prefix.String()
 }
 
 // recent drops failures older than the window. Callers hold mu.

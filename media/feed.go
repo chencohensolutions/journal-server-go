@@ -1,8 +1,13 @@
 package media
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -28,6 +33,13 @@ import (
 // With kinds, only files of those kinds come (an app that reads only sound recordings needn't page through every
 // photo); the cursor moves past the others all the same, so a device asks with the same kinds every time.
 func (s *Store) Changes(cursor string, limit int, view View, kinds ...Kind) (items []Item, next string, remaining int, err error) {
+	cursor, signed := s.unsigned(cursor)
+	if view.WithholdPrivate && !signed {
+		// Not a cursor this server gave out: the device starts again, as a new one, and is not sent the files
+		// kept from it as deleted (their sha256s are not its to learn by writing a cursor of its own).
+		cursor = ""
+	}
+	defer func() { next = s.signed(next) }()
 	c := decodeCursor(cursor)
 	fresh := cursor == ""
 	var old *View             // the view the device had, while its files are changed over to view
@@ -77,6 +89,64 @@ func (s *Store) Changes(cursor string, limit int, view View, kinds ...Kind) (ite
 		return items, "", remaining, nil
 	}
 	return items, feedCursor{view: &view, pos: pos}.encode(), remaining, nil
+}
+
+// SignCursors makes the store sign the cursors it gives out, with a key it keeps in .cache/feed.key (made at the
+// first call). A cursor carries the view it was given out for, and a device kept from private files could write one
+// that claims another view, to be sent the sha256 of every private file as deleted; so from a device kept from
+// private files only a signed cursor is taken, and any other starts its feed again. Other devices' cursors from
+// before signing are still read: nothing is kept from them.
+func (s *Store) SignCursors() error {
+	file := filepath.Join(s.root, ".cache", "feed.key")
+	key, err := os.ReadFile(file)
+	if err != nil || len(key) != 32 {
+		key = make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			return err
+		}
+		if err := writeFileAtomic(file, key); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.cursorKey = key
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *Store) cursorMAC(cursor string) string {
+	s.mu.RLock()
+	key := s.cursorKey
+	s.mu.RUnlock()
+	if key == nil {
+		return ""
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(cursor))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:16])
+}
+
+// signed is cursor with its signature after a dot; as it is when the store doesn't sign, or for "".
+func (s *Store) signed(cursor string) string {
+	mac := s.cursorMAC(cursor)
+	if cursor == "" || mac == "" {
+		return cursor
+	}
+	return cursor + "." + mac
+}
+
+// unsigned is cursor without its signature, and whether it had this store's. A store that doesn't sign (tests, the
+// import) takes every cursor as signed.
+func (s *Store) unsigned(cursor string) (string, bool) {
+	body, mac, found := strings.Cut(cursor, ".")
+	want := s.cursorMAC(body)
+	if want == "" {
+		return body, true
+	}
+	return body, cursor == "" || (found && hmac.Equal([]byte(mac), []byte(want)))
 }
 
 // feedPosition orders the feed: the time of the last change (upload or scan), then sha256 for files changed in

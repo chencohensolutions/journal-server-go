@@ -195,7 +195,8 @@ func ProbeAudio(ctx context.Context, ffprobe, path, fileName, folder string, hin
 	if ffprobe == "" {
 		err = fmt.Errorf("ffprobe is not installed")
 	} else {
-		cmd := exec.CommandContext(ctx, ffprobe, "-v", "error", "-show_entries", "format=format_name,duration:format_tags", "-of", "json", path)
+		cmd := exec.CommandContext(ctx, ffprobe, "-v", "error", "-protocol_whitelist", LocalFilesOnly, "-format_whitelist", KnownFormats,
+			"-show_entries", "format=format_name,duration:format_tags", "-of", "json", path)
 		cmd.Stderr = &stderr
 		var out []byte
 		if out, err = cmd.Output(); err == nil {
@@ -238,7 +239,8 @@ func EncodeFLAC(ctx context.Context, ffmpeg, work, wav string) (string, error) {
 		return "", ErrNoEncoder
 	}
 	out := filepath.Join(work, strings.TrimSuffix(filepath.Base(wav), filepath.Ext(wav))+".flac")
-	cmd := exec.CommandContext(ctx, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", wav,
+	cmd := exec.CommandContext(ctx, ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+		"-protocol_whitelist", LocalFilesOnly, "-format_whitelist", KnownFormats, "-i", wav,
 		"-map_metadata", "0", "-map", "0:a", "-c:a", "flac",
 		"-compression_level", "12", "-max_prediction_order", "12", "-exact_rice_parameters", "1", out)
 	if msg, err := cmd.CombinedOutput(); err != nil {

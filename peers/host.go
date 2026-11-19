@@ -48,16 +48,17 @@ type Host struct {
 	Offered func(p Peer, offer Offer)
 
 	mu      sync.Mutex
-	invites map[string]int64 // quota by inviteKey, for the codes pending
-	used    map[string]int64 // bytes by peer (inviteKey), counted at the first ask
-	putting map[string]bool  // uploads under way, by partial file
+	invites map[string]int64     // quota by inviteKey, for the codes pending
+	used    map[string]int64     // bytes by peer (inviteKey), counted at the first ask
+	putting map[string]bool      // uploads under way, by partial file
+	swept   map[string]time.Time // when each peer's old unfinished uploads were last deleted
 }
 
 // NewHost serves the peers in registry from folder; issuer signs their certificates.
 func NewHost(folder string, registry *Registry, issuer *enroll.Issuer, now func() time.Time) *Host {
 	return &Host{Folder: folder, Registry: registry, issuer: issuer, codes: enroll.NewCodeStore(now),
 		limiter: enroll.NewLimiter(now), now: now, invites: map[string]int64{}, used: map[string]int64{},
-		putting: map[string]bool{}}
+		putting: map[string]bool{}, swept: map[string]time.Time{}}
 }
 
 // ValidName is a peer's or a user's name: one folder, the same on every platform.
@@ -119,6 +120,10 @@ func (h *Host) Holds(p Peer) bool {
 
 // Remove deletes the files of owner's revoked peer name (all its users'), to free the space they took.
 func (h *Host) Remove(owner, name string) error {
+	// The names become a path that is deleted whole: never one with "..", a separator or a drive in it.
+	if !ValidName(name) || (owner != "" && !ValidName(owner)) {
+		return fmt.Errorf("%q is not a peer's name", name)
+	}
 	if _, ok := h.Registry.ActiveOf(owner, name); ok {
 		return fmt.Errorf("peer %s is active: revoke it first", name)
 	}
@@ -300,9 +305,7 @@ func (h *Host) Used(p Peer) int64 {
 	}
 	var total int64
 	filepath.WalkDir(h.space(p), func(_ string, d fs.DirEntry, err error) error {
-		if err == nil && d.IsDir() && d.Name() == partialDir {
-			return filepath.SkipDir // counted once in place
-		}
+		// Unfinished uploads (partialDir) count too: they take the host's disk like any file.
 		if err == nil && !d.IsDir() {
 			if info, err := d.Info(); err == nil {
 				total += info.Size()
@@ -326,8 +329,47 @@ func (h *Host) addUsed(p Peer, n int64) {
 	h.mu.Unlock()
 }
 
+// partialKept is how long an unfinished upload waits for its next piece before the host deletes it.
+const partialKept = 7 * 24 * time.Hour
+
+// sweepPartials deletes p's unfinished uploads that got no piece for partialKept, at most once an hour.
+func (h *Host) sweepPartials(p Peer) {
+	key, now := inviteKey(p.Owner, p.Name), h.now()
+	h.mu.Lock()
+	if last, ok := h.swept[key]; ok && now.Sub(last) < time.Hour {
+		h.mu.Unlock()
+		return
+	}
+	h.swept[key] = now
+	h.mu.Unlock()
+	users, _ := os.ReadDir(h.space(p))
+	for _, user := range users {
+		dir := filepath.Join(h.space(p), user.Name(), partialDir)
+		files, _ := os.ReadDir(dir)
+		for _, f := range files {
+			file := filepath.Join(dir, f.Name())
+			info, err := f.Info()
+			if err != nil || f.IsDir() || now.Sub(info.ModTime()) < partialKept {
+				continue
+			}
+			h.mu.Lock()
+			busy := h.putting[file]
+			h.mu.Unlock()
+			if busy {
+				continue
+			}
+			if os.Remove(file) == nil {
+				h.addUsed(p, -info.Size())
+				log.Printf("Peer %s: an upload left unfinished for %d days is deleted (%d bytes)", p.Name,
+					int(partialKept.Hours()/24), info.Size())
+			}
+		}
+	}
+}
+
 // SpaceOf is how much p may still store.
 func (h *Host) SpaceOf(p Peer) Space {
+	h.sweepPartials(p)
 	s := Space{Quota: p.Quota, Used: h.Used(p)}
 	s.Free = max(0, s.Quota-s.Used)
 	os.MkdirAll(h.space(p), 0o755)
@@ -473,9 +515,17 @@ func (h *Host) put(p Peer, user, file string, w http.ResponseWriter, r *http.Req
 	if info, err := os.Stat(file); err == nil {
 		existing = info.Size()
 	}
-	if s := h.SpaceOf(p); total-existing > s.Free {
+	// What an unfinished upload holds is counted as used already (Used), so only the rest is needed.
+	var partial int64
+	if resumed {
+		if info, err := os.Stat(filepath.Join(h.space(p), user, partialDir, sum)); err == nil {
+			partial = info.Size()
+		}
+	}
+	needed := total - partial - existing
+	if s := h.SpaceOf(p); needed > s.Free {
 		answerError(w, http.StatusInsufficientStorage, CodeQuotaFull,
-			fmt.Sprintf("%d bytes needed, %d free of the quota", total-existing, s.Free))
+			fmt.Sprintf("%d bytes needed, %d free of the quota", needed, s.Free))
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
@@ -514,7 +564,10 @@ func (h *Host) put(p Peer, user, file string, w http.ResponseWriter, r *http.Req
 			fileError(w, err)
 			return
 		}
-		_, err = io.Copy(f, io.LimitReader(r.Body, total-start))
+		// Counted before it is written, so uploads running side by side can't each take the same free space.
+		h.addUsed(p, total-start)
+		written, err := io.Copy(f, io.LimitReader(r.Body, total-start))
+		h.addUsed(p, written-(total-start))
 		if err == nil {
 			err = f.Sync()
 		}
@@ -537,7 +590,9 @@ func (h *Host) put(p Peer, user, file string, w http.ResponseWriter, r *http.Req
 			return
 		}
 		if got, _, err := hashFile(tmp); err != nil || got != sum || info.Size() != total {
-			os.Remove(tmp)
+			if os.Remove(tmp) == nil {
+				h.addUsed(p, -info.Size())
+			}
 			answerError(w, http.StatusUnprocessableEntity, CodeDamaged, "the bytes aren't the ones named; send the file again")
 			return
 		}
@@ -572,7 +627,19 @@ func (h *Host) put(p Peer, user, file string, w http.ResponseWriter, r *http.Req
 		return
 	}
 	os.Chtimes(file, modified, modified)
-	h.addUsed(p, total-existing)
+	if resumed {
+		h.addUsed(p, -existing) // the upload's own bytes were counted as they arrived
+	} else {
+		h.addUsed(p, total-existing)
+		// The file came whole: an earlier unfinished upload of it has nothing left to wait for.
+		partial := filepath.Join(h.space(p), user, partialDir, sum)
+		h.mu.Lock()
+		busy := h.putting[partial]
+		h.mu.Unlock()
+		if info, err := os.Stat(partial); err == nil && !busy && os.Remove(partial) == nil {
+			h.addUsed(p, -info.Size())
+		}
+	}
 	w.WriteHeader(http.StatusCreated)
 }
 

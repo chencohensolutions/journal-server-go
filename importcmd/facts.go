@@ -139,7 +139,7 @@ func (im *importer) videoFacts(ctx context.Context, path string, f *facts) {
 			Tags     map[string]string `json:"tags"`
 		} `json:"format"`
 	}
-	out, err := exec.CommandContext(ctx, im.ffprobe, "-v", "error", "-show_entries",
+	out, err := exec.CommandContext(ctx, im.ffprobe, "-v", "error", "-protocol_whitelist", media.LocalFilesOnly, "-format_whitelist", media.KnownFormats, "-show_entries",
 		"format=duration:format_tags:stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation",
 		"-of", "json", path).Output()
 	if err == nil {

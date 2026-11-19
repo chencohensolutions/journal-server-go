@@ -55,7 +55,13 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 			return
 		}
 		ctx = auth.WithSerial(ctx, serial)
-		if device, ok := registry.Find(serial); ok {
+		device, enrolled := registry.Find(serial)
+		if !enrolled && config.EnrolledOnly {
+			log.Printf("Failed login: certificate %s (user %s) from %s isn't in the device registry", serial, currentUser.Username, r.RemoteAddr)
+			http.Error(w, "client certificate not enrolled", http.StatusUnauthorized)
+			return
+		}
+		if enrolled {
 			if device.RenewedFrom != "" {
 				if old, err := registry.UseRenewal(serial, time.Now().UTC()); err != nil {
 					log.Printf("Renewed certificate %s in use, but %s couldn't be revoked: %v", serial, device.RenewedFrom, err)
@@ -121,6 +127,23 @@ func (g gzipWriter) WriteHeader(status int) {
 }
 
 func (g gzipWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
+
+// limitBody bounds a request's body: anonymous bytes from a client without a certificate, known from a device.
+// Reading past it fails, and the handler answers an error.
+func limitBody(anonymous, known int64, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := anonymous
+		if auth.FromContext(r.Context()) != nil {
+			limit = known
+		}
+		if r.ContentLength > limit {
+			http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		next.ServeHTTP(w, r)
+	})
+}
 
 // then runs each of after once next has answered.
 func then(next http.Handler, after ...func()) http.Handler {

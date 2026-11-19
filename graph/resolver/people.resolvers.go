@@ -17,7 +17,7 @@ import (
 // Faces is the resolver for the faces field.
 func (r *mediaResolver) Faces(ctx context.Context, obj *model.Media) ([]*model.Face, error) {
 	service := r.Resolver.Faces // r.Faces is this method
-	if service == nil {
+	if service == nil || r.hidesFrom(ctx, obj.Sha256) {
 		return []*model.Face{}, nil
 	}
 	infos := service.FacesIn(auth.FromContext(ctx).Username, obj.Sha256)
@@ -70,6 +70,9 @@ func (r *mutationResolver) MoveFace(ctx context.Context, face string, to *string
 	if err != nil {
 		return nil, err
 	}
+	if r.hidesFrom(ctx, id.Sha256) {
+		return model.NotFound{ID: face, Reason: "not found"}, nil
+	}
 	target := ""
 	if to != nil {
 		target = *to
@@ -112,6 +115,12 @@ func (r *mutationResolver) MarkFaces(ctx context.Context, person string, yes []s
 	if err != nil {
 		return nil, err
 	}
+	// Faces in files the device may not see are not its to mark.
+	for _, id := range append(append([]faces.FaceID{}, yesIDs...), noIDs...) {
+		if r.hidesFrom(ctx, id.Sha256) {
+			return model.NotFound{ID: id.String(), Reason: "not found"}, nil
+		}
+	}
 	err = service.Mark(user, person, yesIDs, noIDs)
 	if nf, ok := notFound(person, err); ok {
 		return nf, nil
@@ -131,6 +140,9 @@ func (r *mutationResolver) NameFace(ctx context.Context, face string, name strin
 	id, err := faces.ParseFaceID(face)
 	if err != nil {
 		return nil, coded(CodeInvalidArgument, "%v", err)
+	}
+	if r.hidesFrom(ctx, id.Sha256) {
+		return model.NotFound{ID: face, Reason: "not found"}, nil
 	}
 	personID, err := service.NameFace(user, id, name)
 	if nf, ok := notFound(face, err); ok {

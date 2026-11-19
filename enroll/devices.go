@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -80,26 +81,84 @@ func SerialString(serial *big.Int) string {
 }
 
 // Registry persists enrolled devices to a JSON file. Certificates that are not in the registry
-// (e.g. made with scripts/generate-user-cert.ps1) are not affected by it.
+// (e.g. made with scripts/generate-user-cert.ps1) are not affected by it, unless the server takes enrolled
+// certificates only (config.json "enrolled_only").
+//
+// Revoked serials are kept a second time, in a file of their own beside it (RevokedPath): a registry that is lost,
+// reset or put back from an older copy then doesn't bring a revoked certificate back to life.
 type Registry struct {
 	mu      sync.RWMutex
 	path    string
 	devices []Device
+	revoked map[string]time.Time // every serial ever revoked, also those the registry no longer lists
+}
+
+// RevokedPath is the file that keeps the revoked serials of the registry at path: devices.json's is
+// devices.revoked.json.
+func RevokedPath(path string) string {
+	ext := filepath.Ext(path)
+	return strings.TrimSuffix(path, ext) + ".revoked" + ext
 }
 
 func OpenRegistry(path string) (*Registry, error) {
-	r := &Registry{path: path}
+	r := &Registry{path: path, revoked: map[string]time.Time{}}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return r, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if err := json.Unmarshal(data, &r.devices); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	if err == nil {
+		if err := json.Unmarshal(data, &r.devices); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+	}
+	data, err = os.ReadFile(RevokedPath(path))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		// One that can't be read stops the server: going on without it would let revoked certificates in.
+		if err := json.Unmarshal(data, &r.revoked); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", RevokedPath(path), err)
+		}
+	}
+	// Revoked before the second file was kept: taken into it now.
+	missing := false
+	for _, d := range r.devices {
+		if _, ok := r.revoked[d.Serial]; d.RevokedAt != nil && !ok {
+			r.revoked[d.Serial] = *d.RevokedAt
+			missing = true
+		}
+	}
+	if missing {
+		if err := r.saveRevoked(); err != nil {
+			return nil, err
+		}
 	}
 	return r, nil
+}
+
+// saveRevoked writes the revoked serials, through a temp file and rename. Callers hold mu (or are opening).
+func (r *Registry) saveRevoked() error {
+	data, err := json.MarshalIndent(r.revoked, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(RevokedPath(r.path), data)
+}
+
+// noteRevoked takes the registry's revoked devices into the second file. Callers hold mu.
+func (r *Registry) noteRevoked() error {
+	changed := false
+	for _, d := range r.devices {
+		if _, ok := r.revoked[d.Serial]; d.RevokedAt != nil && !ok {
+			r.revoked[d.Serial] = *d.RevokedAt
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return r.saveRevoked()
 }
 
 func (r *Registry) Add(device Device) error {
@@ -271,6 +330,9 @@ func (r *Registry) UseRenewal(serial string, at time.Time) (string, error) {
 func (r *Registry) IsRevoked(serial string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if _, ok := r.revoked[serial]; ok {
+		return true
+	}
 	for _, d := range r.devices {
 		if d.Serial == serial {
 			return d.RevokedAt != nil
@@ -282,11 +344,19 @@ func (r *Registry) IsRevoked(serial string) bool {
 // save writes through a temp file and rename, so a crash never leaves a half-written registry.
 // Callers hold mu.
 func (r *Registry) save() error {
+	// The revoked serials first: a revocation is never in the registry alone.
+	if err := r.noteRevoked(); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(r.devices, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(r.path), filepath.Base(r.path)+".*.tmp")
+	return writeAtomic(r.path, data)
+}
+
+func writeAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
@@ -298,5 +368,5 @@ func (r *Registry) save() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), r.path)
+	return os.Rename(tmp.Name(), path)
 }

@@ -58,6 +58,13 @@ func (v view) hidesSha(sha string) bool {
 	return ok && v.hides(item)
 }
 
+// hidesFrom is whether the device asking (ctx) may not see the file sha. The field resolvers of Media ask it, so a
+// Media that reached a device some other way never brings what an index holds about a file kept from it.
+func (r *Resolver) hidesFrom(ctx context.Context, sha string) bool {
+	v, err := r.view(ctx)
+	return err != nil || v.hidesSha(sha)
+}
+
 // visible leaves out of hashes the files the device may not see.
 func (v view) visible(hashes []string) []string {
 	if !v.WithholdPrivate && v.Hidden.IsEmpty() {

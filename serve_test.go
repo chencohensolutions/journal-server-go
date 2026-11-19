@@ -179,6 +179,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	set := newCopySet(copiesCtx, copiers)
 	self := &testSelf{}
 	swaps := newSwapService(config, library, host, set, self.get)
+	swaps.dialLocal = true // both servers run on this computer
 	server := httptest.NewUnstartedServer(newMux(config, enrollment, library, previews, ix, copyRunner{copiesCtx, set}, host, swaps))
 	server.TLS = tlsConfigFor(tls.Certificate{Certificate: [][]byte{serverDER}, PrivateKey: serverKey}, pool)
 	server.Config.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: h2ReceiveWindow, MaxReceiveBufferPerConnection: h2ReceiveWindow}

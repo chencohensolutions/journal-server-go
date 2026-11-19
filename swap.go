@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -45,6 +47,8 @@ type swapService struct {
 	// This server's fingerprint and where it is, for the links it makes.
 	self func() (string, peers.Discovery)
 	now  func() time.Time
+	// Tests run both servers on this computer; a phone's link never may name it (dialable).
+	dialLocal bool
 
 	joinMu sync.Mutex // one join at a time: names and copy keys are checked, then made
 
@@ -131,6 +135,28 @@ func parseSwapLink(link string) (parsedLink, error) {
 	return p, nil
 }
 
+// dialable says whether a swap link from a phone may send this server to address (host:port): never this
+// computer itself (loopback, "localhost"), unspecified, link-local or multicast addresses, so a link can't make the
+// server knock on its own or its network's hidden services. Addresses on the home network are fine: a friend may
+// live there. Names aren't looked up here; the peer's certificate is pinned, so a name that leads elsewhere fails.
+func dialable(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return false
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return true // a name
+	}
+	ip = ip.Unmap()
+	return !ip.IsLoopback() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() &&
+		!ip.IsMulticast() && !ip.IsInterfaceLocalMulticast()
+}
+
 func (s *swapService) Info(user string) *model.SwapInfo {
 	info := &model.SwapInfo{Available: s.host != nil, CopyKey: s.copyKeyKind(user)}
 	if s.host != nil {
@@ -188,6 +214,12 @@ func (s *swapService) Join(ctx context.Context, user string, join resolver.SwapJ
 	link, err := parseSwapLink(join.Link)
 	if err != nil {
 		return refused(model.SwapRefusalInvalidLink, "%v", err)
+	}
+	if !s.dialLocal {
+		link.addresses = slices.DeleteFunc(link.addresses, func(a string) bool { return !dialable(a) })
+		if len(link.addresses) == 0 && link.key == "" {
+			return refused(model.SwapRefusalInvalidLink, "the link says nowhere this server may reach")
+		}
 	}
 	if own, _ := s.self(); own == link.fingerprint {
 		return refused(model.SwapRefusalOwnServer, "the link is this server's own: a swap is with a friend's server")
@@ -452,6 +484,9 @@ func (s *swapService) Kept(user string) []*model.KeptSwap {
 }
 
 func (s *swapService) Remove(user, name string) error {
+	if !peers.ValidName(name) {
+		return fmt.Errorf("you have no copy at a friend named %q", name)
+	}
 	key := peerKey(user, name)
 	info, _, err := loadPeer(s.config, key)
 	if err != nil || info.User != user {
@@ -472,6 +507,10 @@ func (s *swapService) Remove(user, name string) error {
 func (s *swapService) Revoke(user, name string, deleteFiles bool) error {
 	if s.host == nil {
 		return errors.New("this server keeps no friends' copies")
+	}
+	// The name becomes a folder that is deleted: never a path (docs/peers.md).
+	if !peers.ValidName(name) {
+		return fmt.Errorf("you keep no copy of a friend named %q", name)
 	}
 	_, err := s.host.Registry.RevokeOf(user, name, s.now().UTC())
 	if errors.Is(err, peers.ErrPeerNotFound) && deleteFiles {

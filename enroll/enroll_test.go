@@ -7,7 +7,10 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
+	"fmt"
 	"math/big"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -239,5 +242,126 @@ func TestCleanDeviceName(t *testing.T) {
 	long := strings.Repeat("é", 100)
 	if got := cleanDeviceName(long); got != strings.Repeat("é", maxDeviceNameLength) {
 		t.Errorf("long name = %q", got)
+	}
+}
+
+// A revoked certificate stays revoked when the registry is lost or put back from an older copy: the revoked serials
+// are kept a second time, beside it.
+func TestRevokedSerialsOutliveTheRegistry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devices.json")
+	registry, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, serial := range []string{"aa", "bb"} {
+		if err := registry.Add(Device{Serial: serial, User: "hen", Name: serial}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, _ := os.ReadFile(path) // a copy from before the revocation
+	if _, err := registry.RevokePhone("aa", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if RevokedPath(path) != filepath.Join(filepath.Dir(path), "devices.revoked.json") {
+		t.Fatalf("RevokedPath = %s", RevokedPath(path))
+	}
+	check := func(when string) {
+		t.Helper()
+		opened, err := OpenRegistry(path)
+		if err != nil {
+			t.Fatalf("%s: %v", when, err)
+		}
+		if !opened.IsRevoked("aa") || opened.IsRevoked("bb") {
+			t.Errorf("%s: aa revoked %v, bb revoked %v", when, opened.IsRevoked("aa"), opened.IsRevoked("bb"))
+		}
+	}
+	check("opened again")
+	if err := os.WriteFile(path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check("the registry put back from an older copy")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	check("the registry lost")
+	// A registry from before the second file: its revoked devices are taken into it at the first open.
+	os.Remove(RevokedPath(path))
+	revokedAt := time.Now()
+	data, _ := json.Marshal([]Device{{Serial: "aa", User: "hen", RevokedAt: &revokedAt}, {Serial: "bb", User: "hen"}})
+	os.WriteFile(path, data, 0o600)
+	check("a registry from before the revoked file")
+	os.Remove(path)
+	check("and then lost")
+	// A revoked file that can't be read stops the server from opening the registry.
+	os.WriteFile(RevokedPath(path), []byte("{"), 0o600)
+	if _, err := OpenRegistry(path); err == nil {
+		t.Error("a damaged revoked file was passed over")
+	}
+}
+
+// A certificate is renewed only near its end, and only a few times: a stolen one can't be kept alive by renewing it.
+func TestRenewalsComeOnlyNearTheEndAndAFewTimes(t *testing.T) {
+	c := newClock()
+	s := newTestService(t, c)
+	code, _ := s.Codes.Create("hen")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	enrolled, rejection, err := s.Enroll("10.0.0.2", Request{Code: code, DeviceName: "Pixel", CSR: csrFor(t, key, "x")})
+	if err != nil || rejection != "" {
+		t.Fatalf("enroll: %v %v", rejection, err)
+	}
+	serial := enrolled.Device.Serial
+	renew := func() Rejection {
+		t.Helper()
+		k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		_, rejection, err := s.Renew(serial, csrFor(t, k, "device"), "TEE")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rejection
+	}
+	if r := renew(); r != RejectRateLimited {
+		t.Fatalf("a renewal a year early: %q", r)
+	}
+	c.t = enrolled.Device.ExpiresAt.Add(-RenewBefore)
+	for i := range maxRenewals {
+		if r := renew(); r != "" {
+			t.Fatalf("renewal %d in the last 30 days: %q", i+1, r)
+		}
+	}
+	if r := renew(); r != RejectRateLimited {
+		t.Fatalf("renewal %d: %q", maxRenewals+1, r)
+	}
+}
+
+func TestSiblingCodesAreLimitedPerPhone(t *testing.T) {
+	c := newClock()
+	s := newTestService(t, c)
+	code, _ := s.Codes.Create("hen")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	enrolled, _, _ := s.Enroll("10.0.0.2", Request{Code: code, DeviceName: "Pixel", CSR: csrFor(t, key, "x")})
+	for i := range maxSiblingCodes {
+		if _, _, _, r := s.SiblingCode(enrolled.Device.Serial, "audio-logs"); r != "" {
+			t.Fatalf("code %d: %q", i+1, r)
+		}
+	}
+	if _, _, _, r := s.SiblingCode(enrolled.Device.Serial, "audio-logs"); r != RejectRateLimited {
+		t.Fatalf("one more in the hour: %q", r)
+	}
+	c.t = c.t.Add(siblingWindow)
+	if _, _, _, r := s.SiblingCode(enrolled.Device.Serial, "audio-logs"); r != "" {
+		t.Fatalf("an hour later: %q", r)
+	}
+}
+
+func TestWrongCodesCountPerIPv6Network(t *testing.T) {
+	l := NewLimiter(newClock().now)
+	for i := range maxFailures {
+		l.Fail(fmt.Sprintf("2001:db8:1:2::%x", i+1))
+	}
+	if l.Allow("2001:db8:1:2:ffff::1") {
+		t.Error("another address of the same /64 was let through")
+	}
+	if !l.Allow("2001:db8:1:3::1") || !l.Allow("10.0.0.1") {
+		t.Error("another network was held back")
 	}
 }

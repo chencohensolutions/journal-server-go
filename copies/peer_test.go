@@ -259,3 +259,44 @@ func TestAPeerCertificateReachesOnlyItsOwnSpace(t *testing.T) {
 		}
 	}
 }
+
+// Unfinished uploads take the host's disk, so they count against the quota: a peer can't leave many of them, each
+// within what is free, and pass its quota that way.
+func TestUnfinishedPutsToAPeerCountAgainstItsQuota(t *testing.T) {
+	defer func(was int64) { resumeFrom = was }(resumeFrom)
+	resumeFrom = 10
+	h := newTestHost(t)
+	p := h.peer(t, h.enroll(t, "hen-home", 100), "hen")
+	half := func(name string, data []byte) *http.Response {
+		t.Helper()
+		sum := sha256.Sum256(data)
+		req, _ := http.NewRequest(http.MethodPut, p.url("files", name), bytes.NewReader(data[:len(data)-1]))
+		req.Header.Set(peers.HeaderSha256, hex.EncodeToString(sum[:]))
+		req.Header.Set(peers.HeaderModified, taken.Format(time.RFC3339Nano))
+		req.Header.Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", len(data)-2, len(data)))
+		resp, err := p.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	if resp := half("a.bin", bytes.Repeat([]byte("a"), 61)); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("the first unfinished upload: %s", resp.Status)
+	}
+	if space := h.host.SpaceOf(mustPeer(t, h, "hen-home")); space.Used != 60 || space.Free != 40 {
+		t.Fatalf("after 60 unfinished bytes: %+v", space)
+	}
+	if resp := half("b.bin", bytes.Repeat([]byte("b"), 61)); resp.StatusCode != http.StatusInsufficientStorage {
+		t.Fatalf("a second unfinished upload past the quota: %s", resp.Status)
+	}
+	// The first can still be finished: what it holds is counted already.
+	data := bytes.Repeat([]byte("a"), 61)
+	sum := sha256.Sum256(data)
+	if err := p.Put("a.bin", bytes.NewReader(data), 61, hex.EncodeToString(sum[:]), taken); err != nil {
+		t.Fatalf("finishing the first: %v", err)
+	}
+	if space := h.host.SpaceOf(mustPeer(t, h, "hen-home")); space.Used != 61 {
+		t.Fatalf("after the file is whole: %+v", space)
+	}
+}

@@ -14,6 +14,9 @@ import (
 
 // Aesthetic is the resolver for the aesthetic field.
 func (r *mediaResolver) Aesthetic(ctx context.Context, obj *model.Media) (*float64, error) {
+	if r.hidesFrom(ctx, obj.Sha256) {
+		return nil, nil
+	}
 	score, ok := r.aestheticOf(auth.FromContext(ctx).Username, obj.Sha256)
 	if !ok {
 		return nil, nil

@@ -66,8 +66,15 @@ type AppConfig struct {
 	// Ask the home router to forward Port to this machine (UPnP IGD or NAT-PMP), renewed while the server runs and
 	// removed when it stops (docs/peers.md, "Opening the router"). On unless set to false.
 	PortMapping *bool `json:"port_mapping"`
+	// Serve the GraphQL playground page on "/" (for development). Off unless set: a server open to the internet
+	// shows nothing to a browser.
+	Playground bool `json:"playground"`
 	// Registry of enrolled devices (default devices.json).
 	DevicesFile string `json:"devices_file"`
+	// Take only certificates the registry lists (enrolled with a code): one the CA signed that it doesn't know, such
+	// as one made with scripts/generate-user-cert.ps1, or any at all once the registry is lost, is refused. Setup
+	// turns it on for a new server; a server from before it takes such certificates until this is set.
+	EnrolledOnly bool `json:"enrolled_only"`
 	// The peers this server keeps copies on: a folder per peer with its certificate and address, made by
 	// `journal-server peer add` (default certs/peers).
 	PeersDir string `json:"peers_dir"`
