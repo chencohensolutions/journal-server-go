@@ -27,7 +27,10 @@ AppId={{6F0C7E62-3B8A-4E0B-9C1E-5A1D2F9B7C41}
 AppName=Journal server
 AppVersion={#AppVersion}
 AppPublisher=Journal
-; Not Program Files: the server writes admin.token, devices.json and server.log beside itself.
+; Not Program Files: the server writes admin.token, devices.json and server.log beside itself. The folder is
+; locked to SYSTEM and Administrators after the files are copied (LockFolder): a folder at the drive's root inherits
+; "Authenticated Users: Modify", and the service runs as SYSTEM from it, keeps the keys and admin.token in it, and
+; the folder is on the system PATH.
 DefaultDirName={sd}\JournalServer
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
@@ -60,7 +63,7 @@ Type: files; Name: "{app}\journal-jxl.exe"
 
 [Icons]
 Name: "{autoprograms}\Set up Journal server"; Filename: "{app}\journal-server.exe"; Parameters: "setup --ask --dir ""{app}"""; WorkingDir: "{app}"; Comment: "Set up the server (after a silent install), or check it and add what is missing"
-Name: "{autoprograms}\Journal server folder"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}"" && journal-server"; WorkingDir: "{app}"; Comment: "A console in the server's folder, for journal-server and its commands"
+Name: "{autoprograms}\Journal server folder"; Filename: "{cmd}"; Parameters: "/k cd /d ""{app}"" && journal-server"; WorkingDir: "{app}"; Comment: "A console in the server's folder, for journal-server and its commands (admin commands need Run as administrator)"
 Name: "{autoprograms}\Journal server log"; Filename: "{app}\server.log"
 
 [UninstallRun]
@@ -247,15 +250,63 @@ begin
   RegWriteExpandStringValue(HKLM, 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 'Path', Path);
 end;
 
+// LockFolder leaves the server's folder to SYSTEM and Administrators, replacing what it inherited from the drive (any
+// signed-in user could change the programs the SYSTEM service runs, or read the keys and admin.token). Everything
+// inside then only inherits that. Users may still list the folder and run journal-server.exe (the Start menu's "Set
+// up Journal server" asks for administrator rights from there) and read server.log, which holds no secrets.
+function Icacls(Parameters: String): Boolean;
+var
+  Code: Integer;
+begin
+  Result := Exec(ExpandConstant('{sys}\icacls.exe'), Parameters, '', SW_HIDE, ewWaitUntilTerminated, Code) and
+    (Code = 0);
+end;
+
+procedure LockFolder();
+var
+  App, LogFile: String;
+begin
+  App := ExpandConstant('{app}');
+  LogFile := App + '\server.log';
+  if not FileExists(LogFile) then
+    SaveStringToFile(LogFile, '', False);
+  if not (Icacls(Quote(App) + ' /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F /Q') and
+    Icacls(Quote(App + '\*') + ' /reset /T /C /Q') and
+    Icacls(Quote(App) + ' /grant *S-1-5-32-545:RX /Q') and
+    Icacls(Quote(App + '\journal-server.exe') + ' /grant *S-1-5-32-545:RX /Q') and
+    Icacls(Quote(LogFile) + ' /grant *S-1-5-32-545:R /Q')) then
+    SuppressibleMsgBox('Could not limit who may change ' + App + '. Until it is fixed any user of this PC may change ' +
+      'the server''s programs: see docs/install.md, "Who may open the server''s folder".', mbError, MB_OK, IDOK);
+end;
+
+// LockDataFolder leaves a data folder this install made to SYSTEM, Administrators and the user who installed (so
+// their Explorer opens it without asking); made at the drive's root it would let every user of the PC see the photos.
+// A folder that was there before is left as it is.
+procedure LockDataFolder(Folder: String);
+begin
+  if not Icacls(Quote(Folder) + ' /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F' +
+    ' /grant:r ' + Quote(ExpandConstant('{username}')) + ':(OI)(CI)F /Q') then
+    SuppressibleMsgBox('Could not limit who may open ' + Folder + ': other users of this PC may see its photos.',
+      mbError, MB_OK, IDOK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  NewDataFolder: Boolean;
 begin
   if CurStep <> ssPostInstall then
     exit;
+  LockFolder();
   AddToPath(ExpandConstant('{app}'));
   // A silent install of a new server has no answers to set it up with: "Set up Journal server" asks them.
   if WizardSilent() and not IsUpgrade() then
     exit;
+  NewDataFolder := not IsUpgrade() and not IsMove() and not DirExists(DataPage.Values[0]);
   WizardForm.StatusLabel.Caption := 'Setting up the server and downloading what it needs (this takes a while)...';
+  if NewDataFolder then
+    ForceDirectories(DataPage.Values[0]);
+  if NewDataFolder then
+    LockDataFolder(DataPage.Values[0]);
   if not RunServer(SetupParameters()) then
   begin
     SuppressibleMsgBox('The server''s setup did not finish (see the console window). The programs are installed; ' +

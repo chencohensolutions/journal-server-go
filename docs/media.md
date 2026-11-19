@@ -444,6 +444,11 @@ when the client accepts it.
   was hidden. A cursor is never wrong to send:
   one the server can't read (a format from another server, or damaged) starts the feed again from the beginning,
   with hidden files as `deleted`, since what the device holds is unknown.
+- **Cursors are signed** (Nov 19, 2026): the server adds an HMAC with a key it keeps in `.cache/feed.key` (made at
+  the first start; `Store.SignCursors`). A device kept from private files that sends a cursor without a good
+  signature starts the feed again from the beginning, so it can't send a cursor it wrote itself to have private
+  files sent as changes it "already has" (and so learn their sha256). Other devices take unsigned cursors as before,
+  so apps saved before the change go on.
 - **When the view changes** (the device's private setting, or the user's hidden collections), the next sync gets
   only the files whose visibility changed: the ones now hidden as `deleted`, the ones shown again whole, in pages
   (`remaining` counts them), and then the feed goes on where it was. Everything else stays as the device has it. If
@@ -652,7 +657,9 @@ without `audio` every sound recording is hidden.
 - Changing the choice makes every device's next sync drop the files now hidden and get back those shown again, and
   nothing else (the cursor carries what was hidden when it was given out; see [Change feed](#change-feed)).
 - `missingMedia`, `startUpload`, uploads and `/verify` still see hidden files, so a phone never uploads one again
-  and can still free its own copy. The server can't reach the phone's own copies in its gallery: `hidden` tells the
+  and can still free its own copy. For a file hidden from the device, `startUpload`'s `MediaExists` carries only
+  what the device sent (its sha256, name, kind and size), never the file's note, facts or name on the server.
+  `text`, `faces`, `aesthetic`, `moveFace`, `markFaces` and `nameFace` answer as if a hidden file weren't there. The server can't reach the phone's own copies in its gallery: `hidden` tells the
   app to leave out its copy with that sha256 too (once backup has read it).
 
 ## Sound recordings

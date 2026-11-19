@@ -86,6 +86,10 @@ func checkForUpdate(ctx context.Context, config auth.AppConfig, u *update.Update
 		}
 		log.Printf("Updates: %s is out (this is %s); it is installed %s", r.Version, version.Number, when)
 		return
+	case time.Since(r.Published) < update.AutoInstallAfter:
+		log.Printf("Updates: %s is out (this is %s); it is installed from %s, once it is %d days old, or now with journal-server update",
+			r.Version, version.Number, r.Published.Add(update.AutoInstallAfter).Format("Jan 2"), int(update.AutoInstallAfter.Hours()/24))
+		return
 	}
 	log.Printf("Updates: installing %s (this is %s)", r.Version, version.Number)
 	if err := installRelease(ctx, u, r); err != nil {

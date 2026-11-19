@@ -164,9 +164,12 @@ Whoever runs the server decides only whether it keeps friends' copies at all (`p
   enrollment link).
 - **`joinSwap(link, name, passphrase, plain, offerQuota)`** on the friend's server: enrolls with the host as
   `peer add` does (`enrollPeer`), dialing every address in the link and then the DHT, with the host's key pinned
-  from the link's id; keeps the peer as the caller's; and starts the caller's copy there. **Encrypted by default**,
+  from the link's id (a link's loopback, `localhost`, unspecified, link-local and multicast addresses are dropped
+  first, `dialable`, so a link can't send the server to itself or its network's hidden services; addresses on the
+  home network stay, and the DHT's are not filtered); keeps the peer as the caller's; and starts the caller's copy there. **Encrypted by default**,
   with the caller's copy key: made from the passphrase when they have none (the same Argon2id key as
-  `copy-key new --from-passphrase`, so the passphrase alone restores; it must be 24 characters, or 4 words and 20),
+  `copy-key new --from-passphrase`, so the passphrase alone restores; it must be 24 characters, or 4 words and 20,
+  with at least 10 different characters),
   checked against it when they have one from a passphrase, or the key file's when it was made at the command line.
   The passphrase is never kept on either server: the phone keeps it (the apps' plan). `plain: true` keeps a plain
   copy, which the friend can read, for a friend the user trusts. Refusals are a union with a reason
@@ -184,7 +187,9 @@ Whoever runs the server decides only whether it keeps friends' copies at all (`p
 - **`removeSwap(name)`** stops the caller's copy at a friend's and sets the peer's folder aside
   (`peers_dir/<user>/<friend>.removed-<time>`, as `peer remove` does); the files at the friend's stay.
   **`revokeSwap(name, deleteFiles)`** refuses the friend's server from now on, and with `deleteFiles` deletes its
-  files here to free the space.
+  files here to free the space. Both take only a friend's name (`peers.ValidName`: letters, digits and dashes), never
+  a path, and the host's `Remove` checks it again with the owner (Nov 19, 2026: a name like `../..` deleted folders
+  above the peers folder).
 - `restore <user> --from <friend>` finds the user's own peer of that name first.
 - `journal-server peers` lists the users' own peers too (the admin at the command line sees every user's; a phone
   never does), and the admin API's `peers` has `owner`.
@@ -215,7 +220,8 @@ phones. Defined in `peers/protocol.go`:
   renames the file into place. A file of 4 MB or more is sent with `Content-Range`: what arrives is kept in
   `<user>/.journal-partial/<sha256>`, so a put cut off by the network goes on where it stopped.
 - **Quota.** A put that would take the peer past its quota answers 507 `QUOTA_FULL`, and the pass stops, as it does
-  on a full disk. Errors are JSON, `{error, message}`, with the codes in `peers/protocol.go`.
+  on a full disk. Unfinished puts in `.journal-partial` count against the quota too, and the host deletes those
+  left untouched for 7 days (checked at most hourly, as it reads the peer's space). Errors are JSON, `{error, message}`, with the codes in `peers/protocol.go`.
 - Paths are checked to stay in the peer's space (`filepath.Localize`); `.journal-partial` can't be named.
 
 ## On the owner's server

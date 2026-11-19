@@ -36,7 +36,30 @@ the server logs a WARNING at start when the libvips it found is not its own `vip
 `"vips"`; `go run ./scripts/bundle-vips` (or copying `vips\` from another server folder) and a restart fix it.
 
 Every download is checked against a sha256 its source publishes (or one kept in `bundle/`), and is kept between
-runs in `%LOCALAPPDATA%\journal-server`.
+runs in `%LOCALAPPDATA%\journal-server`. MSYS2's packages (libvips and what it needs) are also checked against
+their PGP signatures by MSYS2's packagers, whose public keys are kept in `bundle/msys2keys/` (Nov 19, 2026): the
+sha256 comes from the same mirror as the package, so on its own it proves nothing about a mirror that was changed.
+ONNX Runtime's file must have the sha256 GitHub lists for it (`runtimeSha256` in `bundle/onnx.go` can pin one).
+
+### Who may open the server's folder
+
+A folder at the root of a drive, as `C:\JournalServer` is, inherits "Authenticated Users: Modify" from it: any user
+of the PC could replace a program the service runs as SYSTEM, or read `certs\ca-key.pem` and `admin.token`. So the
+installer (Nov 19, 2026; `LockFolder` in `installer/journal-server.iss`) leaves the folder to SYSTEM and
+Administrators, with everything inside only inheriting that; users may still list the folder, run
+`journal-server.exe` (setup then asks for administrator rights) and read `server.log`. A data folder the wizard
+makes is left to SYSTEM, Administrators and the user who installed; a folder that was there before is left as it is.
+Installing again, or upgrading, sets the server's folder again.
+
+A server folder set up by hand (`journal-server setup --dir`, or a git clone run as the service) gets none of this.
+For such a folder, in an administrator's console:
+
+```bat
+icacls C:\JournalServer /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F
+icacls C:\JournalServer\* /reset /T /C
+```
+
+`icacls C:\JournalServer` shows what it is now: no `Authenticated Users` or `Users` line with `(M)` or `(F)`.
 
 ## The steps
 
@@ -57,7 +80,7 @@ and installs and starts the service. Run on a server that is set up, it checks i
 setup. A silent install over a server upgrades it as the wizard does, with setup's console hidden.
 
 The service starts in the install folder and writes its log to `server.log` there (Start menu: "Journal server
-log"). `journal-server service stop|start|uninstall` (as administrator) does what it says.
+log"). The log is kept under 20 MB: when it grows past that, it is copied to `server.log.old` and starts again. `journal-server service stop|start|uninstall` (as administrator) does what it says.
 
 ## Moving a server to another PC
 
@@ -200,7 +223,14 @@ Add the public key as a line of `update/release-keys.txt` and commit it; add the
 (repository Settings, Secrets and variables, Actions, `RELEASE_SIGNING_KEY`), then keep the file somewhere offline.
 The signature means a server installs only what this key signed: a file changed on its way, or on GitHub by anyone
 without the key, is refused. Someone who could change the repository's secrets and workflow could still sign; the
-stricter way, signing on the Mac before publishing, isn't built. A new key can take over by listing both in
+stricter way, signing on the Mac before publishing, isn't built.
+
+**Approving a release** (Nov 19, 2026). The publish job runs in the `release` environment. To make it wait for you,
+once: repository Settings, Environments, `release` (the first run makes it), tick "Required reviewers" and add
+yourself, then move `RELEASE_SIGNING_KEY` from the repository's secrets to the environment's. From then on a release
+is signed only after you press Approve on its run, so a change that reaches main without you (a merged pull request
+you didn't read closely, a stolen token) can't become a release that every server installs. The workflow's actions
+are pinned by commit, and its jobs may write to the repository only where they publish. A new key can take over by listing both in
 `release-keys.txt` for a release or two. `go run ./scripts/sign-release verify dist/SHA256SUMS` checks a signature.
 
 ## Updates
@@ -210,7 +240,7 @@ A release build looks for a newer release on GitHub (package `update`, `selfupda
 
 | `"update"` | |
 |---|---|
-| `"auto"` (default) | about a minute after start, writes to the log whether a newer release is out; every day at `"update_at"` (`"04:00"` by default) installs a newer release and restarts |
+| `"auto"` (default) | about a minute after start, writes to the log whether a newer release is out; every day at `"update_at"` (`"04:00"` by default) installs a newer release that is at least 3 days old (`update.AutoInstallAfter`, Nov 19, 2026: time to withdraw a bad release before servers take it) and restarts |
 | `"notify"` | only writes to the log, at start and daily, that a newer release is out |
 | `"off"` | doesn't look |
 

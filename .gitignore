@@ -59,3 +59,6 @@ peers.json
 
 # Installers kept in git LFS (releases/)
 !releases/**/*.exe
+
+# A build named after the folder (go build with no -o)
+/server-go

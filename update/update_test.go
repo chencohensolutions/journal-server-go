@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // release serves a made-up latest release: SHA256SUMS for version, signed by key, and program as linux-amd64's.
@@ -46,7 +47,7 @@ func (r release) serve(t *testing.T) *httptest.Server {
 			URL  string `json:"browser_download_url"`
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"tag_name": "v" + r.version, "html_url": srv.URL + "/release",
+			"tag_name": "v" + r.version, "html_url": srv.URL + "/release", "published_at": "2026-11-01T10:00:00Z",
 			"assets": []asset{{Sums, srv.URL + "/sums"}, {Signature, srv.URL + "/sig"}, {name, srv.URL + "/program"}},
 		})
 	})
@@ -88,6 +89,9 @@ func TestANewerSignedReleaseIsInstalledAndCanBeRolledBack(t *testing.T) {
 	r, err := u.Latest(context.Background())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if want := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC); !r.Published.Equal(want) {
+		t.Errorf("Published = %v, want %v (servers wait AutoInstallAfter from it)", r.Published, want)
 	}
 	if newer, major := u.Newer(r); !newer || major {
 		t.Fatalf("Newer = %v, %v; want a newer release of the same major version", newer, major)
