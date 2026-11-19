@@ -3,6 +3,7 @@ package bundle
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"debug/pe"
 	"fmt"
 	"os"
@@ -28,6 +29,8 @@ var vipsWanted = []string{
 type msys2Package struct {
 	name, file, sha256 string
 	depends, provides  []string
+	// The packager's signature of the file (%PGPSIG%), checked against msys2keys before the file is used.
+	signature []byte
 }
 
 // Vips puts a portable libvips for Windows in dir (replaced), with libjxl beside it (the server loads libjxl.dll
@@ -65,6 +68,12 @@ func Vips(ctx context.Context, dir string) error {
 		archive := filepath.Join(cache, "packages", p.file)
 		if err := download(ctx, msys2Repo+p.file, archive, p.sha256); err != nil {
 			return err
+		}
+		// The sha256 comes from the repository's list, which isn't signed: the packager's signature is what says
+		// the file is MSYS2's.
+		if err := checkMSYS2Signature(archive, p.signature); err != nil {
+			os.Remove(archive)
+			return fmt.Errorf("%s: %w", p.file, err)
 		}
 		// Some packages only pull in others and have no ucrt64 folder; their .PKGINFO lands beside it.
 		if err := extractTar(archive, staging); err != nil {
@@ -176,6 +185,8 @@ func readMSYS2Database(ctx context.Context, cache string) (map[string]*msys2Pack
 				p.file = line
 			case field == "%SHA256SUM%":
 				p.sha256 = line
+			case field == "%PGPSIG%":
+				p.signature, _ = base64.StdEncoding.DecodeString(line)
 			case field == "%DEPENDS%":
 				p.depends = append(p.depends, bareName(line))
 			case field == "%PROVIDES%":

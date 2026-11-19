@@ -89,7 +89,7 @@ func (p *Previews) poster(ctx context.Context, store *Store, item Item, original
 	frame := filepath.Join(filepath.Dir(path), strings.TrimSuffix(name, ".jpg")+".tmp.jpg")
 	defer os.Remove(frame)
 	args := func(filter string) []string {
-		a := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y"}
+		a := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", LocalFilesOnly, "-format_whitelist", KnownFormats}
 		if first {
 			// Every frame is decoded from the start until the first one shown is out (with its edit list and
 			// frame order, as a player shows it): only the first group of frames is read.
@@ -159,9 +159,19 @@ func (p *Previews) poster(ctx context.Context, store *Store, item Item, original
 const hdrToSDR = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0," +
 	"zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 
+// LocalFilesOnly is ffmpeg's and ffprobe's -protocol_whitelist for every file the server reads: the file itself and
+// pipes, nothing else. A file from a device is not trusted, and ffmpeg's other protocols let one name more to read:
+// an address on the network (http, tcp, rtp), or other files on this disk through concat and subfile.
+const LocalFilesOnly = "file,pipe"
+
+// KnownFormats is ffmpeg's and ffprobe's -format_whitelist for the same files: the containers phones, cameras and
+// recorders write. A file in any other is refused rather than read by one of ffmpeg's many other demuxers (a
+// playlist that names other files, a format few people use and fewer have tested).
+const KnownFormats = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi,mpegts,mpeg,flv,asf,ogg,wav,w64,flac,mp3,aac,amr,amrnb,amrwb,caf,aiff"
+
 // isHDR reports whether the video's first video stream uses an HDR transfer (PQ or HLG).
 func (p *Previews) isHDR(ctx context.Context, original string) bool {
-	out, err := p.output(ctx, p.ffprobe, "-v", "error", "-select_streams", "v:0",
+	out, err := p.output(ctx, p.ffprobe, "-v", "error", "-protocol_whitelist", LocalFilesOnly, "-format_whitelist", KnownFormats, "-select_streams", "v:0",
 		"-show_entries", "stream=color_transfer", "-of", "default=noprint_wrappers=1:nokey=1", original)
 	if err != nil {
 		return false
@@ -187,7 +197,8 @@ func (p *Previews) FirstFrameVideo(ctx context.Context, item Item, original, int
 		return "", ErrNoVideoFrame
 	}
 	out := filepath.Join(into, "first-frame.mp4")
-	if _, err := p.output(ctx, p.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", original,
+	if _, err := p.output(ctx, p.ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+		"-protocol_whitelist", LocalFilesOnly, "-format_whitelist", KnownFormats, "-i", original,
 		"-map", "0:v:0", "-c", "copy", "-frames:v", "1", "-an", "-sn", "-dn", "-movflags", "+faststart",
 		"-f", "mp4", out); err != nil {
 		return "", err

@@ -34,9 +34,10 @@ func runAsService() bool {
 	if err == nil {
 		err = os.Chdir(filepath.Dir(exe))
 	}
-	if logFile, openErr := os.OpenFile("server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); openErr == nil {
-		log.SetOutput(logFile)
-		os.Stdout, os.Stderr = logFile, logFile
+	// At most maxLogBytes, and as much again in server.log.old (logfile.go).
+	if capped, openErr := openCappedLog("server.log", maxLogBytes); openErr == nil {
+		log.SetOutput(capped)
+		os.Stdout, os.Stderr = capped.file, capped.file
 	}
 	if err != nil {
 		log.Fatalf("service: %v", err)

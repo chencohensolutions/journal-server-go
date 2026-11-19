@@ -112,7 +112,8 @@ func videoCamera(ctx context.Context, ffprobe, path string) *Camera {
 	if ffprobe == "" {
 		return nil
 	}
-	out, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-show_entries", "format_tags", "-of", "json", path).Output()
+	out, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-protocol_whitelist", LocalFilesOnly, "-format_whitelist", KnownFormats,
+		"-show_entries", "format_tags", "-of", "json", path).Output()
 	if err != nil {
 		return nil
 	}

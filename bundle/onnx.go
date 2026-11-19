@@ -23,6 +23,12 @@ import (
 // RuntimeVersion is the ONNX Runtime release to download; the server works with 1.16 or later.
 const RuntimeVersion = "1.31.0"
 
+// runtimeSha256 pins ONNX Runtime's files by their sha256, as ffmpeg's is (ffmpegSha256), once they are known: a
+// file GitHub answers with another digest is refused, so the release can't be changed under the server. A file not
+// listed is checked against GitHub's digest only. Fill it in when RuntimeVersion changes (each file's sha256 is on
+// the release page, beside its name).
+var runtimeSha256 = map[string]string{}
+
 // SearchModels names the SigLIP 2 models by size: base (the default, google/siglip2-base-patch16-256) reads a photo
 // in about a tenth of a second on a desktop CPU; large (google/siglip2-so400m-patch16-256) finds better but is
 // about four times slower.
@@ -241,7 +247,15 @@ func Runtime(ctx context.Context, dir string) error {
 	archive := filepath.Join(cache, asset)
 	for _, a := range release.Assets {
 		if a.Name == asset {
-			if err := download(ctx, a.URL, archive, strings.TrimPrefix(a.Digest, "sha256:")); err != nil {
+			// The digest GitHub keeps for the release's file: without one the file isn't taken unchecked.
+			digest, ok := strings.CutPrefix(a.Digest, "sha256:")
+			if !ok || len(digest) != 64 {
+				return fmt.Errorf("ONNX Runtime %s: GitHub gives no sha256 for %s", RuntimeVersion, asset)
+			}
+			if pinned, ok := runtimeSha256[asset]; ok && pinned != digest {
+				return fmt.Errorf("ONNX Runtime %s: %s isn't the file it was (sha256 %s, was %s)", RuntimeVersion, asset, digest, pinned)
+			}
+			if err := download(ctx, a.URL, archive, digest); err != nil {
 				return err
 			}
 		}

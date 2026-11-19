@@ -221,6 +221,15 @@ func openEnrollment(config auth.AppConfig) (*enroll.Service, error) {
 	return enroll.NewService(issuer, registry, time.Now), nil
 }
 
+// What one GraphQL request may be: a small body from a client without a certificate (an enrollment and its
+// certificate request are a few kilobytes), a larger one from a device (thousands of sha256s in missingMedia), and
+// queryComplexity fields.
+const (
+	anonymousQueryBytes = 64 << 10
+	queryBytes          = 8 << 20
+	queryComplexity     = 5000
+)
+
 // newMux is the routing table. Every route but the playground goes through identify; only /query lets
 // anonymous clients in (for the @public enrollment fields). The media routes need a certificate.
 func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Library, previews *media.Previews, ix indexes,
@@ -236,9 +245,12 @@ func newMux(config auth.AppConfig, enrollment *enroll.Service, library *media.Li
 
 	local := newLocal(config, library, ix)
 	mux := http.NewServeMux()
-	mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
+	if config.Playground {
+		mux.Handle("/", playground.Handler("GraphQL playground", "/query"))
+	}
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
-		gzipped(identify(config, registry, true, newGraphQLServer(enrollment, library, previews, ix, local, copyRuns, swaps)))))
+		gzipped(identify(config, registry, true, limitBody(anonymousQueryBytes, queryBytes,
+			newGraphQLServer(enrollment, library, previews, ix, local, copyRuns, swaps))))))
 	// The nudity scan, faces and search read a finished upload right away.
 	var wake []func()
 	if ix.reader != nil {
@@ -276,11 +288,13 @@ func newGraphQLServer(enrollment *enroll.Service, library *media.Library, previe
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
 	srv.AddTransport(transport.POST{})
-	srv.AddTransport(transport.MultipartForm{})
 	srv.SetQueryCache(lru.New[*ast.QueryDocument](1000))
 	// Introspection is a root field too, so anonymous clients cannot read the schema.
 	srv.Use(extension.Introspection{})
 	srv.Use(extension.AutomaticPersistedQuery{Cache: lru.New[string](100)})
+	// A query's cost is the number of fields it asks for: the apps' largest is a few hundred. One past the limit is
+	// refused before it runs, so a request can't ask for a field ten thousand times under other names.
+	srv.Use(extension.FixedComplexityLimit(queryComplexity))
 	srv.AroundRootFields(auth.RequireUserUnlessPublic)
 	return srv
 }
