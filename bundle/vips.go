@@ -3,8 +3,8 @@ package bundle
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
 	"debug/pe"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
