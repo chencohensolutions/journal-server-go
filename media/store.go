@@ -19,6 +19,8 @@ import (
 type Store struct {
 	root string
 	now  func() time.Time
+	// Signs the feed's cursors once SignCursors was called (feed.go); nil: cursors are not signed.
+	cursorKey []byte
 
 	mu    sync.RWMutex
 	items map[string]*Item // by sha256

@@ -15,7 +15,7 @@ import (
 // Text is the resolver for the text field.
 func (r *mediaResolver) Text(ctx context.Context, obj *model.Media) ([]*model.TextLine, error) {
 	service := r.Resolver.TextInPhotos
-	if service == nil {
+	if service == nil || r.hidesFrom(ctx, obj.Sha256) {
 		return []*model.TextLine{}, nil
 	}
 	lines := service.Text(auth.FromContext(ctx).Username, obj.Sha256)

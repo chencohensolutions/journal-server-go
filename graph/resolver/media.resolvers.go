@@ -69,7 +69,13 @@ func (r *mutationResolver) StartUpload(ctx context.Context, input model.StartUpl
 	}
 	switch {
 	case result.Existing != nil:
-		// Also a private file to a device kept from them: it has the file, so it learns nothing new.
+		// A file the device may not see (private to a device kept from them, or hidden): the server has it, and
+		// that is all the device is told. It gets back only what it sent, never the file's facts or note.
+		if v.hides(*result.Existing) {
+			return model.MediaExists{Media: &model.Media{Sha256: input.Sha256, Kind: input.Kind, FileName: input.FileName,
+				MimeType: input.MimeType, Size: input.Size, Versions: []string{}, Paired: []string{},
+				URL: "/media/" + input.Sha256}}, nil
+		}
 		return model.MediaExists{Media: v.toMedia(*result.Existing)}, nil
 	case result.Rejected != "":
 		return model.UploadRejected{Reason: model.UploadRejectedReason(result.Rejected)}, nil

@@ -55,7 +55,13 @@ func identify(config auth.AppConfig, registry *enroll.Registry, allowAnonymous b
 			return
 		}
 		ctx = auth.WithSerial(ctx, serial)
-		if device, ok := registry.Find(serial); ok {
+		device, enrolled := registry.Find(serial)
+		if !enrolled && config.EnrolledOnly {
+			log.Printf("Failed login: certificate %s (user %s) from %s isn't in the device registry", serial, currentUser.Username, r.RemoteAddr)
+			http.Error(w, "client certificate not enrolled", http.StatusUnauthorized)
+			return
+		}
+		if enrolled {
 			if device.RenewedFrom != "" {
 				if old, err := registry.UseRenewal(serial, time.Now().UTC()); err != nil {
 					log.Printf("Renewed certificate %s in use, but %s couldn't be revoked: %v", serial, device.RenewedFrom, err)

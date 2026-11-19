@@ -17,6 +17,7 @@ import (
 	"github.com/journal/server-go/auth"
 	"github.com/journal/server-go/bundle"
 	"github.com/journal/server-go/certs"
+	"github.com/journal/server-go/enroll"
 )
 
 const setupUsage = `usage:
@@ -186,7 +187,7 @@ func moveConfig(from string) error {
 		return err
 	}
 	fmt.Printf("config.json: copied from %s\n", from)
-	files := []string{old.TLSCert, old.TLSKey, old.ClientCA, old.ClientCAKey, old.DevicesFile}
+	files := []string{old.TLSCert, old.TLSKey, old.ClientCA, old.ClientCAKey, old.DevicesFile, enroll.RevokedPath(old.DevicesFile)}
 	for _, name := range files {
 		if name == "" {
 			continue
@@ -200,7 +201,7 @@ func moveConfig(from string) error {
 			fmt.Printf("%s: copied\n", filepath.ToSlash(name))
 		case errors.Is(err, os.ErrExist):
 			fmt.Printf("%s: kept\n", filepath.ToSlash(name))
-		case errors.Is(err, os.ErrNotExist) && name == old.DevicesFile:
+		case errors.Is(err, os.ErrNotExist) && (name == old.DevicesFile || name == enroll.RevokedPath(old.DevicesFile)):
 			// A server nobody has enrolled with yet has no registry.
 		default:
 			return err
@@ -211,14 +212,16 @@ func moveConfig(from string) error {
 
 // newConfig is the config.json setup writes: only what it sets, so the server's defaults apply to the rest.
 type newConfig struct {
-	TLSCert     string    `json:"tls_cert"`
-	TLSKey      string    `json:"tls_key"`
-	ClientCA    string    `json:"client_ca"`
-	ClientCAKey string    `json:"client_ca_key"`
-	PublicURL   string    `json:"public_url,omitempty"`
-	Port        string    `json:"port,omitempty"`
-	SearchModel string    `json:"search_model,omitempty"`
-	Users       []newUser `json:"users"`
+	TLSCert     string `json:"tls_cert"`
+	TLSKey      string `json:"tls_key"`
+	ClientCA    string `json:"client_ca"`
+	ClientCAKey string `json:"client_ca_key"`
+	// A new server has only the devices it enrolls: any other certificate is refused (docs/authentication.md).
+	EnrolledOnly bool      `json:"enrolled_only"`
+	PublicURL    string    `json:"public_url,omitempty"`
+	Port         string    `json:"port,omitempty"`
+	SearchModel  string    `json:"search_model,omitempty"`
+	Users        []newUser `json:"users"`
 }
 
 type newUser struct {
@@ -239,7 +242,7 @@ func writeNewConfig(o setupOptions) error {
 	}
 	config := newConfig{
 		TLSCert: "certs/server.pem", TLSKey: "certs/server-key.pem",
-		ClientCA: "certs/ca.pem", ClientCAKey: "certs/ca-key.pem",
+		ClientCA: "certs/ca.pem", ClientCAKey: "certs/ca-key.pem", EnrolledOnly: true,
 		Users: []newUser{{o.user, filepath.ToSlash(o.dataFolder)}},
 	}
 	if o.port != "" && o.port != auth.DefaultPort {

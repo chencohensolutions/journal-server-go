@@ -40,6 +40,7 @@ dist/
 # Server state (admin API token, enrolled device registry)
 admin.token
 devices.json
+devices.revoked.json
 
 # Portable libvips for Windows, made by scripts/bundle-vips
 /vips/

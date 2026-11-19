@@ -7,7 +7,9 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"math/big"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -239,5 +241,59 @@ func TestCleanDeviceName(t *testing.T) {
 	long := strings.Repeat("é", 100)
 	if got := cleanDeviceName(long); got != strings.Repeat("é", maxDeviceNameLength) {
 		t.Errorf("long name = %q", got)
+	}
+}
+
+// A revoked certificate stays revoked when the registry is lost or put back from an older copy: the revoked serials
+// are kept a second time, beside it.
+func TestRevokedSerialsOutliveTheRegistry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "devices.json")
+	registry, err := OpenRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, serial := range []string{"aa", "bb"} {
+		if err := registry.Add(Device{Serial: serial, User: "hen", Name: serial}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old, _ := os.ReadFile(path) // a copy from before the revocation
+	if _, err := registry.RevokePhone("aa", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if RevokedPath(path) != filepath.Join(filepath.Dir(path), "devices.revoked.json") {
+		t.Fatalf("RevokedPath = %s", RevokedPath(path))
+	}
+	check := func(when string) {
+		t.Helper()
+		opened, err := OpenRegistry(path)
+		if err != nil {
+			t.Fatalf("%s: %v", when, err)
+		}
+		if !opened.IsRevoked("aa") || opened.IsRevoked("bb") {
+			t.Errorf("%s: aa revoked %v, bb revoked %v", when, opened.IsRevoked("aa"), opened.IsRevoked("bb"))
+		}
+	}
+	check("opened again")
+	if err := os.WriteFile(path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	check("the registry put back from an older copy")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	check("the registry lost")
+	// A registry from before the second file: its revoked devices are taken into it at the first open.
+	os.Remove(RevokedPath(path))
+	revokedAt := time.Now()
+	data, _ := json.Marshal([]Device{{Serial: "aa", User: "hen", RevokedAt: &revokedAt}, {Serial: "bb", User: "hen"}})
+	os.WriteFile(path, data, 0o600)
+	check("a registry from before the revoked file")
+	os.Remove(path)
+	check("and then lost")
+	// A revoked file that can't be read stops the server from opening the registry.
+	os.WriteFile(RevokedPath(path), []byte("{"), 0o600)
+	if _, err := OpenRegistry(path); err == nil {
+		t.Error("a damaged revoked file was passed over")
 	}
 }

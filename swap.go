@@ -452,6 +452,9 @@ func (s *swapService) Kept(user string) []*model.KeptSwap {
 }
 
 func (s *swapService) Remove(user, name string) error {
+	if !peers.ValidName(name) {
+		return fmt.Errorf("you have no copy at a friend named %q", name)
+	}
 	key := peerKey(user, name)
 	info, _, err := loadPeer(s.config, key)
 	if err != nil || info.User != user {
@@ -472,6 +475,10 @@ func (s *swapService) Remove(user, name string) error {
 func (s *swapService) Revoke(user, name string, deleteFiles bool) error {
 	if s.host == nil {
 		return errors.New("this server keeps no friends' copies")
+	}
+	// The name becomes a folder that is deleted: never a path (docs/peers.md).
+	if !peers.ValidName(name) {
+		return fmt.Errorf("you keep no copy of a friend named %q", name)
 	}
 	_, err := s.host.Registry.RevokeOf(user, name, s.now().UTC())
 	if errors.Is(err, peers.ErrPeerNotFound) && deleteFiles {
