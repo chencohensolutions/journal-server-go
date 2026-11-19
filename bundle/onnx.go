@@ -1,10 +1,8 @@
 package bundle
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -20,8 +18,12 @@ import (
 	"github.com/journal/server-go/search"
 )
 
-// RuntimeVersion is the ONNX Runtime release to download; the server works with 1.16 or later.
-const RuntimeVersion = "1.31.0"
+// RuntimeVersion is the ONNX Runtime release to download (the NuGet package Microsoft.ML.OnnxRuntime, see Runtime);
+// the server works with 1.16 or later. runtimeSha256 is that package's sha256.
+const (
+	RuntimeVersion = "1.31.0"
+	runtimeSha256  = "7e35fdb4f5adb62f01e60798e2e5ed05108f5fbbe1cca03fbcc37903cf7c5e3b"
+)
 
 // SearchModels names the SigLIP 2 models by size: base (the default, google/siglip2-base-patch16-256) reads a photo
 // in about a tenth of a second on a desktop CPU; large (google/siglip2-so400m-patch16-256) finds better but is
@@ -81,7 +83,7 @@ func AllIndexes() ONNXOptions {
 
 // ONNX downloads what text search, face search and the other indexes need:
 //
-//   - ONNX Runtime, the library that runs the models, into RuntimeDir (from Microsoft's GitHub releases);
+//   - ONNX Runtime, the library that runs the models, into RuntimeDir (Microsoft's NuGet package, see Runtime);
 //   - a SigLIP 2 model, as ONNX files, into ModelsDir/<name> (from Hugging Face's onnx-community), and beside a
 //     full-precision one its 8-bit text half, for phones that search themselves;
 //   - the face models, YuNet (finds faces, MIT licence) and SFace (tells them apart, Apache 2.0), into
@@ -208,46 +210,29 @@ func ONNX(ctx context.Context, o ONNXOptions) (searchModel string, err error) {
 	return out, nil
 }
 
-// Runtime puts this platform's ONNX Runtime library (and the libraries it loads) in dir.
+// Runtime puts this platform's ONNX Runtime library (and the libraries it loads) in dir, from Microsoft's NuGet
+// package Microsoft.ML.OnnxRuntime, which carries the native libraries of every platform. Microsoft took
+// github.com/microsoft/onnxruntime, and its release downloads, offline in November 2026; NuGet still has every
+// version. The package is checked against runtimeSha256 (NuGet's own SHA-512 for it matched when it was pinned).
 func Runtime(ctx context.Context, dir string) error {
-	var asset string
-	switch runtime.GOOS + "/" + runtime.GOARCH {
-	case "windows/amd64":
-		asset = "onnxruntime-win-x64-" + RuntimeVersion + ".zip"
-	case "windows/arm64":
-		asset = "onnxruntime-win-arm64-" + RuntimeVersion + ".zip"
-	case "darwin/arm64":
-		asset = "onnxruntime-osx-arm64-" + RuntimeVersion + ".tgz"
-	case "linux/amd64":
-		asset = "onnxruntime-linux-x64-" + RuntimeVersion + ".tgz"
-	case "linux/arm64":
-		asset = "onnxruntime-linux-aarch64-" + RuntimeVersion + ".tgz"
-	default:
+	rid, ok := map[string]string{
+		"windows/amd64": "win-x64",
+		"windows/arm64": "win-arm64",
+		"darwin/arm64":  "osx-arm64",
+		"linux/amd64":   "linux-x64",
+		"linux/arm64":   "linux-arm64",
+	}[runtime.GOOS+"/"+runtime.GOARCH]
+	if !ok {
 		return fmt.Errorf("no ONNX Runtime download for %s/%s", runtime.GOOS, runtime.GOARCH)
-	}
-	var release struct {
-		Assets []struct {
-			Name, Digest string
-			URL          string `json:"browser_download_url"`
-		}
-	}
-	if err := getJSON(ctx, "https://api.github.com/repos/microsoft/onnxruntime/releases/tags/v"+RuntimeVersion, &release); err != nil {
-		return err
 	}
 	cache, err := cacheDir("onnxruntime")
 	if err != nil {
 		return err
 	}
-	archive := filepath.Join(cache, asset)
-	for _, a := range release.Assets {
-		if a.Name == asset {
-			if err := download(ctx, a.URL, archive, strings.TrimPrefix(a.Digest, "sha256:")); err != nil {
-				return err
-			}
-		}
-	}
-	if _, err := os.Stat(archive); err != nil {
-		return fmt.Errorf("%s is not in ONNX Runtime %s", asset, RuntimeVersion)
+	name := "microsoft.ml.onnxruntime." + RuntimeVersion + ".nupkg"
+	archive := filepath.Join(cache, name)
+	if err := download(ctx, "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/"+RuntimeVersion+"/"+name, archive, runtimeSha256); err != nil {
+		return err
 	}
 
 	if err := os.RemoveAll(dir); err != nil {
@@ -256,72 +241,33 @@ func Runtime(ctx context.Context, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	// Only the shared libraries in lib/; headers and the static libraries aren't needed.
-	wanted := func(name string) (string, bool) {
-		dirName, base := path.Split(name)
-		isLib := strings.HasSuffix(base, ".dll") || strings.Contains(base, ".dylib") || strings.Contains(base, ".so")
-		return base, strings.HasSuffix(dirName, "/lib/") && isLib
+	z, err := zip.OpenReader(archive)
+	if err != nil {
+		return err
 	}
+	defer z.Close()
+	// Only this platform's shared libraries; the import libraries (.lib) aren't needed.
+	prefix := "runtimes/" + rid + "/native/"
 	n := 0
-	if strings.HasSuffix(archive, ".zip") {
-		z, err := zip.OpenReader(archive)
+	for _, f := range z.File {
+		base := strings.TrimPrefix(f.Name, prefix)
+		if base == f.Name || strings.Contains(base, "/") ||
+			!(strings.HasSuffix(base, ".dll") || strings.HasSuffix(base, ".dylib") || strings.HasSuffix(base, ".so")) {
+			continue
+		}
+		r, err := f.Open()
 		if err != nil {
 			return err
 		}
-		defer z.Close()
-		for _, f := range z.File {
-			if base, ok := wanted(f.Name); ok {
-				r, err := f.Open()
-				if err != nil {
-					return err
-				}
-				err = writeFile(filepath.Join(dir, base), r)
-				r.Close()
-				if err != nil {
-					return err
-				}
-				n++
-			}
-		}
-	} else {
-		f, err := os.Open(archive)
+		err = writeFile(filepath.Join(dir, base), r)
+		r.Close()
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		gz, err := gzip.NewReader(f)
-		if err != nil {
-			return err
-		}
-		t := tar.NewReader(gz)
-		var links [][2]string
-		for {
-			h, err := t.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			base, ok := wanted(h.Name)
-			switch {
-			case !ok:
-			case h.Typeflag == tar.TypeSymlink:
-				// libonnxruntime.dylib → libonnxruntime.1.31.0.dylib; a copy works everywhere.
-				links = append(links, [2]string{filepath.Join(dir, path.Base(h.Linkname)), filepath.Join(dir, base)})
-				n++
-			case h.Typeflag == tar.TypeReg:
-				if err := writeFile(filepath.Join(dir, base), t); err != nil {
-					return err
-				}
-				n++
-			}
-		}
-		for _, l := range links {
-			if err := copyFile(l[0], l[1]); err != nil {
-				return err
-			}
-		}
+		n++
+	}
+	if n == 0 {
+		return fmt.Errorf("no ONNX Runtime for %s in %s", rid, name)
 	}
 	Logf("ONNX Runtime %s: %d files in %s", RuntimeVersion, n, dir)
 	return nil
