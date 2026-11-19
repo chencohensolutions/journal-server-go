@@ -39,7 +39,7 @@ Every download is checked against a sha256 its source publishes (or one kept in 
 runs in `%LOCALAPPDATA%\journal-server`. MSYS2's packages (libvips and what it needs) are also checked against
 their PGP signatures by MSYS2's packagers, whose public keys are kept in `bundle/msys2keys/` (Nov 19, 2026): the
 sha256 comes from the same mirror as the package, so on its own it proves nothing about a mirror that was changed.
-ONNX Runtime's file must have the sha256 GitHub lists for it (`runtimeSha256` in `bundle/onnx.go` can pin one).
+ONNX Runtime is the NuGet package of `RuntimeVersion`, pinned by its sha256 (`runtimeSha256` in `bundle/onnx.go`).
 
 ### Who may open the server's folder
 
