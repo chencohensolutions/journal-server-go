@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -295,5 +296,72 @@ func TestRevokedSerialsOutliveTheRegistry(t *testing.T) {
 	os.WriteFile(RevokedPath(path), []byte("{"), 0o600)
 	if _, err := OpenRegistry(path); err == nil {
 		t.Error("a damaged revoked file was passed over")
+	}
+}
+
+// A certificate is renewed only near its end, and only a few times: a stolen one can't be kept alive by renewing it.
+func TestRenewalsComeOnlyNearTheEndAndAFewTimes(t *testing.T) {
+	c := newClock()
+	s := newTestService(t, c)
+	code, _ := s.Codes.Create("hen")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	enrolled, rejection, err := s.Enroll("10.0.0.2", Request{Code: code, DeviceName: "Pixel", CSR: csrFor(t, key, "x")})
+	if err != nil || rejection != "" {
+		t.Fatalf("enroll: %v %v", rejection, err)
+	}
+	serial := enrolled.Device.Serial
+	renew := func() Rejection {
+		t.Helper()
+		k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		_, rejection, err := s.Renew(serial, csrFor(t, k, "device"), "TEE")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rejection
+	}
+	if r := renew(); r != RejectRateLimited {
+		t.Fatalf("a renewal a year early: %q", r)
+	}
+	c.t = enrolled.Device.ExpiresAt.Add(-RenewBefore)
+	for i := range maxRenewals {
+		if r := renew(); r != "" {
+			t.Fatalf("renewal %d in the last 30 days: %q", i+1, r)
+		}
+	}
+	if r := renew(); r != RejectRateLimited {
+		t.Fatalf("renewal %d: %q", maxRenewals+1, r)
+	}
+}
+
+func TestSiblingCodesAreLimitedPerPhone(t *testing.T) {
+	c := newClock()
+	s := newTestService(t, c)
+	code, _ := s.Codes.Create("hen")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	enrolled, _, _ := s.Enroll("10.0.0.2", Request{Code: code, DeviceName: "Pixel", CSR: csrFor(t, key, "x")})
+	for i := range maxSiblingCodes {
+		if _, _, _, r := s.SiblingCode(enrolled.Device.Serial, "audio-logs"); r != "" {
+			t.Fatalf("code %d: %q", i+1, r)
+		}
+	}
+	if _, _, _, r := s.SiblingCode(enrolled.Device.Serial, "audio-logs"); r != RejectRateLimited {
+		t.Fatalf("one more in the hour: %q", r)
+	}
+	c.t = c.t.Add(siblingWindow)
+	if _, _, _, r := s.SiblingCode(enrolled.Device.Serial, "audio-logs"); r != "" {
+		t.Fatalf("an hour later: %q", r)
+	}
+}
+
+func TestWrongCodesCountPerIPv6Network(t *testing.T) {
+	l := NewLimiter(newClock().now)
+	for i := range maxFailures {
+		l.Fail(fmt.Sprintf("2001:db8:1:2::%x", i+1))
+	}
+	if l.Allow("2001:db8:1:2:ffff::1") {
+		t.Error("another address of the same /64 was let through")
+	}
+	if !l.Allow("2001:db8:1:3::1") || !l.Allow("10.0.0.1") {
+		t.Error("another network was held back")
 	}
 }

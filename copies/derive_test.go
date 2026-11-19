@@ -36,7 +36,8 @@ func TestAKeyFromAPassphraseIsTheSameEachTime(t *testing.T) {
 		t.Error("another passphrase or salt gave the same key")
 	}
 	for p, weak := range map[string]bool{"short": true, "three tiny words": true, "correct horse battery staple": false,
-		"averyveryverylongpassword!": false} {
+		"averyveryverylongpassword!": false, "aaaaaaaaaaaaaaaaaaaaaaaa": true, "abab abab abab abab abab abab": true,
+		"ab-cd-ef-gh-ab-cd-ef-gh-ab": true} {
 		if (WeakPassphrase(p) != "") != weak {
 			t.Errorf("%q weak: %v", p, !weak)
 		}

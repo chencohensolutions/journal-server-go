@@ -39,12 +39,23 @@ func NewDerivation() Derivation {
 	return d
 }
 
+// minDifferentCharacters is how many different characters a passphrase needs.
+const minDifferentCharacters = 10
+
 // WeakPassphrase says why a passphrase is too weak for a copy key, or "": at least 24 characters, or at least 20 in
-// 4 words or more. Six random words (diceware) are best.
+// 4 words or more, and at least 10 different characters among them (24 of one letter is not a passphrase). Six random
+// words (diceware) are best. The apps check the same (journal-client-kmp swap/Passphrase.kt).
 func WeakPassphrase(p string) string {
 	p = strings.TrimSpace(p)
 	words := len(strings.FieldsFunc(p, func(r rune) bool { return unicode.IsSpace(r) || r == '-' }))
 	length := len([]rune(p))
+	different := map[rune]bool{}
+	for _, r := range strings.ToLower(p) {
+		different[r] = true
+	}
+	if len(different) < minDifferentCharacters && length >= 20 {
+		return fmt.Sprintf("only %d different characters: use at least %d (six random words are best)", len(different), minDifferentCharacters)
+	}
 	if length >= 24 || (length >= 20 && words >= 4) {
 		return ""
 	}

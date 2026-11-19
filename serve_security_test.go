@@ -151,3 +151,17 @@ func TestOnlyEnrolledCertificatesWhenSet(t *testing.T) {
 		}
 	}
 }
+
+func TestSwapLinksNeverSendTheServerToItself(t *testing.T) {
+	for address, want := range map[string]bool{
+		"127.0.0.1:56398": false, "[::1]:56398": false, "localhost:56398": false, "a.localhost:1": false,
+		"0.0.0.0:56398": false, "169.254.169.254:80": false, "[fe80::1]:56398": false, "224.0.0.1:1": false,
+		"[::ffff:127.0.0.1]:56398": false,
+		"192.168.1.20:56398": true, "203.0.113.7:56398": true, "friend.example.com:56398": true,
+		"[2001:db8::1]:56398": true,
+	} {
+		if got := dialable(address); got != want {
+			t.Errorf("dialable(%s) = %v, want %v", address, got, want)
+		}
+	}
+}
