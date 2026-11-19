@@ -46,6 +46,7 @@ type setupOptions struct {
 	aesthetic         bool
 	downloads         bool
 	modelGiven        bool
+	ask               bool
 }
 
 // runSetup makes or completes a server folder: config.json, the certificates, and the libraries and models the
@@ -55,6 +56,9 @@ func runSetup(args []string) error {
 	o, err := parseSetupArgs(args)
 	if err != nil {
 		return err
+	}
+	if o.ask {
+		return askedSetup(context.Background(), o, args)
 	}
 	return setup(context.Background(), o)
 }
@@ -86,6 +90,7 @@ func parseSetupArgs(args []string) (setupOptions, error) {
 	noOCR := fs.Bool("no-ocr", false, "leave out text in photos")
 	noAesthetic := fs.Bool("no-aesthetic", false, "leave out aesthetic scores")
 	noDownloads := fs.Bool("no-downloads", false, "make the config and certificates only")
+	fs.BoolVar(&o.ask, "ask", false, "ask in this console what the installer's wizard asks, then set up and start the service (the Start menu's \"Set up Journal server\")")
 	if err := fs.Parse(args); err != nil {
 		return o, err
 	}
@@ -338,21 +343,32 @@ func setupDownloads(ctx context.Context, o setupOptions, config auth.AppConfig) 
 		// A moved server keeps the search model it has: its vectors were made with that one.
 		model, precision = modelOfFolder(config.SearchModel)
 	}
+	// The installer ships ONNX Runtime, libvips and ffmpeg (the Store takes only offline installers): keep them,
+	// unless this program wants a newer ONNX Runtime or ffmpeg than the installer had.
+	shipped := bundle.ShippedLibraries(".")
 	if _, err := bundle.ONNX(ctx, bundle.ONNXOptions{
 		Model: model, Precision: precision,
 		Faces: o.faces, Nudity: o.nudity, Similar: o.similar, OCR: o.ocr, Aesthetic: o.aesthetic,
+		NoRuntime: shipped.OnnxRuntime,
 	}); err != nil {
 		return err
 	}
 	if runtime.GOOS == "windows" {
-		if err := bundle.Vips(ctx, "vips"); err != nil {
+		if shipped.Vips {
+			fmt.Printf("libvips: kept (it came with the installer)\n")
+		} else if err := bundle.Vips(ctx, "vips"); err != nil {
 			return err
 		}
-		if err := bundle.FFmpeg(ctx, "ffmpeg"); err != nil {
+		if shipped.FFmpeg {
+			fmt.Printf("ffmpeg: kept (it came with the installer)\n")
+		} else if err := bundle.FFmpeg(ctx, "ffmpeg"); err != nil {
 			return err
 		}
 	} else {
 		fmt.Printf("libvips and ffmpeg: install them with your package manager (brew install vips ffmpeg)\n")
+	}
+	if err := shipped.Keep(); err != nil {
+		return err
 	}
 	for setting, value := range map[string]string{"vips": config.Vips, "ffmpeg": config.FFmpeg, "onnxruntime": config.OnnxRuntime} {
 		if value != "" {

@@ -70,6 +70,8 @@ type ONNXOptions struct {
 	Precision  string // "fp32" (the default) or "q8": a quarter of the size and faster, a little less exact
 	// The other indexes' models; each is left out when false.
 	Faces, Nudity, Similar, OCR, Aesthetic bool
+	// NoRuntime leaves ONNX Runtime as it is in RuntimeDir: the Windows installer ships it (Runtime, Libraries).
+	NoRuntime bool
 }
 
 // AllIndexes is ONNXOptions with every index's model, as scripts/bundle-onnx downloads by default.
@@ -120,8 +122,10 @@ func ONNX(ctx context.Context, o ONNXOptions) (searchModel string, err error) {
 		return "", fmt.Errorf("no precision %q (fp32 or q8)", o.Precision)
 	}
 
-	if err := bundleRuntime(ctx, o.RuntimeDir); err != nil {
-		return "", err
+	if !o.NoRuntime {
+		if err := Runtime(ctx, o.RuntimeDir); err != nil {
+			return "", err
+		}
 	}
 
 	folder := name
@@ -204,8 +208,8 @@ func ONNX(ctx context.Context, o ONNXOptions) (searchModel string, err error) {
 	return out, nil
 }
 
-// bundleRuntime puts this platform's ONNX Runtime library (and the libraries it loads) in dir.
-func bundleRuntime(ctx context.Context, dir string) error {
+// Runtime puts this platform's ONNX Runtime library (and the libraries it loads) in dir.
+func Runtime(ctx context.Context, dir string) error {
 	var asset string
 	switch runtime.GOOS + "/" + runtime.GOARCH {
 	case "windows/amd64":
